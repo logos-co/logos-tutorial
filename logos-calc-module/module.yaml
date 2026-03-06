@@ -1,0 +1,22 @@
+name: calc_module
+version: 1.0.0
+type: core
+category: general
+description: "Calculator module wrapping libcalc C library"
+
+dependencies: []
+
+nix_packages:
+  build: []
+  runtime: []
+
+external_libraries:
+  - name: calc
+    vendor_path: "lib"
+
+cmake:
+  find_packages: []
+  extra_sources: []
+  extra_include_dirs:
+    - lib
+  extra_link_libraries: []

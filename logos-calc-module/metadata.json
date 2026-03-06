@@ -1,0 +1,10 @@
+{
+  "name": "calc_module",
+  "version": "1.0.0",
+  "description": "Calculator module wrapping libcalc C library",
+  "author": "",
+  "type": "core",
+  "category": "general",
+  "main": "calc_module_plugin",
+  "dependencies": []
+}
