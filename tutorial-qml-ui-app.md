@@ -5,12 +5,14 @@ This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrappin
 **What you'll build:** A `calc_ui` QML app with input fields, buttons, and a result display that calls `calc_module` methods (add, multiply, factorial, fibonacci) through the Logos bridge.
 
 **What you'll learn:**
+
 - How QML UI plugins work in the Logos platform
 - The `logos.callModule()` bridge that connects QML to core modules
 - The project structure and metadata for a QML plugin
 - How to build, install, and run your UI inside `logos-app`
 
 **Prerequisites:**
+
 - Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`
 - Nix with flakes enabled (same as Part 1)
 - Basic familiarity with QML (Qt's declarative UI language)
@@ -93,14 +95,16 @@ This tells `logos-app` what your plugin is and how to load it.
 
 **Key fields explained:**
 
-| Field | What it does |
-|-------|-------------|
-| `type` | Must be `"ui_qml"` for QML UI plugins |
-| `pluginType` | Must be `"qml"` |
-| `main` | Entry point QML file — always `"Main.qml"` |
+
+| Field          | What it does                                                        |
+| -------------- | ------------------------------------------------------------------- |
+| `type`         | Must be `"ui_qml"` for QML UI plugins                               |
+| `pluginType`   | Must be `"qml"`                                                     |
+| `main`         | Entry point QML file — always `"Main.qml"`                          |
 | `dependencies` | Core modules this UI needs. `logos-app` loads these before your UI. |
-| `category` | Groups plugins in the sidebar (e.g., `"tools"`, `"misc"`) |
-| `icon` | Path to the sidebar icon, relative to the plugin directory |
+| `category`     | Groups plugins in the sidebar (e.g., `"tools"`, `"misc"`)           |
+| `icon`         | Path to the sidebar icon, relative to the plugin directory          |
+
 
 **Compare with `calc_module`'s metadata** (from Part 1):
 
@@ -815,12 +819,14 @@ QML plugins don't need compilation — the Nix build just copies files to the ou
 
 **Compared to a core module's `flake.nix`** (from Part 1), this is much simpler:
 
-| | Core module (`calc_module`) | QML UI (`calc_ui`) |
-|---|---|---|
-| Builder | `logos-module-builder.lib.mkLogosModule` | Plain `stdenv.mkDerivation` |
-| Compilation | CMake → C++ → `.so` plugin | No compilation — file copy |
-| Dependencies | Qt, Logos SDK, CMake, C compiler | None |
-| Build time | Minutes (first build) | Seconds |
+
+|              | Core module (`calc_module`)              | QML UI (`calc_ui`)          |
+| ------------ | ---------------------------------------- | --------------------------- |
+| Builder      | `logos-module-builder.lib.mkLogosModule` | Plain `stdenv.mkDerivation` |
+| Compilation  | CMake → C++ → `.so` plugin               | No compilation — file copy  |
+| Dependencies | Qt, Logos SDK, CMake, C compiler         | None                        |
+| Build time   | Minutes (first build)                    | Seconds                     |
+
 
 ---
 
@@ -871,6 +877,8 @@ nix build 'github:logos-co/logos-app#app' --out-link ./logos-app
 
 ### 6.2 Set up the modules directory
 
+NOTE: this is wrong
+
 You need both the core module (from Part 1) and the QML UI plugin:
 
 ```bash
@@ -915,6 +923,7 @@ cp -r result/lib/icons ui-plugins/calc_ui/
 ```
 
 You should see:
+
 1. The `logos-app` window opens with a sidebar
 2. "Calculator UI" appears as a tab (with your icon if you provided one)
 3. Click the tab to see your QML interface
@@ -993,12 +1002,17 @@ nix build 'github:logos-co/logos-package#lgx' --out-link ./lgx
 
 ```bash
 # Create an LGX package
-./lgx/bin/lgx create calc_ui.lgx --name calc_ui
+./lgx/bin/lgx create calc_ui --name calc_ui
 
 # Add the variant (QML is platform-independent, but LGX still needs a variant)
-./lgx/bin/lgx add-variant calc_ui.lgx \
+./lgx/bin/lgx add calc_ui.lgx \
   --variant linux-aarch64 \
-  --files result/lib/
+  --files result/lib/ --main Main.qml
+
+# Add the variant on/for Mac
+./lgx/bin/lgx add calc_ui.lgx \
+  --variant darwin-arm64  \
+  --files result/lib/ --main Main.qml
 
 # Verify
 ./lgx/bin/lgx verify calc_ui.lgx
@@ -1015,19 +1029,21 @@ nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
 
 ## Recap: Core Module vs. QML UI Plugin
 
-| | Core Module (Part 1) | QML UI Plugin (Part 2) |
-|---|---|---|
-| **Language** | C++ (wrapping C) | QML (JavaScript + declarative UI) |
-| **Files** | `.cpp`, `.h`, `CMakeLists.txt`, `module.yaml` | `Main.qml` only |
-| **Compilation** | Yes (CMake → shared library) | No (file copy) |
-| **metadata `type`** | `"core"` | `"ui_qml"` |
-| **metadata `main`** | `"calc_module_plugin"` (binary) | `"Main.qml"` (source file) |
-| **Runs in** | `logos_host` process | Sandboxed QML engine |
-| **Network access** | Yes | No (sandboxed) |
-| **Filesystem access** | Yes | Own directory only (sandboxed) |
-| **Calls other modules** | Via `LogosAPI*` (C++) | Via `logos.callModule()` (JS) |
-| **Nix builder** | `mkLogosModule` | Plain `mkDerivation` |
-| **Build time** | Minutes (first build) | Seconds |
+
+|                         | Core Module (Part 1)                          | QML UI Plugin (Part 2)            |
+| ----------------------- | --------------------------------------------- | --------------------------------- |
+| **Language**            | C++ (wrapping C)                              | QML (JavaScript + declarative UI) |
+| **Files**               | `.cpp`, `.h`, `CMakeLists.txt`, `module.yaml` | `Main.qml` only                   |
+| **Compilation**         | Yes (CMake → shared library)                  | No (file copy)                    |
+| **metadata `type`**     | `"core"`                                      | `"ui_qml"`                        |
+| **metadata `main`**     | `"calc_module_plugin"` (binary)               | `"Main.qml"` (source file)        |
+| **Runs in**             | `logos_host` process                          | Sandboxed QML engine              |
+| **Network access**      | Yes                                           | No (sandboxed)                    |
+| **Filesystem access**   | Yes                                           | Own directory only (sandboxed)    |
+| **Calls other modules** | Via `LogosAPI`* (C++)                         | Via `logos.callModule()` (JS)     |
+| **Nix builder**         | `mkLogosModule`                               | Plain `mkDerivation`              |
+| **Build time**          | Minutes (first build)                         | Seconds                           |
+
 
 ---
 
@@ -1048,3 +1064,4 @@ From here you could:
 - **Use the Logos Design System** — the [logos-design-system](https://github.com/logos-co/logos-design-system) QML library provides styled components for a consistent look
 - **Add inter-module events** — core modules can emit events via `eventResponse` signals, and QML UIs can listen for them
 - **Build a C++ UI module** — for cases where QML sandboxing is too restrictive, you can build a native Qt widget plugin (see the [Developer Guide](logos-developer-guide.md), Section 7.2)
+
