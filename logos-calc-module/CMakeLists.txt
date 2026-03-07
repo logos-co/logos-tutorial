@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(CalcModulePlugin LANGUAGES CXX)
 
-# Include the Logos Module CMake helper
+# Include the Logos Module CMake helper (provided by logos-module-builder)
 if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
     include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake")

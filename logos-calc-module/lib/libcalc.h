@@ -1,10 +1,3 @@
-/**
- * libcalc - A tiny calculator C library
- *
- * This is a minimal C library used to demonstrate
- * wrapping a C library as a Logos module.
- */
-
 #ifndef LIBCALC_H
 #define LIBCALC_H
 

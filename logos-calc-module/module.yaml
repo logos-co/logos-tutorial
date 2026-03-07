@@ -10,6 +10,7 @@ nix_packages:
   build: []
   runtime: []
 
+# This tells the builder that "libcalc" is a pre-built library in lib/
 external_libraries:
   - name: calc
     vendor_path: "lib"
