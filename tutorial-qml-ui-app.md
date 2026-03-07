@@ -616,41 +616,22 @@ nix build 'github:logos-co/logos-app#app' --out-link ./logos-app
 
 ### 6.2 Set up the modules directory
 
-NOTE: this is wrong
-
-You need both the core module (from Part 1) and the QML UI plugin:
+You need both the core module (from Part 1) and the QML UI plugin. Use the LGX bundler and package manager to install them:
 
 ```bash
-# Core module — goes in the modules directory
-mkdir -p modules/calc_module
-cp ../logos-calc-module/result/lib/calc_module_plugin.so modules/calc_module/
-cp ../logos-calc-module/result/lib/libcalc.so modules/calc_module/
-```
+# Bundle and install the core module (from Part 1)
+cd ../logos-calc-module
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.#lib' -o lgx-result
+cd ../logos-calc-ui
 
-Create `modules/calc_module/manifest.json` (same as Part 1):
+nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
+mkdir -p modules
+./pm/bin/lgpm --modules-dir ./modules install --file ../logos-calc-module/lgx-result/*.lgx
 
-```json
-{
-  "name": "calc_module",
-  "version": "1.0.0",
-  "description": "Calculator module wrapping libcalc C library",
-  "type": "core",
-  "main": {
-    "linux-aarch64": "calc_module_plugin.so",
-    "linux-x86_64": "calc_module_plugin.so",
-    "darwin-arm64": "calc_module_plugin.dylib",
-    "darwin-x86_64": "calc_module_plugin.dylib"
-  },
-  "dependencies": []
-}
-```
-
-```bash
-# QML UI plugin — goes in the ui-plugins directory
-mkdir -p ui-plugins/calc_ui
-cp result/lib/Main.qml ui-plugins/calc_ui/
-cp result/lib/metadata.json ui-plugins/calc_ui/
-cp -r result/lib/icons ui-plugins/calc_ui/
+# Bundle and install the QML UI plugin
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.' -o lgx-result
+mkdir -p ui-plugins
+./pm/bin/lgpm --modules-dir ./ui-plugins install --file lgx-result/*.lgx
 ```
 
 ### 6.3 Launch
@@ -731,38 +712,27 @@ qml Main.qml
 
 ## Step 8: Package for Distribution (Optional)
 
-### 8.1 Build the `lgx` tool
+The LGX packages created in Step 6.2 are **local** packages — they work on the machine that built them but contain `/nix/store` references. To create **portable** packages for distribution to other machines, use the `#portable` bundler:
 
 ```bash
-nix build 'github:logos-co/logos-package#lgx' --out-link ./lgx
+# Portable core module
+cd ../logos-calc-module
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.#lib' -o lgx-portable
+
+# Portable QML UI plugin
+cd ../logos-calc-ui
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.' -o lgx-portable
 ```
 
-### 8.2 Create a package
-
-```bash
-# Create an LGX package
-./lgx/bin/lgx create calc_ui --name calc_ui
-
-# Add the variant (QML is platform-independent, but LGX still needs a variant)
-./lgx/bin/lgx add calc_ui.lgx \
-  --variant linux-aarch64 \
-  --files result/lib/ --main Main.qml
-
-# Add the variant on/for Mac
-./lgx/bin/lgx add calc_ui.lgx \
-  --variant darwin-arm64  \
-  --files result/lib/ --main Main.qml
-
-# Verify
-./lgx/bin/lgx verify calc_ui.lgx
-```
-
-### 8.3 Install on another machine
+Portable LGX packages are fully self-contained and can be installed on any machine with the Logos Package Manager:
 
 ```bash
 nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
+./pm/bin/lgpm --modules-dir ./modules install --file calc_module.lgx
 ./pm/bin/lgpm --modules-dir ./ui-plugins install --file calc_ui.lgx
 ```
+
+> **Local vs portable:** Local builds of `logos-app` (via `nix build '.#app'`) expect **local** `.lgx` packages. Portable builds (via `nix build '.#bin-bundle-dir'`, `.#bin-appimage`, or `.#bin-macos-app`) expect **portable** `.lgx` packages. See the [logos-app README](https://github.com/logos-co/logos-app/blob/master/README.md) for details.
 
 ---
 
