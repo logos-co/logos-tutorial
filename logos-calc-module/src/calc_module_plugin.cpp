@@ -15,7 +15,8 @@ CalcModulePlugin::~CalcModulePlugin()
 
 void CalcModulePlugin::initLogos(LogosAPI* api)
 {
-    m_logosAPI = api;
+    // IMPORTANT: Use the global `logosAPI` variable from liblogos, NOT a class member.
+    logosAPI = api;
     qDebug() << "CalcModulePlugin: LogosAPI initialized";
 }
 

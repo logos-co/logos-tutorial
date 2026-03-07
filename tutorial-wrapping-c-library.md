@@ -637,53 +637,28 @@ nix build 'github:logos-co/logos-liblogos' --out-link ./logos
 
 ### 5.2 Set up the modules directory
 
-`logoscore` expects modules in subdirectories, each with a `manifest.json`:
+`logoscore` expects modules in subdirectories, each with a `manifest.json`. Rather than copying files and writing the manifest manually, use the Nix bundler to create an LGX package and install it with the package manager:
 
 ```bash
-mkdir -p modules/calc_module
+# Bundle the module into an LGX package
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.#lib' -o lgx-result
 
-# Linux
-cp result/lib/calc_module_plugin.so modules/calc_module/
-cp result/lib/libcalc.so modules/calc_module/
-
-# macOS
-# cp result/lib/calc_module_plugin.dylib modules/calc_module/
-# cp result/lib/libcalc.dylib modules/calc_module/
+# Install it into a modules directory using the Logos Package Manager
+nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
+mkdir -p modules
+./pm/bin/lgpm --modules-dir ./modules install --file lgx-result/*.lgx
 ```
 
-Create `modules/calc_module/manifest.json`:
+This extracts the plugin, external libraries, and manifest into the correct directory structure:
 
-```json
-{
-  "name": "calc_module",
-  "version": "1.0.0",
-  "description": "Calculator module wrapping libcalc C library",
-  "type": "core",
-  "main": {
-    "linux-aarch64": "calc_module_plugin.so",
-    "linux-x86_64": "calc_module_plugin.so",
-    "darwin-arm64": "calc_module_plugin.dylib",
-    "darwin-x86_64": "calc_module_plugin.dylib"
-  },
-  "dependencies": []
-}
+```
+modules/calc_module/
+├── calc_module_plugin.dylib   # (or .so on Linux)
+├── libcalc.dylib              # (or .so on Linux)
+└── manifest.json              # Auto-generated
 ```
 
-The `main` object maps platform variant names to the plugin filename. `logoscore` uses this to find the right binary for your OS and architecture.
-
-### 5.3 Set library path (macOS workaround)
-
-On macOS, RPATH may not be correctly set in the built plugin (this is a known logos-module-builder issue). If `logoscore` fails to load the module with a "library not found" error, set the library path manually:
-
-```bash
-# macOS only — needed until RPATH is fixed in logos-module-builder
-export DYLD_LIBRARY_PATH=result/lib/
-
-# Linux equivalent (usually not needed if RPATH is set correctly)
-# export LD_LIBRARY_PATH=result/lib/
-```
-
-### 5.4 Call methods
+### 5.3 Call methods
 
 ```bash
 # Call add(3, 5)
@@ -739,38 +714,22 @@ Method call successful. Result: ...
 
 ## Step 6: Package for Distribution (Optional)
 
-### 6.1 Build the `lgx` tool
+The LGX package created in Step 5.2 is a **local** package — its libraries still reference `/nix/store` paths, so it only works on the machine that built it. To create a **portable** package that can be distributed to other machines, use the `#portable` bundler:
 
 ```bash
-nix build 'github:logos-co/logos-package#lgx' --out-link ./lgx
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.#lib'
 ```
 
-### 6.2 Create a package
+Portable LGX packages are fully self-contained with no `/nix/store` references at runtime. These are the packages used by the Logos App Package Manager UI and published to [logos-modules](https://github.com/logos-co/logos-modules) releases.
 
-```bash
-# Create an empty LGX package
-./lgx/bin/lgx create calc_module --name calc_module
-
-# Add the Linux variant
-./lgx/bin/lgx add calc_module.lgx \
-  --variant linux-aarch64 \
-  --files result/lib/ --main calc_module_plugin.so
-
-# Or on Mac, to add the Mac variant
-./lgx/bin/lgx add calc_module.lgx \
-  --variant darwin-arm64 \
-  --files result/lib/ --main calc_module_plugin.dylib
-
-# Verify the package
-./lgx/bin/lgx verify calc_module.lgx
-```
-
-On another machine, install with the Logos Package Manager:
+To install a portable package on another machine:
 
 ```bash
 nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
 ./pm/bin/lgpm --modules-dir ./modules install --file calc_module.lgx
 ```
+
+> **Note:** Local builds of `logoscore` / `logos-app` (via `nix build`) expect **local** `.lgx` packages. Portable builds (via `nix build '.#bin-bundle-dir'`, `.#bin-appimage`, or `.#bin-macos-app`) expect **portable** `.lgx` packages. See the [logos-app README](https://github.com/logos-co/logos-app/blob/master/README.md) for details.
 
 ---
 
@@ -982,13 +941,7 @@ Q_INVOKABLE void initLogos(LogosAPI* api);  // No override!
 Cannot load library calc_module_plugin.so: libcalc.so: cannot open shared object file
 ```
 
-**Fix:** Ensure `libcalc.so` / `libcalc.dylib` is in the same directory as the plugin. The build system should set RPATH to `$ORIGIN` (Linux) / `@loader_path` (macOS) so the plugin looks for libraries in its own directory.
-
-**macOS note:** As of writing, the RPATH may not be correctly set by logos-module-builder on macOS. As a workaround, set the library path before running:
-
-```bash
-export DYLD_LIBRARY_PATH=result/lib/
-```
+**Fix:** Ensure `libcalc.so` / `libcalc.dylib` is in the same directory as the plugin. The build system sets RPATH to `$ORIGIN` (Linux) / `@loader_path` (macOS) so the plugin looks for libraries in its own directory.
 
 ### `initLogos` stores API pointer in wrong variable
 
