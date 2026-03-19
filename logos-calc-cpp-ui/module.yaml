@@ -1,0 +1,19 @@
+name: calc_ui_cpp
+version: 1.0.0
+type: ui
+category: tools
+description: "Calculator C++ UI — widget frontend for calc_module"
+
+dependencies:
+  - calc_module
+
+nix_packages:
+  build: []
+  runtime: []
+
+external_libraries: []
+
+cmake:
+  find_packages: []
+  extra_sources: []
+  proto_files: []

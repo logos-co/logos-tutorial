@@ -907,6 +907,40 @@ To create a module with a native Qt widget UI:
 2. Set `"type": "ui"` in your metadata
 3. Return a `QWidget*` from `createWidget()`
 
+`IComponent.h` is not part of the SDK — each UI module vendors its own copy in `interfaces/IComponent.h`:
+
+```cpp
+// interfaces/IComponent.h  (copy verbatim into your module)
+#pragma once
+#include <QObject>
+#include <QWidget>
+#include <QtPlugin>
+
+class LogosAPI;
+
+class IComponent {
+public:
+    virtual ~IComponent() = default;
+    virtual QWidget* createWidget(LogosAPI* logosAPI = nullptr) = 0;
+    virtual void destroyWidget(QWidget* widget) = 0;
+};
+
+#define IComponent_iid "com.logos.component.IComponent"
+Q_DECLARE_INTERFACE(IComponent, IComponent_iid)
+```
+
+Expose it via `INCLUDE_DIRS` in your `CMakeLists.txt`:
+
+```cmake
+logos_module(
+    NAME my_ui_module
+    SOURCES src/my_ui_plugin.h src/my_ui_plugin.cpp
+    INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
+)
+```
+
+Then implement the plugin:
+
 ```cpp
 #include <IComponent.h>
 

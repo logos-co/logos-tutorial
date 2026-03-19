@@ -1,0 +1,10 @@
+{
+  "name": "calc_ui_cpp",
+  "version": "1.0.0",
+  "description": "Calculator C++ UI — widget frontend for calc_module",
+  "type": "ui",
+  "main": "calc_ui_cpp_plugin",
+  "dependencies": ["calc_module"],
+  "category": "tools",
+  "icon": "icons/calc.png"
+}
