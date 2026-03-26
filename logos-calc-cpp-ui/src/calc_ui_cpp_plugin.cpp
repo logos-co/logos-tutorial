@@ -2,13 +2,18 @@
 #include "calc_backend.h"
 #include "logos_api.h"
 #include <QDebug>
+#include <QDir>
 #include <QQuickWidget>
 #include <QQmlContext>
-#include <QDir>
 #include <QUrl>
 
 CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : QObject(parent) {}
 CalcUiCppPlugin::~CalcUiCppPlugin() {}
+
+void CalcUiCppPlugin::initLogos(LogosAPI* api)
+{
+    m_logosAPI = api;
+}
 
 QWidget* CalcUiCppPlugin::createWidget(LogosAPI* logosAPI)
 {

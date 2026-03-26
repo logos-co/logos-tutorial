@@ -42,10 +42,10 @@ This generates the skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt
 
 > **Alternative approach:** You can also create the C library as a separate project, build it there, then copy the resulting `.so`/`.dylib` and header files into the module's `lib/` directory. This can be cleaner for larger libraries with their own build systems.
 
-### 1.2 Create the lib and src directories
+### 1.2 Create the lib directory
 
 ```bash
-mkdir -p lib src
+mkdir -p lib 
 ```
 
 ### 1.3 Write the C header
@@ -172,7 +172,7 @@ T calc_version
 
 ## Step 2: Configure the Logos Module
 
-If you used the template in Step 1.1, you already have the skeleton files. Now customize them for your library. A Logos module is a **Qt plugin** that wraps your C library functions as `Q_INVOKABLE` methods. You need five files:
+If you used the template in Step 1.1, you already have the skeleton files. Now customize them for your library. Change cpp headers and source files and the other files as below:
 
 ```
 logos-calc-module/
@@ -191,7 +191,7 @@ logos-calc-module/
 
 ### 2.1 `metadata.json` — Module Configuration
 
-This is the single source of truth for your module. It is both embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata) and read by `logos-module-builder` to configure the Nix build (via the `nix` section).
+This is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
 
 ```json
 {
@@ -261,6 +261,17 @@ logos_module(
 )
 ```
 
+The template generates this with default names (e.g., `external_lib`). You **must** update:
+
+- **`project()`** — rename to match your module (e.g., `CalcModulePlugin`)
+- **`NAME`** — your module name (must match `name` in `metadata.json`, e.g., `calc_module`)
+- **`SOURCES`** — your renamed source files
+- **`EXTERNAL_LIBS`** — names of external libraries to link (must match `nix.external_libraries[].name` in `metadata.json`)
+
+The `if/elseif/else` block above it is boilerplate — don't change it.
+
+> **Common mistake:** If `NAME` doesn't match `name` in `metadata.json`, the build will succeed but the install phase will fail because it looks for `<name>_plugin.dylib` based on `metadata.json`.
+
 **How `EXTERNAL_LIBS calc` works:** The `logos_module()` CMake function searches `lib/` for `libcalc.so` (Linux) or `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
 
 ### 2.3 `flake.nix` — Nix Build Config
@@ -282,7 +293,9 @@ logos_module(
 }
 ```
 
-That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). Note that `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder.
+That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). Note that `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
+
+> **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 ### 2.4 `src/calc_module_interface.h` — Interface Declaration
 
@@ -464,7 +477,6 @@ Nix flakes require a git repository:
 cd logos-calc-module
 git init
 git add -A
-git commit -m "Initial commit"
 ```
 
 ### 3.2 Build with Nix
@@ -493,13 +505,15 @@ You should see two files (extensions depend on your platform):
 # Linux
 calc_module_plugin.so   # Your Logos module plugin
 libcalc.so              # The C library (copied alongside)
+metadata.json           # Runtime metadata
 
 # macOS
 calc_module_plugin.dylib
 libcalc.dylib
+metadata.json
 ```
 
-Both files are placed together so the plugin can find the C library at runtime via RPATH.
+Both library files are placed together so the plugin can find the C library at runtime via RPATH. The `metadata.json` is copied alongside for runtime discovery by `logoscore` and `logos-basecamp`.
 
 ---
 
@@ -641,44 +655,41 @@ This extracts the plugin, external libraries, and manifest into the correct dire
 modules/calc_module/
 ├── calc_module_plugin.dylib   # (or .so on Linux)
 ├── libcalc.dylib              # (or .so on Linux)
-└── manifest.json              # Auto-generated
+├── metadata.json              # Embedded in binary, also on disk
+├── manifest.json              # Auto-generated by lgx
+└── variant                    # Platform variant identifier
 ```
 
 ### 5.3 Call methods
 
+Start the daemon and call methods:
+
 ```bash
-# Call add(3, 5)
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules calc_module \
-  -c "calc_module.add(3, 5)"
+# Start logoscore daemon with modules directory
+./logos/bin/logoscore -D -m ./modules &
 
-# Call factorial(5)
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules calc_module \
-  -c "calc_module.factorial(5)"
+# Load the module
+./logos/bin/logoscore load-module calc_module
 
-# Call fibonacci(10)
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules calc_module \
-  -c "calc_module.fibonacci(10)"
+# Call methods
+./logos/bin/logoscore call calc_module add 3 5
+./logos/bin/logoscore call calc_module factorial 5
+./logos/bin/logoscore call calc_module fibonacci 10
+./logos/bin/logoscore call calc_module libVersion
 
-# Call libVersion()
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules calc_module \
-  -c "calc_module.libVersion()"
+# Stop the daemon when done
+./logos/bin/logoscore stop
 ```
 
-**What happens under the hood:**
+> For inline (legacy) mode and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#51-running-with-logoscore).
+
+  **What happens under the hood:**
 
 1. `logoscore` scans `./modules/` for subdirectories containing `manifest.json`
 2. It finds `calc_module` and extracts metadata from the plugin binary
 3. It spawns a `logos_host` process that loads `calc_module_plugin.so`
-4. `logos_host` calls `initLogos()` on the plugin, providing a `LogosAPI`* for inter-module communication
-5. The `-c` command is parsed: module name `calc_module`, method `add`, args `[3, 5]`
+4. `logos_host` calls `initLogos()` on the plugin, providing a `LogosAPI*` for inter-module communication
+5. The call command is parsed: module name `calc_module`, method `add`, args `[3, 5]`
 6. `logoscore` sends the call to `logos_host` via Qt Remote Objects (IPC)
 7. `logos_host` invokes `CalcModulePlugin::add(3, 5)` which calls `calc_add(3, 5)` from libcalc
 8. The result is returned via IPC to `logoscore`

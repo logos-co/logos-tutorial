@@ -330,94 +330,95 @@ Available theme tokens via `Theme.palette`:
 - Spacing: `Theme.spacing.radiusSmall`, `Theme.spacing.radiusXlarge`
 - Typography: `Theme.typography.secondaryText`, `Theme.typography.weightMedium`
 
-> **Note:** `Logos.Theme` and `Logos.Controls` are only available when running inside `logos-basecamp`. They are not available in `logos-standalone-app`. Use them only if you know your module will run in basecamp, or guard the import.
-
 ---
 
 ## Step 7: Load in `logos-basecamp`
 
-### 7.1 Create LGX packages
+### 7.1 Bundle as LGX packages
 
-Bundle both modules as portable LGX files:
+Create `.lgx` packages using the `#dual` bundler (includes both dev and portable variants, so they work with any basecamp build):
 
 ```bash
 # Package calc_module (from Part 1)
 cd ../logos-calc-module
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.#lib' -o lgx-calc-module
-cd ../logos-calc-ui
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx#dual' '.#lib' -o lgx-calc-module
 
 # Package the QML UI plugin
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.' -o lgx-calc-ui
+cd ../logos-calc-ui
+nix bundle --bundler 'github:logos-co/nix-bundle-lgx#dual' '.#lib' -o lgx-calc-ui
 ```
 
-### 7.2 Install via logos-basecamp UI
+### 7.2 Build and run logos-basecamp
 
-1. Open `logos-basecamp`
-2. Go to **Package Manager**
-3. Click **Install from file**
-4. Select `lgx-calc-module/*.lgx` — installs `calc_module`
-5. Repeat for `lgx-calc-ui/*.lgx` — installs `calc_ui`
+Build logos-basecamp, launch it once to preinstall its bundled modules, then install your modules.
 
-The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml`.
-
-### 7.3 Install via CLI (alternative)
-
-```bash
-nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
-./pm/bin/lgpm install --file lgx-calc-module/*.lgx
-./pm/bin/lgpm install --file lgx-calc-ui/*.lgx
-```
-
-### 7.4 Build logos-basecamp from source
-
-Build a local `logos-basecamp` binary, then use `lgpm` to populate a modules directory and run it:
+> **Note:** `logos-basecamp` does not accept `--modules-dir` or `--ui-plugins-dir` CLI flags. It manages its own data directory and preinstalls bundled modules (main_ui, package_manager, etc.) on first launch.
 
 ```bash
 # Build logos-basecamp
 nix build 'github:logos-co/logos-basecamp' -o basecamp-result
 
-# Create module directories
-mkdir -p modules ui-plugins
+# Launch once to preinstall bundled modules, then close it
+./basecamp-result/bin/logos-basecamp
+```
 
+Basecamp creates its data directory on first launch. To find where it is, check the log output for `plugins directory` or look for the directory that contains `modules/` and `plugins/` subdirectories:
+
+```bash
+# macOS (typical path, may vary):
+ls ~/Library/Application\ Support/Logos/
+
+# Linux (typical path, may vary):
+ls ~/.local/share/Logos/
+```
+
+The dev build directory is named `LogosBasecampDev` (portable builds use `LogosBasecamp`).
+
+Install your modules using `lgpm` (substitute `BASECAMP_DIR` with the actual path you found above):
+
+```bash
 # Build lgpm CLI
 nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
 
-# Install capability_module (required by all UI plugins)
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx' \
-  'github:logos-co/logos-capability-module' -o lgx-capability
-./pm/bin/lgpm --modules-dir ./modules install --file lgx-capability/*.lgx
+# Install core module
+./pm/bin/lgpm --modules-dir BASECAMP_DIR/modules \
+  install --file ../logos-calc-module/lgx-calc-module/*.lgx
 
-# Bundle and install calc_module (local, not portable)
-cd ../logos-calc-module
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.#lib' -o lgx-calc-module-local
-cd ../logos-calc-ui
-./pm/bin/lgpm --modules-dir ./modules install --file ../logos-calc-module/lgx-calc-module-local/*.lgx
+# Install UI plugin
+./pm/bin/lgpm --modules-dir BASECAMP_DIR/plugins \
+  install --file lgx-calc-ui/*.lgx
 
-# Bundle and install the QML UI plugin
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.' -o lgx-calc-ui-local
-./pm/bin/lgpm --modules-dir ./ui-plugins install --file lgx-calc-ui-local/*.lgx
-
-# Run basecamp with the populated directories
-./basecamp-result/bin/logos-basecamp \
-  --modules-dir ./modules \
-  --ui-plugins-dir ./ui-plugins
+# Launch basecamp -- your modules appear alongside the built-in ones
+./basecamp-result/bin/logos-basecamp
 ```
 
-> **Local vs portable:** A locally-built `logos-basecamp` (via `nix build`) expects **local** `.lgx` packages (built without `#portable`). Portable builds (AppImage, macOS app bundle) expect **portable** `.lgx` packages.
+### 7.3 Install via logos-basecamp UI
 
-### 7.5 Live reloading
+Instead of using `lgpm` on the command line, you can install modules through the basecamp UI:
 
-For rapid iteration on QML, use development mode. This watches your source files and reloads on change:
+1. Launch `logos-basecamp`
+2. Go to **Package Manager**
+3. Click **Install from file**
+4. Select `lgx-calc-module/*.lgx` -- installs `calc_module`
+5. Repeat for `lgx-calc-ui/*.lgx` -- installs `calc_ui`
+
+The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml`.
+
+### 7.4 Live reloading with `logos-standalone-app`
+
+For rapid iteration on QML without rebuilding, set `QML_PATH` to your QML source directory:
 
 ```bash
-QML_UI=$(pwd) logos-basecamp
+QML_PATH=$PWD/src/qml nix run .
 ```
 
-Edit `Main.qml`, save, and the UI updates without rebuilding.
+Edit `Main.qml`, close and re-run — changes appear immediately without `nix build`. When `QML_PATH` is set, the plugin loads QML files from the filesystem instead of from Qt resources, so your edits are picked up on each launch.
 
-### 7.6 Testing without `logos-basecamp`
+> This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so changes to your source files are not reflected until you rebuild and reinstall the `.lgx` package.
 
-You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout. The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" — but you can verify the layout and styling work correctly.
+### 7.5 Testing without any runtime
+
+You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout. The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" -- but you can verify the layout and styling work correctly.
 
 ```bash
 # If you have Qt installed
@@ -426,29 +427,54 @@ qml Main.qml
 
 ---
 
-## Step 8: Package for Distribution (Optional)
+## Known Limitations
 
-The LGX packages created in Step 7.2 are **local** packages — they contain `/nix/store` references and work on the machine that built them. To create **portable** packages for distribution to other machines, use the `#portable` bundler:
+### QML-to-C++ type coercion: `int` parameters called as `QString`
 
-```bash
-# Portable core module
-cd ../logos-calc-module
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.#lib' -o lgx-portable
+When calling C++ module methods from QML via `logos.callModule()`, all arguments are passed as strings. If the target method expects `int`, `bool`, or other non-string types, the call will fail with:
 
-# Portable QML UI plugin
-cd ../logos-calc-ui
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#portable' '.' -o lgx-portable
+```
+QMetaObject::invokeMethod: No such method CalcModulePlugin::add(QString,QString)
+Candidates are:
+    add(int,int)
 ```
 
-Portable LGX packages are fully self-contained and can be installed on any machine with the Logos Package Manager:
+**Workaround:** Define your C++ methods to accept `QString` parameters and convert inside the implementation:
 
-```bash
-nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
-./pm/bin/lgpm --modules-dir ./modules install --file calc_module.lgx
-./pm/bin/lgpm --modules-dir ./ui-plugins install --file calc_ui.lgx
+```cpp
+// Instead of:  Q_INVOKABLE int add(int a, int b);
+// Use:
+Q_INVOKABLE QString add(const QString& a, const QString& b) {
+    return QString::number(a.toInt() + b.toInt());
+}
 ```
 
-> **Local vs portable:** Local builds of `logos-basecamp` (via `nix build`) expect **local** `.lgx` packages. Portable builds (AppImage, macOS app bundle) expect **portable** `.lgx` packages. See the [logos-basecamp README](https://github.com/logos-co/logos-basecamp/blob/master/README.md) for details.
+This ensures the QML bridge can match the method signature. Methods that already use `QString` parameters work without any changes.
+
+### QML changes not appearing after rebuild
+
+Qt caches compiled QML on disk. If you update your `Main.qml`, rebuild and reinstall the `.lgx`, but the old UI still appears, the cache is stale. Fix by disabling the cache before launching:
+
+```bash
+QML_DISABLE_DISK_CACHE=1 ./basecamp-result/bin/logos-basecamp
+```
+
+### UI module not loading or basecamp behaving unexpectedly
+
+When switching between portable and dev builds of basecamp, or running multiple basecamp instances, the data directory can get into a bad state (stale modules, mixed variants, corrupted preinstall). Clear it and let basecamp re-preinstall on next launch:
+
+```bash
+# Remove basecamp's data directory (find yours under Application Support or .local/share)
+# macOS (typical):
+rm -rf ~/Library/Application\ Support/Logos/LogosBasecampDev
+# Linux (typical):
+# rm -rf ~/.local/share/Logos/LogosBasecampDev
+
+# Relaunch — basecamp will re-preinstall its bundled modules
+./basecamp-result/bin/logos-basecamp
+```
+
+Then reinstall your custom modules.
 
 ---
 

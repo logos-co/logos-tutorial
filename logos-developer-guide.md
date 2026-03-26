@@ -13,32 +13,29 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [1.3 The metadata.json Configuration](#13-the-metadatajson-configuration)
   - [1.4 Writing Module Code](#14-writing-module-code)
   - [1.5 Building Your Module](#15-building-your-module)
-- [Part 2: Inspecting and Testing Your Module](#part-2-inspecting-and-testing-your-module)
+- [Part 2: Inspecting Your Module](#part-2-inspecting-your-module)
   - [2.1 The lm CLI Tool](#21-the-lm-cli-tool)
-  - [2.2 Running with logoscore](#22-running-with-logoscore)
-  - [2.3 The logos-module-viewer](#23-the-logos-module-viewer)
+  - [2.2 The logos-module-viewer](#22-the-logos-module-viewer)
 - [Part 3: Packaging Your Module](#part-3-packaging-your-module)
   - [3.1 The LGX Package Format](#31-the-lgx-package-format)
-  - [3.2 Creating a Package with lgx](#32-creating-a-package-with-lgx)
-  - [3.3 Verifying Packages](#33-verifying-packages)
+  - [3.2 Bundling with nix-bundle-lgx](#32-bundling-with-nix-bundle-lgx)
 - [Part 4: Installing and Managing Modules](#part-4-installing-and-managing-modules)
   - [4.1 The lgpm CLI](#41-the-lgpm-cli)
   - [4.2 Installing from Local Files](#42-installing-from-local-files)
   - [4.3 Installing from a Registry](#43-installing-from-a-registry)
-- [Part 5: Running in logos-basecamp](#part-5-running-in-logos-basecamp)
-  - [5.1 Building logos-basecamp](#51-building-logos-basecamp)
-  - [5.2 Module Types in logos-basecamp](#52-module-types-in-logos-basecamp)
-  - [5.3 Development Mode](#53-development-mode)
-- [Part 6: Inter-Module Communication](#part-6-inter-module-communication)
-  - [6.1 The LogosAPI](#61-the-logosapi)
-  - [6.2 The C++ SDK Code Generator](#62-the-c-sdk-code-generator)
-  - [6.3 LogosResult](#63-logosresult)
-  - [6.4 Communication Modes](#64-communication-modes)
-- [Part 7: Advanced Topics](#part-7-advanced-topics)
-  - [7.1 Wrapping External Libraries](#71-wrapping-external-libraries)
-  - [7.2 UI Modules (C++ Widgets)](#72-ui-modules-c-widgets)
-  - [7.3 UI Modules (QML)](#73-ui-modules-qml)
-  - [7.4 Module Dependencies](#74-module-dependencies)
+- [Part 5: Running Your Module](#part-5-running-your-module)
+  - [5.1 Running with logoscore](#51-running-with-logoscore)
+- [Part 6: Running in logos-basecamp](#part-6-running-in-logos-basecamp)
+  - [6.1 Building logos-basecamp](#61-building-logos-basecamp)
+  - [6.2 Module Types in logos-basecamp](#62-module-types-in-logos-basecamp)
+- [Part 7: Inter-Module Communication](#part-7-inter-module-communication)
+  - [7.1 The LogosAPI](#71-the-logosapi)
+  - [7.2 The C++ SDK Code Generator](#72-the-c-sdk-code-generator)
+  - [7.3 LogosResult](#73-logosresult)
+  - [7.4 Communication Modes](#74-communication-modes)
+- [Part 8: Advanced Topics](#part-8-advanced-topics)
+  - [8.1 Tutorials](#81-tutorials)
+  - [8.2 Module Dependencies](#82-module-dependencies)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
 - [Troubleshooting](#troubleshooting)
@@ -95,6 +92,7 @@ The **Logos platform** is a modular application framework built in C++ on top of
 | **logos-logoscore-cli** | [logos-co/logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli) | Headless CLI runtime (`logoscore`) |
 | **logos-package** | [logos-co/logos-package](https://github.com/logos-co/logos-package) | LGX package format library + `lgx` CLI |
 | **logos-package-manager-module** | [logos-co/logos-package-manager-module](https://github.com/logos-co/logos-package-manager-module) | Package manager module + `lgpm` CLI |
+| **logos-standalone-app** | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app) | Minimal shell for running/testing UI modules in isolation |
 | **logos-basecamp** | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp) | Desktop application shell |
 
 ## Prerequisites
@@ -130,16 +128,35 @@ The fastest way to create a new module is using the **logos-module-builder** tem
 # Create a new directory for your module
 mkdir logos-my-module && cd logos-my-module
 
-# Scaffold a minimal module (no external dependencies)
+# Scaffold a minimal core module (no external dependencies)
 nix flake init -t github:logos-co/logos-module-builder
 
 # Or scaffold a module that wraps an external C/C++ library
 nix flake init -t github:logos-co/logos-module-builder#with-external-lib
+
+# For UI modules (C++ Qt widget with logos-standalone-app runner)
+nix flake init -t github:logos-co/logos-module-builder#ui-module
+
+# For QML UI modules (with logos-standalone-app runner)
+nix flake init -t github:logos-co/logos-module-builder#ui-qml-module
 ```
+
+**Available templates:**
+
+| Template | Use Case |
+|----------|----------|
+| `default` | Minimal core module (C++ backend, no UI) |
+| `with-external-lib` | Core module wrapping an external C/C++ library |
+| `ui-module` | C++ Qt widget UI module with `logos-standalone-app` runner |
+| `ui-qml-module` | QML-based UI module with `logos-standalone-app` runner |
+
+The `ui-module` and `ui-qml-module` templates include `logos-standalone-app` as an input, enabling `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
 ### 1.2 Project Structure
+
+> We will use the `default` template here (minimal core module).
 
 After scaffolding, your module directory looks like this:
 
@@ -156,9 +173,32 @@ logos-my-module/
 
 The key insight: **logos-module-builder** reduces ~600 lines of configuration across 5+ files down to ~70 lines across 2-3 files. `metadata.json` serves as the single source of truth — it contains both the runtime metadata (embedded into the plugin binary by Qt) and the build configuration (read by the builder via the `nix` section).
 
+The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by the builder) and calls the `logos_module()` macro, which sets up the Qt plugin target, links the SDK, configures include paths, and handles code generation. You just list your source files:
+
+```cmake
+cmake_minimum_required(VERSION 3.14)
+project(MyModulePlugin LANGUAGES CXX)
+
+if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
+    include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake")
+    include(cmake/LogosModule.cmake)
+else()
+    message(FATAL_ERROR "LogosModule.cmake not found")
+endif()
+
+logos_module(
+    NAME my_module
+    SOURCES
+        src/my_module_interface.h
+        src/my_module_plugin.h
+        src/my_module_plugin.cpp
+)
+```
+
 ### 1.3 The metadata.json Configuration
 
-The `metadata.json` file is the single source of truth for your module. It contains both the runtime metadata and the build configuration (read by `logos-module-builder` via the `nix` section).
+The `metadata.json` file is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
 
 ```json
 {
@@ -196,7 +236,7 @@ The `metadata.json` file is the single source of truth for your module. It conta
 | `category` | No | `general` | Category (general, network, chat, wallet, integration) |
 | `description` | No | `"A Logos module"` | Human-readable description |
 | `main` | Yes | -- | Plugin entry point (plugin name for core/ui, `Main.qml` for QML) |
-| `dependencies` | No | `[]` | Other Logos module names this depends on |
+| `dependencies` | No | `[]` | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`. |
 | `nix.packages.build` | No | `[]` | Nix packages for build time |
 | `nix.packages.runtime` | No | `[]` | Nix packages for runtime |
 | `nix.external_libraries` | No | `[]` | External C/C++ libraries to link |
@@ -314,6 +354,9 @@ int MyModulePlugin::compute(int a, int b)
 ### 1.5 Building Your Module
 
 ```bash
+# Nix requires all source files to be tracked by git
+git init && git add -A
+
 # Build everything (library + generated SDK headers)
 nix build
 
@@ -336,16 +379,16 @@ cmake --build build
 ```
 result/
 ├── lib/
-│   └── my_module_plugin.so   # (or .dylib on macOS)
-├── include/
-│   └── ...                    # Generated SDK headers
-└── share/
-    └── metadata.json          # Runtime metadata
+│   ├── my_module_plugin.so       # (or .dylib on macOS)
+│   └── metadata.json             # Runtime metadata
+└── include/
+    ├── my_module_api.h           # Generated type-safe wrapper header
+    └── my_module_api.cpp         # Generated wrapper implementation
 ```
 
 ---
 
-## Part 2: Inspecting and Testing Your Module
+## Part 2: Inspecting Your Module
 
 ### 2.1 The `lm` CLI Tool
 
@@ -415,47 +458,7 @@ Example JSON output:
 ]
 ```
 
-### 2.2 Running with `logoscore`
-
-The **`logoscore`** CLI (from `logos-logoscore-cli`) is a headless runtime that can load modules and invoke their methods from the command line.
-
-#### Building logoscore
-
-```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
-```
-
-#### Running a Module
-
-```bash
-# Load a module from a directory
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules my_module
-
-# Load a module and call a method
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules my_module \
-  -c "my_module.doSomething(hello)"
-
-# Load a module and call a method with a JSON config file
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules my_module \
-  -c "my_module.configure(@config.json)"
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `-m <dir>` | Directory containing module libraries |
-| `--load-modules <name1,name2>` | Comma-separated list of modules to load |
-| `-c "<module>.<method>(args)"` | Command to execute after loading |
-| `@file.json` | Pass a JSON file as a method argument |
-
-### 2.3 The logos-module-viewer
+### 2.2 The logos-module-viewer
 
 The **logos-module-viewer** is a graphical tool for inspecting loaded modules.
 
@@ -473,122 +476,63 @@ This opens a window showing the module's metadata, methods, and allows interacti
 
 ## Part 3: Packaging Your Module
 
+Before you can run your module with `logoscore` or install it into `logos-basecamp`, you need to package the build output into an `.lgx` package and install it into a `modules/` directory.
+
 ### 3.1 The LGX Package Format
 
 Logos modules are distributed as **`.lgx` packages**. An LGX file is a gzip-compressed tar archive with a specific internal structure:
 
 ```
-manifest.json           # Package metadata (required)
-manifest.cose           # Optional cryptographic signature
-variants/               # Platform-specific builds (required)
-  linux-x86_64/
-    my_module_plugin.so
-  darwin-arm64/
-    my_module_plugin.dylib
-docs/                   # Optional documentation
-licenses/               # Optional license files
+mymodule.lgx (tar.gz)
+├── manifest.json          # Package metadata
+├── variants/
+│   ├── linux-amd64/
+│   │   └── my_module_plugin.so
+│   ├── darwin-arm64/
+│   │   └── my_module_plugin.dylib
+│   └── darwin-arm64-dev/
+│       └── my_module_plugin.dylib
+├── docs/                  # Optional
+└── licenses/              # Optional
 ```
 
-The **manifest.json** declares the package name, version, and maps each variant to its main entry point (the shared library file):
+The **manifest.json** is auto-generated from your module's `metadata.json` by the bundler. It maps each variant to its main entry point.
 
-```json
-{
-  "name": "my_module",
-  "version": "1.0.0",
-  "description": "My first Logos module",
-  "author": "Developer Name",
-  "type": "core",
-  "category": "general",
-  "manifestVersion": "0.1",
-  "main": {
-    "linux-x86_64": "my_module_plugin.so",
-    "darwin-arm64": "my_module_plugin.dylib"
-  },
-  "dependencies": []
-}
-```
+### 3.2 Bundling with nix-bundle-lgx
 
-### 3.2 Creating a Package with `lgx`
-
-The **`lgx`** CLI tool (from `logos-package`) creates and manages LGX packages.
-
-#### Building lgx
+The recommended way to create `.lgx` packages is using **nix-bundle-lgx**, which automatically bundles your `nix build` output into an `.lgx` file with the correct manifest and variant structure.
 
 ```bash
-nix build 'github:logos-co/logos-package#lgx' --out-link ./lgx
+# Dev variant (uses /nix/store references, for local development)
+nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib
+
+# Portable variant (self-contained, all dependencies bundled)
+nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib
+
+# Dual variant (both dev and portable in one .lgx file)
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 ```
 
-#### Creating a New Package
+This produces a `my_module-<version>.lgx` file in the current directory.
 
-```bash
-# Create an empty package skeleton
-./lgx/bin/lgx create my_module.lgx --name my_module
-```
+**Bundling modes:**
 
-#### Adding Platform Variants
+| Mode | Command | Variant Created | Use Case |
+|------|---------|----------------|----------|
+| **Dev** | `nix bundle --bundler ...#default .#lib` | `darwin-arm64-dev` | Local development (requires Nix store) |
+| **Portable** | `nix bundle --bundler ...#portable .#lib` | `darwin-arm64` | Distribution (self-contained, no Nix needed) |
+| **Dual** | `nix bundle --bundler ...#dual .#lib` | Both dev and portable | One package for both environments |
 
-```bash
-# Add a single-file variant (the library binary)
-./lgx/bin/lgx add-variant my_module.lgx \
-  --variant linux-x86_64 \
-  --files ./result/lib/my_module_plugin.so
+**Variant naming:**
 
-# Add a macOS variant
-./lgx/bin/lgx add-variant my_module.lgx \
-  --variant darwin-arm64 \
-  --files ./result-macos/lib/my_module_plugin.dylib
+| Nix System | Dev Variant | Portable Variant |
+|-----------|------------|-----------------|
+| `aarch64-darwin` | `darwin-arm64-dev` | `darwin-arm64` |
+| `x86_64-darwin` | `darwin-amd64-dev` | `darwin-amd64` |
+| `aarch64-linux` | `linux-arm64-dev` | `linux-arm64` |
+| `x86_64-linux` | `linux-amd64-dev` | `linux-amd64` |
 
-# Add a directory variant (if your module has multiple files)
-./lgx/bin/lgx add-variant my_module.lgx \
-  --variant linux-x86_64 \
-  --files ./result/lib/ \
-  --main my_module_plugin.so
-```
-
-**Variant naming convention:** `<os>-<arch>` (lowercase). Common variants:
-
-| Variant | Platform |
-|---------|----------|
-| `linux-x86_64` | Linux Intel/AMD 64-bit |
-| `linux-arm64` | Linux ARM 64-bit |
-| `darwin-arm64` | macOS Apple Silicon |
-| `darwin-x86_64` | macOS Intel |
-
-#### Removing a Variant
-
-```bash
-./lgx/bin/lgx remove-variant my_module.lgx --variant linux-x86_64
-```
-
-#### Listing Package Contents
-
-```bash
-./lgx/bin/lgx list my_module.lgx
-```
-
-#### Extracting a Package
-
-```bash
-# Extract a specific variant
-./lgx/bin/lgx extract my_module.lgx --variant linux-x86_64 --output ./extracted/
-
-# Extract all variants
-./lgx/bin/lgx extract my_module.lgx --all --output ./extracted/
-```
-
-### 3.3 Verifying Packages
-
-```bash
-./lgx/bin/lgx verify my_module.lgx
-```
-
-This checks:
-- Package structure is valid (manifest.json exists, variants/ directory exists)
-- Manifest fields are present and valid
-- Every variant listed in `main` has a corresponding directory and file
-- Every variant directory has a corresponding `main` entry
-- No forbidden files (symlinks, special files) are present
-- All paths are valid (no `..` traversal, no absolute paths)
+> **Important:** The variant type matters when installing into `logos-basecamp`. A dev build of basecamp expects dev variants, and a portable build expects portable variants. Use the `dual` bundler to produce packages that work with both.
 
 ---
 
@@ -596,7 +540,7 @@ This checks:
 
 ### 4.1 The `lgpm` CLI
 
-The **`lgpm`** CLI (Logos Package Manager) installs, searches, and manages module packages.
+The **`lgpm`** CLI (Logos Package Manager) installs, searches, and manages module packages. Installing a package extracts it into a `modules/` directory that `logoscore` and `logos-basecamp` can load from.
 
 #### Building lgpm
 
@@ -608,31 +552,31 @@ nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./packag
 
 ```bash
 # Search for packages
-lgpm search waku
+./package-manager/bin/lgpm search waku
 
 # List all available packages
-lgpm list
+./package-manager/bin/lgpm list
 
 # List only installed packages
-lgpm list --installed
+./package-manager/bin/lgpm list --installed
 
 # List packages in a category
-lgpm list --category networking
+./package-manager/bin/lgpm list --category networking
 
 # Show package details
-lgpm info my_module
+./package-manager/bin/lgpm info my_module
 
 # List available categories
-lgpm categories
+./package-manager/bin/lgpm categories
 
 # Install a package (with dependency resolution)
-lgpm install my_module
+./package-manager/bin/lgpm --modules-dir ./modules install my_module
 
 # Install multiple packages
-lgpm install my_module another_module
+./package-manager/bin/lgpm --modules-dir ./modules install my_module another_module
 
 # Install from a local .lgx file
-lgpm install --file ./my_module.lgx
+./package-manager/bin/lgpm --modules-dir ./modules install --file ./my_module.lgx
 ```
 
 #### Global Options
@@ -648,8 +592,18 @@ lgpm install --file ./my_module.lgx
 ### 4.2 Installing from Local Files
 
 ```bash
-# Install a locally built .lgx package
-./package-manager/bin/lgpm --modules-dir ./modules install --file ./my_module.lgx
+# Install a locally built .lgx package into a modules/ directory
+./package-manager/bin/lgpm --modules-dir ./modules install --file ./my_module-1.0.0.lgx
+```
+
+After installation, the `modules/` directory contains your extracted module:
+
+```
+modules/
+└── my_module/
+    ├── manifest.json
+    ├── my_module_plugin.dylib   # (or .so on Linux)
+    └── variant
 ```
 
 ### 4.3 Installing from a Registry
@@ -670,24 +624,136 @@ The package manager automatically:
 
 ---
 
-## Part 5: Running in logos-basecamp
+## Part 5: Running Your Module
 
-### 5.1 Building logos-basecamp
+Once your module is packaged and installed into a `modules/` directory (see Parts 3 and 4), you can run it with `logoscore`.
+
+### 5.1 Running with `logoscore`
+
+The **`logoscore`** CLI (from `logos-liblogos`) is a headless runtime that can load modules and invoke their methods from the command line.
+
+#### Building logoscore
 
 ```bash
-# Build the full application
-nix build 'github:logos-co/logos-basecamp#app' --out-link ./logos-basecamp
-
-# Run it
-./logos-basecamp/bin/logos-basecamp
-
-# Or build platform-specific distributions:
-nix build 'github:logos-co/logos-basecamp#bin-appimage'     # Linux AppImage
-nix build 'github:logos-co/logos-basecamp#bin-macos-app'     # macOS .app bundle
-nix build 'github:logos-co/logos-basecamp#bin-macos-dmg'     # macOS DMG
+nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
-### 5.2 Module Types in logos-basecamp
+#### Daemon Mode
+
+`logoscore` runs as a daemon that stays alive to host modules. Start it with `-D`:
+
+```bash
+# Start the daemon with a modules directory
+./logos/bin/logoscore -D -m ./modules
+```
+
+Once the daemon is running, use commands from another terminal:
+
+```bash
+# Load a module
+./logos/bin/logoscore load-module my_module
+
+# Call a method on a loaded module
+./logos/bin/logoscore call my_module doSomething hello
+
+# List loaded modules
+./logos/bin/logoscore list-modules --loaded
+
+# Show module details
+./logos/bin/logoscore module-info my_module
+
+# Watch events from a module
+./logos/bin/logoscore watch my_module
+
+# Show daemon and module health
+./logos/bin/logoscore status
+
+# Stop the daemon
+./logos/bin/logoscore stop
+```
+
+#### Inline Mode (Legacy)
+
+For one-shot execution (load, call, exit), use the legacy inline flags:
+
+```bash
+# Load a module and call a method
+./logos/bin/logoscore \
+  -m ./modules \
+  --load-modules my_module \
+  -c "my_module.doSomething(hello)"
+
+# Multiple sequential calls
+./logos/bin/logoscore \
+  -m ./modules \
+  -l my_module \
+  -c "my_module.init(@config.json)" \
+  -c "my_module.start()"
+
+# Exit immediately after calls complete
+./logos/bin/logoscore \
+  -m ./modules -l my_module \
+  -c "my_module.doSomething(hello)" \
+  --quit-on-finish
+```
+
+> **Note:** Without `-c` or `--quit-on-finish`, logoscore enters the Qt event loop and stays running (daemon behavior). Always use `-c` for one-shot execution.
+
+**Inline mode flags:**
+
+| Flag | Description |
+|------|-------------|
+| `-m, --modules-dir <dir>` | Directory containing module libraries (repeatable) |
+| `-l, --load-modules <name1,name2>` | Comma-separated list of modules to load |
+| `-c "<module>.<method>(args)"` | Call a method after loading (repeatable, sequential) |
+| `--quit-on-finish` | Exit after all `-c` calls complete |
+| `@file.json` | Pass a file's contents as a method argument |
+
+**Daemon commands:**
+
+| Command | Description |
+|---------|-------------|
+| `status` | Show daemon and module health |
+| `load-module <name>` | Load a module into the daemon |
+| `unload-module <name>` | Unload a module |
+| `reload-module <name>` | Reload (unload + load) a module |
+| `list-modules [--loaded]` | List available or loaded modules |
+| `module-info <name>` | Show detailed module information |
+| `call <module> <method> [args]` | Call a method on a loaded module |
+| `watch <module> [--event]` | Watch events from a module |
+| `stats` | Show module resource usage |
+| `stop` | Stop the daemon |
+
+---
+
+## Part 6: Running in logos-basecamp
+
+### 6.1 Building logos-basecamp
+
+logos-basecamp produces two binary variants:
+
+- **`logos-basecamp`** -- development build (shell wrapper that sets Qt environment variables, depends on `/nix/store`)
+- **`LogosBasecamp`** -- portable binary (self-contained, used in distributed builds and `.app` bundles)
+
+```bash
+# Build the development version
+nix build 'github:logos-co/logos-basecamp#app' --out-link ./logos-basecamp
+
+# Run the dev binary
+./logos-basecamp/bin/logos-basecamp
+
+# Build the portable/distributed version
+nix build 'github:logos-co/logos-basecamp#portable' --out-link ./logos-basecamp-portable
+
+# Or build platform-specific distributions:
+nix build 'github:logos-co/logos-basecamp#bin-bundle-dir'     # Flat directory bundle
+nix build 'github:logos-co/logos-basecamp#bin-appimage'       # Linux AppImage
+nix build 'github:logos-co/logos-basecamp#bin-macos-app'      # macOS .app bundle
+```
+
+> **Note:** When installing modules into logos-basecamp, the LGX variant type must match the build type. Dev builds of basecamp expect **dev** LGX variants (e.g., `darwin-arm64-dev`), while portable builds expect **portable** variants (e.g., `darwin-arm64`). Use the `dual` bundler (see [3.2](#32-bundling-with-nix-bundle-lgx)) to produce packages that work with both.
+
+### 6.2 Module Types in logos-basecamp
 
 The application supports three types of modules:
 
@@ -726,25 +792,11 @@ These provide QML-based UIs in a sandboxed environment:
 - Filesystem access is restricted to the module's own directory
 - Can call core modules via the `logos` bridge: `logos.callModule("module", "method", [args])`
 
-### 5.3 Development Mode
-
-For rapid iteration on QML UI modules, use the development mode launcher:
-
-```bash
-# Build once
-nix build 'github:logos-co/logos-basecamp'
-
-# Run with live QML reloading (edits to .qml files take effect immediately)
-./run-dev.sh
-```
-
-This sets `QML_UI` to point to the source directory and disables QML caching, so you can edit QML files and see changes without rebuilding.
-
 ---
 
-## Part 6: Inter-Module Communication
+## Part 7: Inter-Module Communication
 
-### 6.1 The LogosAPI
+### 7.1 The LogosAPI
 
 Every module receives a `LogosAPI*` pointer when `initLogos()` is called. This is your gateway to communicating with other modules.
 
@@ -756,18 +808,44 @@ void MyModulePlugin::initLogos(LogosAPI* logosAPIInstance)
     // Get a client for calling another module
     LogosAPIClient* client = logosAPI->getClient("other_module");
 
-    // Call a method on that module
+    // Synchronous call (blocks until result is returned)
     QVariant result = client->invokeRemoteMethod(
         "other_module",  // target module name
         "someMethod",    // method name
         arg1, arg2       // arguments (up to 5 positional args)
     );
+
+    // Async call (preferred -- non-blocking, result delivered via callback)
+    client->invokeRemoteMethodAsync(
+        "other_module",
+        "someMethod",
+        [](QVariant result) {
+            // Handle result (called on the main thread)
+            if (result.isValid()) {
+                qDebug() << "Got result:" << result;
+            }
+        },
+        arg1, arg2
+    );
 }
 ```
 
-### 6.2 The C++ SDK Code Generator
+> **Prefer async calls.** Synchronous `invokeRemoteMethod` blocks the caller's thread until the remote module responds. Use `invokeRemoteMethodAsync` to avoid blocking, especially in UI modules.
+
+### 7.2 The C++ SDK Code Generator
 
 The `logos-cpp-generator` tool (from `logos-cpp-sdk`) inspects a compiled module and generates typed C++ wrapper classes, so you get compile-time type safety instead of raw `invokeRemoteMethod` calls.
+
+#### Getting logos-cpp-generator
+
+The generator is bundled with `logos-cpp-sdk`. It is automatically available:
+
+- **In `nix develop`** -- the module dev shell includes the SDK on PATH
+- **Build it directly:**
+  ```bash
+  nix build 'github:logos-co/logos-cpp-sdk#cpp-generator' --out-link ./cpp-gen
+  ./cpp-gen/bin/logos-cpp-generator --help
+  ```
 
 #### Generating Wrappers
 
@@ -787,7 +865,7 @@ logos-cpp-generator --metadata metadata.json --general-only --output-dir ./gener
 
 #### Using Generated Wrappers
 
-After generation, you get typed wrapper classes:
+After generation, you get typed wrapper classes with both synchronous and asynchronous methods:
 
 ```cpp
 #include "logos_sdk.h"  // Umbrella header
@@ -799,15 +877,21 @@ void MyModulePlugin::initLogos(LogosAPI* api) {
     // Create the typed SDK wrapper
     LogosModules* logos = new LogosModules(api);
 
-    // Call other modules with type safety
+    // Synchronous call (blocks until result)
     QString result = logos->other_module.doSomething("hello");
-    bool ok = logos->core_manager.loadPlugin("another_module");
+
+    // Async call (preferred -- non-blocking)
+    logos->other_module.doSomethingAsync("hello", [](QVariant result) {
+        qDebug() << "Got:" << result;
+    });
 }
 ```
 
-The generated `LogosModules` struct provides a member for each module, with methods matching the module's `Q_INVOKABLE` methods.
+The generated `LogosModules` struct provides a member for each module, with methods matching the module's `Q_INVOKABLE` methods. For every method `foo()`, an async variant `fooAsync()` is also generated that takes a callback parameter.
 
-### 6.3 LogosResult
+> **Prefer async wrappers.** Use `doSomethingAsync(...)` instead of `doSomething(...)` to avoid blocking the caller's thread. Synchronous calls can cause hangs if the target module is slow to respond.
+
+### 7.3 LogosResult
 
 Many module methods return `LogosResult` for structured success/error handling:
 
@@ -818,12 +902,16 @@ if (result.success) {
     // Access the value
     QString value = result.getString();
     int number = result.getInt();
+    bool flag = result.getBool();
     QVariantMap map = result.getMap();
     QVariantList list = result.getList();
 
-    // Access nested values
+    // Access nested values by key (for map results)
     QString name = result.getString("name");
     int count = result.getInt("count", 0);  // with default
+
+    // Generic typed access
+    auto custom = result.getValue<MyType>();
 } else {
     // Access the error
     QString error = result.getError();
@@ -846,7 +934,7 @@ Q_INVOKABLE LogosResult MyModulePlugin::fetchData(const QString& id) {
 }
 ```
 
-### 6.4 Communication Modes
+### 7.4 Communication Modes
 
 The SDK supports two communication modes:
 
@@ -867,182 +955,17 @@ LogosModeConfig::setMode(LogosMode::Remote);
 
 ---
 
-## Part 7: Advanced Topics
+## Part 8: Advanced Topics
 
-### 7.1 Wrapping External Libraries
+### 8.1 Tutorials
 
-To create a module that wraps an external C/C++ library, use the external library template:
+For hands-on walkthroughs of module development patterns, see the dedicated tutorials:
 
-```bash
-nix flake init -t github:logos-co/logos-module-builder#with-external-lib
-```
+- **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
+- **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — create `calc_ui_cpp`, a native C++ Qt widget plugin using `LogosAPI*` and the generated SDK.
 
-Then configure the external library in the `nix` section of `metadata.json`:
-
-```json
-{
-  "name": "my_wrapper_module",
-  "version": "1.0.0",
-  "description": "Wraps libfoo for Logos",
-  "main": "my_wrapper_module_plugin",
-  "dependencies": [],
-
-  "nix": {
-    "external_libraries": [
-      {
-        "name": "libfoo",
-        "flake_input": "github:example/libfoo",
-        "output_pattern": "lib/libfoo.*"
-      }
-    ]
-  }
-}
-```
-
-For a vendored library, use `vendor_path` and `build_command`:
-
-```json
-{
-  "nix": {
-    "external_libraries": [
-      {
-        "name": "libfoo",
-        "vendor_path": "vendor/libfoo",
-        "build_command": "make",
-        "output_pattern": "build/lib/libfoo.*"
-      }
-    ]
-  }
-}
-```
-
-For a Go library with C bindings:
-
-```json
-{
-  "nix": {
-    "external_libraries": [
-      {
-        "name": "libfoo",
-        "vendor_path": "vendor/libfoo",
-        "go_build": true,
-        "output_pattern": "libfoo.*"
-      }
-    ]
-  }
-}
-```
-
-The builder handles downloading, building, and linking the external library into your module.
-
-### 7.2 UI Modules (C++ Widgets)
-
-To create a module with a native Qt widget UI:
-
-1. Implement the `IComponent` interface
-2. Set `"type": "ui"` in your metadata
-3. Return a `QWidget*` from `createWidget()`
-
-`IComponent.h` is not part of the SDK — each UI module vendors its own copy in `interfaces/IComponent.h`:
-
-```cpp
-// interfaces/IComponent.h  (copy verbatim into your module)
-#pragma once
-#include <QObject>
-#include <QWidget>
-#include <QtPlugin>
-
-class LogosAPI;
-
-class IComponent {
-public:
-    virtual ~IComponent() = default;
-    virtual QWidget* createWidget(LogosAPI* logosAPI = nullptr) = 0;
-    virtual void destroyWidget(QWidget* widget) = 0;
-};
-
-#define IComponent_iid "com.logos.component.IComponent"
-Q_DECLARE_INTERFACE(IComponent, IComponent_iid)
-```
-
-Expose it via `INCLUDE_DIRS` in your `CMakeLists.txt`:
-
-```cmake
-logos_module(
-    NAME my_ui_module
-    SOURCES src/my_ui_plugin.h src/my_ui_plugin.cpp
-    INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
-)
-```
-
-Then implement the plugin:
-
-```cpp
-#include <IComponent.h>
-
-class MyUIPlugin : public QObject, public IComponent
-{
-    Q_OBJECT
-    Q_INTERFACES(IComponent)
-    Q_PLUGIN_METADATA(IID IComponent_iid FILE "metadata.json")
-
-public:
-    Q_INVOKABLE QWidget* createWidget(LogosAPI* logosAPI = nullptr) override {
-        auto* widget = new QWidget();
-        // Build your UI here
-        return widget;
-    }
-
-    void destroyWidget(QWidget* widget) override {
-        delete widget;
-    }
-};
-```
-
-### 7.3 UI Modules (QML)
-
-For a QML-based UI module, create a directory with:
-
-```
-my_qml_module/
-├── manifest.json
-├── metadata.json
-└── Main.qml
-```
-
-**manifest.json:**
-```json
-{
-  "type": "ui_qml",
-  "main": "Main.qml",
-  "name": "my_qml_module",
-  "version": "1.0.0"
-}
-```
-
-**Main.qml:**
-```qml
-import QtQuick 2.15
-import QtQuick.Controls 2.15
-
-Item {
-    width: 400
-    height: 300
-
-    Button {
-        text: "Call Core Module"
-        onClicked: {
-            // logos bridge is injected by the host
-            var result = logos.callModule("my_module", "doSomething", ["hello"])
-            console.log("Result:", result)
-        }
-    }
-}
-```
-
-QML modules are sandboxed: no network access, no filesystem access outside the module directory.
-
-### 7.4 Module Dependencies
+### 8.2 Module Dependencies
 
 Declare dependencies in your `metadata.json`:
 
@@ -1070,6 +993,7 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 | [logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli) | Headless CLI runtime | `logoscore` (CLI) |
 | [logos-package](https://github.com/logos-co/logos-package) | Package format | `lgx` (CLI), `liblgx` (library) |
 | [logos-package-manager-module](https://github.com/logos-co/logos-package-manager-module) | Package management | `lgpm` (CLI), `package_manager_plugin` |
+| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app) | Minimal UI module runner | `logos-standalone-app` (loads a single UI plugin for testing) |
 | [logos-basecamp](https://github.com/logos-co/logos-basecamp) | Desktop app shell | `LogosApp` (GUI), MDI workspace, plugin loader |
 
 ## Reference: CLI Tools Summary
@@ -1077,36 +1001,36 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 ### `lm` -- Module Inspector
 
 ```bash
-lm metadata <plugin-file> [--json]    # View module metadata
-lm methods <plugin-file> [--json]     # List Q_INVOKABLE methods
+lm <plugin-file>                              # Show metadata + methods
+lm metadata <plugin-file> [--json]            # View module metadata
+lm methods <plugin-file> [--json]             # List Q_INVOKABLE methods
 ```
 
 ### `logoscore` -- Headless Runtime
 
 ```bash
-logoscore -m <modules-dir> --load-modules <name> [-c "<module>.<method>(args)"]
-```
+# Daemon mode
+logoscore -D -m <modules-dir>                 # Start daemon
+logoscore load-module <name>                  # Load a module
+logoscore call <module> <method> [args]       # Call a method
+logoscore list-modules [--loaded]             # List modules
+logoscore module-info <name>                  # Show module details
+logoscore status                              # Daemon health
+logoscore stop                                # Stop daemon
 
-### `lgx` -- Package Tool
-
-```bash
-lgx create <output.lgx> --name <name>                  # Create empty package
-lgx add-variant <pkg.lgx> --variant <name> --files <path> [--main <file>]
-lgx remove-variant <pkg.lgx> --variant <name>
-lgx list <pkg.lgx>                                      # List contents
-lgx verify <pkg.lgx>                                    # Validate structure
-lgx extract <pkg.lgx> --variant <name> --output <dir>   # Extract
+# Inline mode (legacy)
+logoscore -m <dir> -l <name> -c "<module>.<method>(args)" [--quit-on-finish]
 ```
 
 ### `lgpm` -- Package Manager
 
 ```bash
-lgpm search <query>                          # Search packages
-lgpm list [--category <cat>] [--installed]   # List packages
-lgpm install <pkg> [pkgs...]                 # Install with dependency resolution
-lgpm install --file <path.lgx>               # Install local file
-lgpm info <pkg>                              # Package details
-lgpm categories                              # List categories
+./package-manager/bin/lgpm search <query>                          # Search packages
+./package-manager/bin/lgpm list [--category <cat>] [--installed]   # List packages
+./package-manager/bin/lgpm install <pkg> [pkgs...]                 # Install with dependency resolution
+./package-manager/bin/lgpm install --file <path.lgx>               # Install local file
+./package-manager/bin/lgpm info <pkg>                              # Package details
+./package-manager/bin/lgpm categories                              # List categories
 ```
 
 ### `logos-cpp-generator` -- SDK Code Generator
@@ -1115,6 +1039,14 @@ lgpm categories                              # List categories
 logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only]
 logos-cpp-generator --metadata <metadata.json> --module-dir <dir> [--output-dir <dir>]
 logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir>]
+```
+
+### `nix-bundle-lgx` -- LGX Bundler
+
+```bash
+nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib            # Dev variant
+nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib   # Portable variant
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib       # Both variants
 ```
 
 ---
@@ -1158,20 +1090,57 @@ Check that:
 ### lgpm install fails
 
 - Check your internet connection (lgpm fetches from GitHub Releases)
-- Try specifying a release: `lgpm --release v1.0.0 install my_module`
-- For local files: `lgpm install --file ./my_module.lgx`
-- Check the target directory is writable: `lgpm --modules-dir ./modules install my_module`
+- Try specifying a release: `./package-manager/bin/lgpm --release v1.0.0 install my_module`
+- For local files: `./package-manager/bin/lgpm install --file ./my_module.lgx`
+- Check the target directory is writable: `./package-manager/bin/lgpm --modules-dir ./modules install my_module`
+
+### Checking if a module loaded successfully
+
+Use `logoscore` to verify your module loads and its methods are callable:
+
+```bash
+# Start daemon and load the module
+./logos/bin/logoscore -D -m ./modules &
+
+# Check if the module is listed as loaded
+./logos/bin/logoscore list-modules --loaded
+
+# Inspect the module
+./logos/bin/logoscore module-info my_module
+
+# Or use inline mode for a quick check
+./logos/bin/logoscore -m ./modules -l my_module -c "my_module.greet(test)" --quit-on-finish
+```
+
+If the module doesn't appear, check:
+1. The `modules/` directory contains a subdirectory for your module with `manifest.json` and the plugin binary
+2. The variant in the manifest matches your platform (e.g., `darwin-arm64-dev` for dev builds on Apple Silicon)
+3. Use `lm` to verify the plugin binary is a valid Qt plugin: `./lm/bin/lm ./modules/my_module/my_module_plugin.dylib`
+
+### Capability module not found
+
+logos-basecamp requires the `capability` module to be installed. It is bundled as a preinstall `.lgx` package and installed on first launch. If you see errors about it:
+
+1. Check that the preinstall directory exists: `ls ./logos-basecamp/preinstall/`
+2. Check that the capability module was extracted to the modules directory
+3. Verify the LGX variant type matches your basecamp build (dev variant for dev build, portable for portable build)
+
+### LGX variant mismatch
+
+If a module installs but fails to load, the variant type may not match:
+
+- **Dev build** of logos-basecamp needs **dev** LGX variants (`darwin-arm64-dev`)
+- **Portable build** needs **portable** variants (`darwin-arm64`)
+- Use `nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib` to produce packages with both variants
 
 ### Cross-platform builds
 
-Build on each target platform separately, then add each binary as a variant to the same `.lgx` package:
+Build on each target platform separately, then use `nix-bundle-lgx` to create `.lgx` packages:
 
 ```bash
-# On Linux x86_64:
-nix build .#lib
-lgx add-variant my_module.lgx --variant linux-x86_64 --files ./result/lib/my_module_plugin.so
+# On each platform, bundle produces the correct variant automatically:
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 
-# On macOS arm64:
-nix build .#lib
-lgx add-variant my_module.lgx --variant darwin-arm64 --files ./result/lib/my_module_plugin.dylib
+# Then merge platform-specific .lgx files into one:
+./lgx/bin/lgx merge my_module-linux.lgx my_module-macos.lgx -o my_module.lgx
 ```
