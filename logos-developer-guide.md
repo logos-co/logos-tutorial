@@ -175,32 +175,13 @@ logos-my-module/
 
 The key insight: **logos-module-builder** reduces ~600 lines of configuration across 5+ files down to ~70 lines across 2-3 files. `metadata.json` serves as the single source of truth — it contains both the runtime metadata (embedded into the plugin binary by Qt) and the build configuration (read by the builder via the `nix` section).
 
-The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by the builder) and calls the `logos_module()` macro, which sets up the Qt plugin target, links the SDK, configures include paths, and handles code generation. You just list your source files:
-
-```cmake
-cmake_minimum_required(VERSION 3.14)
-project(MyModulePlugin LANGUAGES CXX)
-
-if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
-    include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake")
-    include(cmake/LogosModule.cmake)
-else()
-    message(FATAL_ERROR "LogosModule.cmake not found")
-endif()
-
-logos_module(
-    NAME my_module
-    SOURCES
-        src/my_module_interface.h
-        src/my_module_plugin.h
-        src/my_module_plugin.cpp
-)
-```
+The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by the builder) and calls the `logos_module()` macro, which sets up the Qt plugin target, links the SDK, configures include paths, and handles code generation. You just list your source files. See the generated [`CMakeLists.txt`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/CMakeLists.txt) in the template.
 
 ### 1.3 The metadata.json Configuration
 
-The `metadata.json` file is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
+The `metadata.json` file is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest. See the scaffolded [`metadata.json`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/metadata.json) in the template.
+
+The full set of available fields:
 
 ```json
 {
@@ -209,8 +190,10 @@ The `metadata.json` file is the single source of truth for your module. It is em
   "type": "core",
   "category": "general",
   "description": "My first Logos module",
+  "icon": null,
   "main": "my_module_plugin",
   "dependencies": [],
+  "include": [],
 
   "nix": {
     "packages": {
@@ -237,114 +220,31 @@ The `metadata.json` file is the single source of truth for your module. It is em
 | `type` | No | `core` | Module type (`core`, `ui`, `ui_qml`) |
 | `category` | No | `general` | Category (general, network, chat, wallet, integration) |
 | `description` | No | `"A Logos module"` | Human-readable description |
+| `icon` | No | `null` | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory. |
 | `main` | Yes | -- | Plugin entry point (plugin name for core/ui, `Main.qml` for QML) |
 | `dependencies` | No | `[]` | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`. |
+| `include` | No | `[]` | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output. |
 | `nix.packages.build` | No | `[]` | Nix packages for build time |
 | `nix.packages.runtime` | No | `[]` | Nix packages for runtime |
-| `nix.external_libraries` | No | `[]` | External C/C++ libraries to link |
+| `nix.external_libraries` | No | `[]` | External C/C++ libraries to wrap. Each entry is an object — see [configuration reference](https://github.com/logos-co/logos-module-builder/blob/master/docs/configuration.md#nixexternal_libraries) for fields (`name`, `vendor_path`, `build_command`, etc.). |
 | `nix.cmake.find_packages` | No | `[]` | CMake `find_package()` calls |
 | `nix.cmake.extra_sources` | No | `[]` | Additional source files to compile |
 | `nix.cmake.extra_include_dirs` | No | `[]` | Additional include directories |
 | `nix.cmake.extra_link_libraries` | No | `[]` | Additional libraries to link |
 
-### 1.4 Writing Module Code
+### 1.4 Understanding the Module Code
 
-A Logos module is a **Qt plugin**. It must:
+The scaffolded source files form a standard **Qt plugin**. Browse the full source in the template:
+[`src/`](https://github.com/logos-co/logos-module-builder/tree/master/templates/minimal-module/src) --
+[`minimal_interface.h`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_interface.h) |
+[`minimal_plugin.h`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_plugin.h) |
+[`minimal_plugin.cpp`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_plugin.cpp)
 
-1. Inherit from `QObject` and implement the `PluginInterface`
-2. Declare an interface with `Q_INTERFACES`
-3. Embed metadata with `Q_PLUGIN_METADATA`
-4. Mark callable methods with `Q_INVOKABLE`
+Every Logos module must:
 
-#### The Interface Header (`src/my_module_interface.h`)
-
-```cpp
-#pragma once
-
-#include <QtPlugin>
-#include <QString>
-#include <interface.h>  // From logos-cpp-sdk: provides PluginInterface
-
-class MyModuleInterface : public PluginInterface
-{
-public:
-    virtual ~MyModuleInterface() {}
-
-    // Declare your module's public methods here
-    virtual QString doSomething(const QString& input) = 0;
-    virtual int compute(int a, int b) = 0;
-};
-
-#define MyModuleInterface_iid "com.logos.MyModuleInterface"
-Q_DECLARE_INTERFACE(MyModuleInterface, MyModuleInterface_iid)
-```
-
-#### The Plugin Header (`src/my_module_plugin.h`)
-
-```cpp
-#pragma once
-
-#include <QObject>
-#include "my_module_interface.h"
-
-class MyModulePlugin : public QObject, public MyModuleInterface
-{
-    Q_OBJECT
-    Q_INTERFACES(MyModuleInterface PluginInterface)
-    Q_PLUGIN_METADATA(IID MyModuleInterface_iid FILE "metadata.json")
-
-public:
-    explicit MyModulePlugin(QObject* parent = nullptr);
-    ~MyModulePlugin();
-
-    // PluginInterface
-    QString name() const override { return "my_module"; }
-    QString version() const override { return "1.0.0"; }
-
-    // Your methods -- mark with Q_INVOKABLE for remote access
-    Q_INVOKABLE void initLogos(LogosAPI* logosAPIInstance);
-    Q_INVOKABLE QString doSomething(const QString& input) override;
-    Q_INVOKABLE int compute(int a, int b) override;
-
-signals:
-    // For event forwarding to other modules
-    void eventResponse(const QString& eventName, const QVariantList& data);
-};
-```
-
-#### The Plugin Implementation (`src/my_module_plugin.cpp`)
-
-```cpp
-#include "my_module_plugin.h"
-#include <QDebug>
-
-MyModulePlugin::MyModulePlugin(QObject* parent) : QObject(parent)
-{
-    qDebug() << "MyModulePlugin: created";
-}
-
-MyModulePlugin::~MyModulePlugin()
-{
-    qDebug() << "MyModulePlugin: destroyed";
-}
-
-void MyModulePlugin::initLogos(LogosAPI* logosAPIInstance)
-{
-    // Store the API pointer for inter-module communication
-    logosAPI = logosAPIInstance;
-    qDebug() << "MyModulePlugin: LogosAPI initialized";
-}
-
-QString MyModulePlugin::doSomething(const QString& input)
-{
-    return "Processed: " + input;
-}
-
-int MyModulePlugin::compute(int a, int b)
-{
-    return a + b;
-}
-```
+1. **Inherit from `QObject` and implement `PluginInterface`** -- the interface header declares pure-virtual methods; the plugin class implements them.
+2. **Declare `Q_INTERFACES` and `Q_PLUGIN_METADATA`** -- this is how Qt discovers the plugin and embeds `metadata.json`.
+3. **Mark callable methods with `Q_INVOKABLE`** -- any `Q_INVOKABLE` method is automatically discoverable by `lm`, callable by `logoscore -c`, and accessible from other modules via `LogosAPI`.
 
 **Key rules:**
 
@@ -368,12 +268,10 @@ nix build .#lib
 # Build just the generated SDK headers (for other modules to use)
 nix build .#include
 
-# Enter the development shell (provides cmake, ninja, Qt, etc.)
+# Enter the dev shell for manual CMake builds (see: https://nix.dev/tutorials/first-steps/dev-environment)
+# The shell provides cmake, ninja, Qt, the Logos SDK, and all build dependencies.
 nix develop
-
-# Inside the dev shell, you can also build directly with CMake:
-cmake -B build -GNinja
-cmake --build build
+cmake -B build -GNinja && cmake --build build
 ```
 
 **Build outputs:**
@@ -1116,15 +1014,6 @@ experimental-features = nix-command flakes
 ### Module loads but LogosAPI is not available
 
 This happens when running a module outside the full Logos runtime (e.g., in the module viewer). The `LogosAPI` is only available when the module is loaded by `logoscore` or `logos-basecamp`.
-
-### Build fails finding Qt
-
-Ensure you're building inside the Nix environment:
-
-```bash
-nix develop   # Enter dev shell with all dependencies
-cmake -B build -GNinja && cmake --build build
-```
 
 ### Module not discovered by logos-basecamp
 

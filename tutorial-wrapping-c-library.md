@@ -172,7 +172,16 @@ T calc_version
 
 ## Step 2: Configure the Logos Module
 
-If you used the template in Step 1.1, you already have the skeleton files. Now customize them for your library. Change cpp headers and source files and the other files as below:
+The template from Step 1.1 generated skeleton files with placeholder names (`external_lib`, `example_lib`). Now rename and customize them for your library. You need to edit **every generated file**:
+
+| File | What to change |
+|------|---------------|
+| `metadata.json` | Module name, description, library name, include dirs |
+| `CMakeLists.txt` | Project name, module name, source filenames, library name |
+| `flake.nix` | Description (and dependency inputs if needed) |
+| `src/*.h`, `src/*.cpp` | Rename files, replace class/method names, add your wrapping logic |
+
+After renaming and editing, your project should look like this:
 
 ```
 logos-calc-module/
@@ -190,6 +199,8 @@ logos-calc-module/
 ```
 
 ### 2.1 `metadata.json` — Module Configuration
+
+> **Edit:** Change `name`, `description`, `main`, `nix.external_libraries[].name`, and `nix.cmake.extra_include_dirs` to match your module and library.
 
 This is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
 
@@ -236,6 +247,8 @@ This is the single source of truth for your module. It is embedded into the plug
 
 ### 2.2 `CMakeLists.txt` — Build File
 
+> **Edit:** Change `project()` name, `NAME`, `SOURCES` filenames, and `EXTERNAL_LIBS` to match your module and library.
+
 ```cmake
 cmake_minimum_required(VERSION 3.14)
 project(CalcModulePlugin LANGUAGES CXX)
@@ -276,6 +289,8 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
 
 ### 2.3 `flake.nix` — Nix Build Config
 
+> **Edit:** Change `description`. Add flake inputs here if your module depends on other modules or fetches a library from source (see [Advanced: Wrapping a Library from a Flake Input](#advanced-wrapping-a-library-from-a-flake-input)).
+
 ```nix
 {
   description = "Calculator module - wraps libcalc C library for Logos";
@@ -299,6 +314,8 @@ That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the S
 > **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 ### 2.4 `src/calc_module_interface.h` — Interface Declaration
+
+> **Edit:** Rename from `external_lib_interface.h`. Replace the class name, interface ID, include guard, and declare your module's methods as `Q_INVOKABLE virtual` pure-virtual functions.
 
 This declares the methods your module exposes. It inherits from `PluginInterface` (provided by the Logos C++ SDK).
 
@@ -335,6 +352,8 @@ Q_DECLARE_INTERFACE(CalcModuleInterface, CalcModuleInterface_iid)
 - The interface ID string (e.g., `"org.logos.CalcModuleInterface"`) must be unique across all modules
 
 ### 2.5 `src/calc_module_plugin.h` — Plugin Header
+
+> **Edit:** Rename from `external_lib_plugin.h`. Replace class name, interface references, `name()`/`version()` return values, and declare your `Q_INVOKABLE` wrapper methods. Add `#include` for your C library header.
 
 This is the actual plugin class. It inherits from both `QObject` (for Qt's meta-object system) and your interface.
 
@@ -394,6 +413,8 @@ signals:
 - **No `m_logosAPI` member variable** — the `LogosAPI`* pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
 
 ### 2.6 `src/calc_module_plugin.cpp` — Plugin Implementation
+
+> **Edit:** Rename from `external_lib_plugin.cpp`. Replace the placeholder implementations with actual calls to your C library functions.
 
 This is where the wrapping happens. Each method calls the corresponding C function.
 
