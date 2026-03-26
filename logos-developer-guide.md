@@ -18,7 +18,9 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [2.2 The logos-module-viewer](#22-the-logos-module-viewer)
 - [Part 3: Packaging Your Module](#part-3-packaging-your-module)
   - [3.1 The LGX Package Format](#31-the-lgx-package-format)
-  - [3.2 Bundling with nix-bundle-lgx](#32-bundling-with-nix-bundle-lgx)
+  - [3.2 Building LGX Packages](#32-building-lgx-packages)
+    - [Built-in Nix Derivation (Preferred)](#built-in-nix-derivation-preferred)
+    - [Using nix bundle (Alternative)](#using-nix-bundle-alternative)
 - [Part 4: Installing and Managing Modules](#part-4-installing-and-managing-modules)
   - [4.1 The lgpm CLI](#41-the-lgpm-cli)
   - [4.2 Installing from Local Files](#42-installing-from-local-files)
@@ -379,8 +381,7 @@ cmake --build build
 ```
 result/
 ├── lib/
-│   ├── my_module_plugin.so       # (or .dylib on macOS)
-│   └── metadata.json             # Runtime metadata
+│   └── my_module_plugin.so       # (or .dylib on macOS)
 └── include/
     ├── my_module_api.h           # Generated type-safe wrapper header
     └── my_module_api.cpp         # Generated wrapper implementation
@@ -498,15 +499,54 @@ mymodule.lgx (tar.gz)
 
 The **manifest.json** is auto-generated from your module's `metadata.json` by the bundler. It maps each variant to its main entry point.
 
-### 3.2 Bundling with nix-bundle-lgx
+### 3.2 Building LGX Packages
 
-The recommended way to create `.lgx` packages is using **nix-bundle-lgx**, which automatically bundles your `nix build` output into an `.lgx` file with the correct manifest and variant structure.
+There are two ways to create `.lgx` packages. The preferred approach uses the built-in Nix derivation that comes with `logos-module-builder`. Alternatively, you can use the `nix bundle` command directly.
+
+#### Built-in Nix Derivation (Preferred)
+
+When your module's `flake.nix` includes `nix-bundle-lgx` as an input (which all `logos-module-builder` templates do by default), LGX package outputs are automatically available as part of your flake:
 
 ```bash
 # Dev variant (uses /nix/store references, for local development)
-nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib
+nix build .#lgx
 
 # Portable variant (self-contained, all dependencies bundled)
+nix build .#lgx-portable
+
+# Dual variant (both dev and portable in one .lgx file)
+nix build .#lgx-dual
+```
+
+This produces a `my_module-<version>.lgx` file in the `result/` directory.
+
+This works because `logos-module-builder.lib.mkLogosModule` detects the `nix-bundle-lgx` input in your `flakeInputs` and automatically creates the `lgx`, `lgx-portable`, and `lgx-dual` package outputs. No extra configuration is needed — it is part of the standard module template:
+
+```nix
+{
+  inputs = {
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
+  };
+
+  outputs = inputs@{ logos-module-builder, ... }:
+    logos-module-builder.lib.mkLogosModule {
+      src = ./.;
+      configFile = ./metadata.json;
+      flakeInputs = inputs;
+    };
+}
+```
+
+#### Using `nix bundle` (Alternative)
+
+You can also create `.lgx` packages using the `nix bundle` command directly. This is useful if your module does not use `logos-module-builder` or if you need the `dual` bundling mode (both dev and portable in a single `.lgx` file):
+
+```bash
+# Dev variant
+nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib
+
+# Portable variant
 nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib
 
 # Dual variant (both dev and portable in one .lgx file)
@@ -517,11 +557,11 @@ This produces a `my_module-<version>.lgx` file in the current directory.
 
 **Bundling modes:**
 
-| Mode | Command | Variant Created | Use Case |
-|------|---------|----------------|----------|
-| **Dev** | `nix bundle --bundler ...#default .#lib` | `darwin-arm64-dev` | Local development (requires Nix store) |
-| **Portable** | `nix bundle --bundler ...#portable .#lib` | `darwin-arm64` | Distribution (self-contained, no Nix needed) |
-| **Dual** | `nix bundle --bundler ...#dual .#lib` | Both dev and portable | One package for both environments |
+| Mode | Built-in Command | `nix bundle` Command | Variant Created | Use Case |
+|------|-----------------|---------------------|----------------|----------|
+| **Dev** | `nix build .#lgx` | `nix bundle --bundler ...#default .#lib` | `darwin-arm64-dev` | Local development (requires Nix store) |
+| **Portable** | `nix build .#lgx-portable` | `nix bundle --bundler ...#portable .#lib` | `darwin-arm64` | Distribution (self-contained, no Nix needed) |
+| **Dual** | `nix build .#lgx-dual` | `nix bundle --bundler ...#dual .#lib` | Both dev and portable | One package for both environments |
 
 **Variant naming:**
 
@@ -1044,6 +1084,12 @@ logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir
 ### `nix-bundle-lgx` -- LGX Bundler
 
 ```bash
+# Preferred: built-in derivation (when using logos-module-builder with nix-bundle-lgx input)
+nix build .#lgx                                                       # Dev variant
+nix build .#lgx-portable                                              # Portable variant
+nix build .#lgx-dual                                                  # Both variants
+
+# Alternative: nix bundle command
 nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib            # Dev variant
 nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib   # Portable variant
 nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib       # Both variants
@@ -1131,14 +1177,17 @@ If a module installs but fails to load, the variant type may not match:
 
 - **Dev build** of logos-basecamp needs **dev** LGX variants (`darwin-arm64-dev`)
 - **Portable build** needs **portable** variants (`darwin-arm64`)
-- Use `nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib` to produce packages with both variants
+- Use `nix build .#lgx` and `nix build .#lgx-portable` to produce each variant separately, `nix build .#lgx-dual` for a single package with both, or `nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib` via the standalone bundler
 
 ### Cross-platform builds
 
-Build on each target platform separately, then use `nix-bundle-lgx` to create `.lgx` packages:
+Build on each target platform separately to create `.lgx` packages:
 
 ```bash
-# On each platform, bundle produces the correct variant automatically:
+# On each platform, the built-in derivation produces the correct variant automatically:
+nix build .#lgx-portable
+
+# Or using nix bundle for dual variant:
 nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 
 # Then merge platform-specific .lgx files into one:

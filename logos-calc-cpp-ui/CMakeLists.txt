@@ -15,6 +15,8 @@ logos_module(
         src/calc_ui_cpp_plugin.cpp
         src/calc_backend.h
         src/calc_backend.cpp
+    INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
 )
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Quick QuickWidgets)

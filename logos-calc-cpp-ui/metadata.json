@@ -17,7 +17,7 @@
     "cmake": {
       "find_packages": [],
       "extra_sources": [],
-      "extra_include_dirs": [],
+      "extra_include_dirs": ["interfaces"],
       "extra_link_libraries": []
     }
   }

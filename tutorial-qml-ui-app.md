@@ -233,6 +233,7 @@ The template already has everything wired up. Update the description and add `ca
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
     logos-standalone-app.url = "github:logos-co/logos-standalone-app";
+    nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";  # must match dependency name in metadata.json
   };
 
@@ -263,22 +264,17 @@ The app opens immediately. No modules are loaded, so clicking buttons shows "Log
 
 ### 5.2 Full functionality (with modules)
 
-To test actual calls to `calc_module`, you need a modules directory with `capability_module` (required by all UI plugins) and `calc_module` installed via `lgpm`. Do this once:
+To test actual calls to `calc_module`, you need a modules directory with `calc_module` installed via `lgpm`. The `capability_module` is loaded automatically by the standalone app. Do this once:
 
 ```bash
 nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
 mkdir -p modules
 
-# Install capability_module (required by all UI plugins)
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx' \
-  'github:logos-co/logos-capability-module' -o lgx-capability
-./pm/bin/lgpm --modules-dir ./modules install --file lgx-capability/*.lgx
-
 # Bundle and install calc_module (from Part 1)
 cd ../logos-calc-module
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx' '.#lib' -o lgx-result
+nix build '.#lgx'
 cd ../logos-calc-ui
-./pm/bin/lgpm --modules-dir ./modules install --file ../logos-calc-module/lgx-result/*.lgx
+./pm/bin/lgpm --modules-dir ./modules install --file ../logos-calc-module/result/*.lgx
 ```
 
 Then run with the modules directory:
@@ -336,17 +332,19 @@ Available theme tokens via `Theme.palette`:
 
 ### 7.1 Bundle as LGX packages
 
-Create `.lgx` packages using the `#dual` bundler (includes both dev and portable variants, so they work with any basecamp build):
+Create `.lgx` packages using the dual variant (includes both dev and portable variants, so they work with any basecamp build):
 
 ```bash
 # Package calc_module (from Part 1)
 cd ../logos-calc-module
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#dual' '.#lib' -o lgx-calc-module
+nix build '.#lgx-dual'
 
 # Package the QML UI plugin
 cd ../logos-calc-ui
-nix bundle --bundler 'github:logos-co/nix-bundle-lgx#dual' '.#lib' -o lgx-calc-ui
+nix build '.#lgx-dual'
 ```
+
+> For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
 ### 7.2 Build and run logos-basecamp
 
@@ -382,11 +380,11 @@ nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
 
 # Install core module
 ./pm/bin/lgpm --modules-dir BASECAMP_DIR/modules \
-  install --file ../logos-calc-module/lgx-calc-module/*.lgx
+  install --file ../logos-calc-module/result/*.lgx
 
 # Install UI plugin
 ./pm/bin/lgpm --modules-dir BASECAMP_DIR/plugins \
-  install --file lgx-calc-ui/*.lgx
+  install --file result/*.lgx
 
 # Launch basecamp -- your modules appear alongside the built-in ones
 ./basecamp-result/bin/logos-basecamp
@@ -399,8 +397,8 @@ Instead of using `lgpm` on the command line, you can install modules through the
 1. Launch `logos-basecamp`
 2. Go to **Package Manager**
 3. Click **Install from file**
-4. Select `lgx-calc-module/*.lgx` -- installs `calc_module`
-5. Repeat for `lgx-calc-ui/*.lgx` -- installs `calc_ui`
+4. Select `../logos-calc-module/result/*.lgx` -- installs `calc_module`
+5. Repeat for `result/*.lgx` -- installs `calc_ui`
 
 The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml`.
 

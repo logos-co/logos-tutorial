@@ -4,15 +4,14 @@
 #include <QObject>
 #include <QWidget>
 #include <QVariantList>
+#include <IComponent.h>
 #include "calc_ui_cpp_interface.h"
 
-class LogosAPI;
-
-class CalcUiCppPlugin : public QObject, public CalcUiCppInterface
+class CalcUiCppPlugin : public QObject, public CalcUiCppInterface, public IComponent
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")
-    Q_INTERFACES(CalcUiCppInterface PluginInterface)
+    Q_PLUGIN_METADATA(IID IComponent_iid FILE "metadata.json")
+    Q_INTERFACES(CalcUiCppInterface PluginInterface IComponent)
 
 public:
     explicit CalcUiCppPlugin(QObject* parent = nullptr);
