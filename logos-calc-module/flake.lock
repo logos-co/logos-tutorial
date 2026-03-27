@@ -53,6 +53,7 @@
         "logos-cpp-sdk": "logos-cpp-sdk",
         "logos-module": "logos-module",
         "logos-nix": "logos-nix_3",
+        "nix-bundle-lgx": "nix-bundle-lgx",
         "nixpkgs": [
           "logos-module-builder",
           "logos-nix",
@@ -60,11 +61,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1774521784,
-        "narHash": "sha256-/rmNYffGTK+FTwJUr8dz7vsJz0Tq/sZH3mQ5yt1LCZA=",
+        "lastModified": 1774606412,
+        "narHash": "sha256-olDFw4tG0tNEmOH1sbXpbmWP6E7ZQWqE7kO9zGI7VY0=",
         "owner": "logos-co",
         "repo": "logos-module-builder",
-        "rev": "c55dfaaade0f1d0d971946f7d24733134c56d5a4",
+        "rev": "59a4e39dab3f1e8d963663692981d0a8abbabaaf",
         "type": "github"
       },
       "original": {
@@ -185,6 +186,7 @@
       "inputs": {
         "logos-nix": "logos-nix_5",
         "nixpkgs": [
+          "logos-module-builder",
           "nix-bundle-lgx",
           "logos-package",
           "logos-nix",
@@ -209,6 +211,7 @@
       "inputs": {
         "logos-nix": "logos-nix_6",
         "nixpkgs": [
+          "logos-module-builder",
           "nix-bundle-lgx",
           "nix-bundle-dir",
           "logos-nix",
@@ -235,6 +238,7 @@
         "logos-package": "logos-package",
         "nix-bundle-dir": "nix-bundle-dir",
         "nixpkgs": [
+          "logos-module-builder",
           "nix-bundle-lgx",
           "logos-nix",
           "nixpkgs"
@@ -352,8 +356,7 @@
     },
     "root": {
       "inputs": {
-        "logos-module-builder": "logos-module-builder",
-        "nix-bundle-lgx": "nix-bundle-lgx"
+        "logos-module-builder": "logos-module-builder"
       }
     }
   },
