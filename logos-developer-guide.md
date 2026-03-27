@@ -403,7 +403,7 @@ There are two ways to create `.lgx` packages. The preferred approach uses the bu
 
 #### Built-in Nix Derivation (Preferred)
 
-When your module's `flake.nix` includes `nix-bundle-lgx` as an input (which all `logos-module-builder` templates do by default), LGX package outputs are automatically available as part of your flake:
+When your module uses `logos-module-builder`, LGX package outputs are automatically available as part of your flake (the builder includes `nix-bundle-lgx` internally):
 
 ```bash
 # Dev variant (uses /nix/store references, for local development)
@@ -418,13 +418,12 @@ nix build .#lgx-dual
 
 This produces a `my_module-<version>.lgx` file in the `result/` directory.
 
-This works because `logos-module-builder.lib.mkLogosModule` detects the `nix-bundle-lgx` input in your `flakeInputs` and automatically creates the `lgx`, `lgx-portable`, and `lgx-dual` package outputs. No extra configuration is needed — it is part of the standard module template:
+This works because `logos-module-builder` includes `nix-bundle-lgx` as its own dependency and `mkLogosModule` automatically creates the `lgx`, `lgx-portable`, and `lgx-dual` package outputs. No extra configuration is needed — it is part of the standard module template:
 
 ```nix
 {
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
-    nix-bundle-lgx.url = "github:logos-co/nix-bundle-lgx";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -982,7 +981,7 @@ logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir
 ### `nix-bundle-lgx` -- LGX Bundler
 
 ```bash
-# Preferred: built-in derivation (when using logos-module-builder with nix-bundle-lgx input)
+# Preferred: built-in derivation (logos-module-builder includes nix-bundle-lgx)
 nix build .#lgx                                                       # Dev variant
 nix build .#lgx-portable                                              # Portable variant
 nix build .#lgx-dual                                                  # Both variants
