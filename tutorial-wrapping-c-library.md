@@ -493,7 +493,25 @@ QString CalcModulePlugin::libVersion()
 
 ### 3.1 Initialize the Git repo
 
-Nix flakes require a git repository:
+Nix flakes require a git repository.
+
+Before staging files, create a `.gitignore` to exclude vendored binaries and build artifacts:
+
+```
+# Vendored C library binaries (built by nix, do not commit)
+lib/*.so
+lib/*.dylib
+lib/*.a
+
+# Nix build output
+result
+result-*
+
+# CMake build directory
+build/
+```
+
+Then initialise the repo:
 
 ```bash
 cd logos-calc-module
