@@ -585,7 +585,7 @@ void CalcUiCppPlugin::destroyWidget(QWidget* widget)
 
 ## Step 9: `flake.nix`
 
-Pass `logosStandalone` to `mkLogosModule` and you get `apps.default` (i.e. `nix run`) for free — no manual `apps` block required.
+Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wires up `apps.default` (i.e. `nix run`) for free — no manual `apps` block or `logosStandalone` parameter required. The standalone app runner is bundled with `logos-module-builder`.
 
 **Important — `flakeInputs`:** Because `metadata.json` declares `"dependencies": ["calc_module"]`, the build system runs `logos-cpp-generator` before compiling your C++ sources. The generator introspects `calc_module`'s built plugin to produce `logos_sdk.h` / `logos_sdk.cpp` (and per-module `calc_module_api.h` / `calc_module_api.cpp`). These are the files your backend includes as `#include "logos_sdk.h"`. For this to work, `calc_module` must be available as a built Nix package at code-generation time — that is what `flakeInputs` provides (the builder discovers dependency inputs by matching their names against the `dependencies` array in `metadata.json`). Without it, the build fails with `'logos_sdk.h' file not found`.
 
@@ -595,21 +595,19 @@ Pass `logosStandalone` to `mkLogosModule` and you get `apps.default` (i.e. `nix 
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-standalone-app.url = "github:logos-co/logos-standalone-app";
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
 
-  outputs = inputs@{ logos-module-builder, logos-standalone-app, calc_module, ... }:
+  outputs = inputs@{ logos-module-builder, calc_module, ... }:
     logos-module-builder.lib.mkLogosModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
-      logosStandalone = logos-standalone-app;
     };
 }
 ```
 
-`logosStandalone` tells `mkLogosModule` to wire up `apps.default` automatically. It stages the compiled plugin alongside `metadata.json` and any icon files into a Nix store directory, then produces a shell script that calls `logos-standalone-app` with that directory — exactly what `nix run` executes.
+Because `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wires up `apps.default`. It stages the compiled plugin alongside `metadata.json` and any icon files into a Nix store directory, bundles all module dependencies (direct and transitive) from their LGX packages, then produces a shell script that calls `logos-standalone-app` with that directory — exactly what `nix run` executes. All required backend modules are self-contained; no external setup is needed.
 
 ---
 

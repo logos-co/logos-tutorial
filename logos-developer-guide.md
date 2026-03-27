@@ -149,10 +149,10 @@ nix flake init -t github:logos-co/logos-module-builder#ui-qml-module
 |----------|----------|
 | `default` | Minimal core module (C++ backend, no UI) |
 | `with-external-lib` | Core module wrapping an external C/C++ library |
-| `ui-module` | C++ Qt widget UI module with `logos-standalone-app` runner |
-| `ui-qml-module` | QML-based UI module with `logos-standalone-app` runner |
+| `ui-module` | C++ Qt widget UI module with standalone app runner |
+| `ui-qml-module` | QML-based UI module with standalone app runner |
 
-The `ui-module` and `ui-qml-module` templates include `logos-standalone-app` as an input, enabling `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell.
+The `ui-module` and `ui-qml-module` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
@@ -1044,6 +1044,75 @@ Use `logoscore` to verify your module loads and its methods are callable:
 
 # Or use inline mode for a quick check
 ./logos/bin/logoscore -m ./modules -l my_module -c "my_module.greet(test)" --quit-on-finish
+```
+
+### UI module `nix run` fails to load dependencies
+
+When running a UI module with `nix run`, the standalone app automatically bundles all module dependencies declared in `metadata.json`. If dependencies fail to load, check the following requirements:
+
+**Requirements for auto-bundled dependencies:**
+
+1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with the standalone app.
+
+2. **Dependencies must be listed in `metadata.json`** under the `"dependencies"` array:
+   ```json
+   {
+     "name": "my_ui_module",
+     "type": "ui",
+     "dependencies": ["calc_module", "storage_module"]
+   }
+   ```
+
+3. **Each dependency must have a matching flake input** — the flake input name must exactly match the dependency name in `metadata.json`:
+   ```nix
+   inputs = {
+     logos-module-builder.url = "github:logos-co/logos-module-builder";
+     calc_module.url = "github:logos-co/logos-calc-module";
+     storage_module.url = "github:logos-co/logos-storage-module";
+   };
+   ```
+
+4. **Module names must be consistent** — the `"name"` field in each dependency's `metadata.json` must match its flake input name. The build system uses this name to locate the plugin binary (`{name}_plugin.so` / `{name}_plugin.dylib`).
+
+**What changed (no more `logos-standalone-app` input):**
+
+- `logos-standalone-app` is now bundled inside `logos-module-builder` — UI module flakes no longer need it as a separate input.
+- No `logosStandalone` parameter is needed in `mkLogosModule` or `mkLogosQmlModule` calls.
+- Dependencies (including transitive ones) are automatically resolved from the flake input tree, bundled as LGX packages at build time, and extracted into the modules directory at runtime.
+- The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
+
+**Example C++ UI module `flake.nix`:**
+```nix
+{
+  description = "My UI module";
+  inputs = {
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-calc-module";
+  };
+  outputs = inputs@{ logos-module-builder, ... }:
+    logos-module-builder.lib.mkLogosModule {
+      src = ./.;
+      configFile = ./metadata.json;
+      flakeInputs = inputs;
+    };
+}
+```
+
+**Example QML UI module `flake.nix`:**
+```nix
+{
+  description = "My QML UI module";
+  inputs = {
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-calc-module";
+  };
+  outputs = inputs@{ logos-module-builder, ... }:
+    logos-module-builder.lib.mkLogosQmlModule {
+      src = ./.;
+      configFile = ./metadata.json;
+      flakeInputs = inputs;
+    };
+}
 ```
 
 If the module doesn't appear, check:

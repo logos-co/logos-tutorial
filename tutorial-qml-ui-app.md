@@ -232,21 +232,19 @@ The template already has everything wired up. Update the description and add `ca
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
-    logos-standalone-app.url = "github:logos-co/logos-standalone-app";
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";  # must match dependency name in metadata.json
   };
 
-  outputs = inputs@{ logos-module-builder, logos-standalone-app, ... }:
+  outputs = inputs@{ logos-module-builder, ... }:
     logos-module-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
-      logosStandalone = logos-standalone-app;
     };
 }
 ```
 
-`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory. `logosStandalone` wires up `apps.default` so `nix run .` launches the UI in a standalone window. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically — note that the input attribute name (`calc_module`) must match the dependency name.
+`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically — note that the input attribute name (`calc_module`) must match the dependency name.
 
 ---
 
