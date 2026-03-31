@@ -662,7 +662,7 @@ nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 nix build '.#lgx'
 
 # Install it into a modules directory using the Logos Package Manager
-nix build 'github:logos-co/logos-package-manager-module#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 mkdir -p modules
 ./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
 ```
