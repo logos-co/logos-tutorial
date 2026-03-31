@@ -17,7 +17,7 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 | Sandboxing | Yes | No |
 | QML support | Native | Optional via `QQuickWidget` |
 
-The C++ backend class also fixes the type coercion issue from Part 2 — `int` arguments stay `int` all the way to the module.
+The C++ backend class provides type-safe calls via generated SDK wrappers — `int` arguments stay `int` all the way to the module without relying on runtime coercion.
 
 **Prerequisites:**
 
@@ -220,7 +220,7 @@ private:
 
 ## Step 6: Backend Class
 
-The backend class is the key addition over the QML plugin. It holds a `LogosModules*` wrapper — a typed C++ SDK generated at build time from `metadata.json` — and exposes `Q_INVOKABLE` methods that call `calc_module` through it. Because the calls go through a generated typed class, argument types are preserved — no `QString`/`int` coercion issues.
+The backend class is the key addition over the QML plugin. It holds a `LogosModules*` wrapper — a typed C++ SDK generated at build time from `metadata.json` — and exposes `Q_INVOKABLE` methods that call `calc_module` through it. Because the calls go through a generated typed class, argument types are preserved at compile time — no runtime coercion needed.
 
 ### How the generated SDK works
 

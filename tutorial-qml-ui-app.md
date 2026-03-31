@@ -424,27 +424,18 @@ qml Main.qml
 
 ## Known Limitations
 
-### QML-to-C++ type coercion: `int` parameters called as `QString`
+### QML-to-C++ type coercion
 
-When calling C++ module methods from QML via `logos.callModule()`, all arguments are passed as strings. If the target method expects `int`, `bool`, or other non-string types, the call will fail with:
+When calling C++ module methods from QML via `logos.callModule()`, arguments are passed through IPC as `QVariant` values. The runtime automatically coerces mismatched types to match the target method signature — for example, a `double` sent from QML will be converted to `int` if the method expects `int`, and numeric strings will be converted to their numeric types.
 
-```
-QMetaObject::invokeMethod: No such method CalcModulePlugin::add(QString,QString)
-Candidates are:
-    add(int,int)
-```
-
-**Workaround:** Define your C++ methods to accept `QString` parameters and convert inside the implementation:
+This means you can define methods with their natural parameter types (`int`, `bool`, `double`, etc.) and calls from QML will work without manual conversion:
 
 ```cpp
-// Instead of:  Q_INVOKABLE int add(int a, int b);
-// Use:
-Q_INVOKABLE QString add(const QString& a, const QString& b) {
-    return QString::number(a.toInt() + b.toInt());
-}
+// This works — the runtime coerces arguments automatically
+Q_INVOKABLE int add(int a, int b) { return a + b; }
 ```
 
-This ensures the QML bridge can match the method signature. Methods that already use `QString` parameters work without any changes.
+> **Note:** Type coercion uses `QVariant::convert()`, which rounds (not truncates) when converting `double` to `int` — e.g., `3.7` becomes `4`.
 
 ### QML changes not appearing after rebuild
 
