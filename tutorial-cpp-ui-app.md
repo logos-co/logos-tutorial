@@ -61,6 +61,8 @@ logos-calc-ui-cpp/
 ├── flake.nix
 ├── metadata.json
 ├── CMakeLists.txt
+├── interfaces/
+│   └── IComponent.h
 └── src/
     ├── ui_example_interface.h
     ├── ui_example_plugin.h

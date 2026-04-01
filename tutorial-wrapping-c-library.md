@@ -500,14 +500,9 @@ QString CalcModulePlugin::libVersion()
 
 Nix flakes require a git repository.
 
-Before staging files, create a `.gitignore` to exclude vendored binaries and build artifacts:
+Before staging files, create a `.gitignore` to exclude build artifacts:
 
 ```
-# Vendored C library binaries (built by nix, do not commit)
-lib/*.so
-lib/*.dylib
-lib/*.a
-
 # Nix build output
 result
 result-*
