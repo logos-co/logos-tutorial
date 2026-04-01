@@ -15,8 +15,13 @@ This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.d
 
 - **Nix** with flakes enabled. Install from [nixos.org](https://nixos.org/download.html), then enable flakes globally:
   ```bash
-  # Add to ~/.config/nix/nix.conf:
-  experimental-features = nix-command flakes
+  # Add to ~/.config/nix/nix.conf (create the file if it doesn't exist):
+  mkdir -p ~/.config/nix
+  echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
+  ```
+  Verify it works:
+  ```bash
+  nix flake --help >/dev/null 2>&1 && echo "Flakes enabled" || echo "Flakes NOT enabled — check nix.conf"
   ```
 - **A C compiler** (gcc or clang) for building the C library. Only needed if you're building the `.so`/`.dylib` yourself rather than using a pre-built library.
 - Basic familiarity with C and C++.
@@ -156,14 +161,14 @@ nm -D lib/libcalc.so | grep calc
 # nm -gU lib/libcalc.dylib | grep calc
 ```
 
-You should see:
+You should see each symbol marked with `T` (text/code section). Addresses will vary:
 
 ```
-T calc_add
-T calc_factorial
-T calc_fibonacci
-T calc_multiply
-T calc_version
+0000000000001139 T calc_add
+0000000000001179 T calc_factorial
+00000000000011f5 T calc_fibonacci
+0000000000001159 T calc_multiply
+0000000000001299 T calc_version
 ```
 
 > **Wrapping a third-party library?** If you're wrapping an existing library (e.g., from a system package or a GitHub repo), you don't need to write the C code — just place the pre-built `.so`/`.dylib` and its header file in `lib/`.

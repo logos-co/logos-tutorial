@@ -65,7 +65,7 @@ logos-calc-ui/
 
 ## Step 2: Update `metadata.json`
 
-Replace the template contents with your plugin's details:
+Replace the template contents with your plugin's details. The template may generate an extra `nix` section — keep it as-is, it's used by the builder:
 
 ```json
 {
@@ -76,7 +76,21 @@ Replace the template contents with your plugin's details:
   "main": "Main.qml",
   "dependencies": ["calc_module"],
   "category": "tools",
-  "icon": "icons/calc.png"
+  "icon": "icons/calc.png",
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
 }
 ```
 
@@ -406,7 +420,7 @@ The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml
 For rapid iteration on QML without rebuilding, set `QML_PATH` to your QML source directory:
 
 ```bash
-QML_PATH=$PWD/src/qml nix run .
+QML_PATH=$PWD nix run .
 ```
 
 Edit `Main.qml`, close and re-run — changes appear immediately without `nix build`. When `QML_PATH` is set, the plugin loads QML files from the filesystem instead of from Qt resources, so your edits are picked up on each launch.

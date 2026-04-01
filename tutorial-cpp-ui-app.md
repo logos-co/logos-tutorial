@@ -110,9 +110,8 @@ Create the icon directory and add a placeholder icon. The icon is displayed in t
 
 ```bash
 mkdir -p icons
-# Copy any PNG here — or use a placeholder:
-convert -size 64x64 xc:'#4a90d9' icons/calc.png 2>/dev/null \
-  || printf '\x89PNG\r\n\x1a\n' > icons/calc.png
+# Copy any PNG here — or generate a 64×64 placeholder:
+echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeklEQVR4nO3PUQkAIBTAwFfPdtazjSH8OITBAtxm7fN1wwUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWPHYBic8hlloAWpEAAAAASUVORK5CYII=" | base64 -d > icons/calc.png
 ```
 
 > **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match — e.g., `calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
@@ -623,8 +622,13 @@ nix build --override-input calc_module path:../logos-calc-module
 Inspect the output with `lm` (the module inspector from `logos-module`):
 
 ```bash
-nix build 'github:logos-co/logos-module/337223f2a72710d8052ca750510cd25d33e05047#cli' --out-link ./lm-cli
-./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.dylib
+nix build 'github:logos-co/logos-module/337223f2a72710d8052ca750510cd25d33e05047#lm' --out-link ./lm-cli
+
+# Linux
+./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.so
+
+# macOS
+# ./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.dylib
 ```
 
 You should see `createWidget` and `destroyWidget` in the methods list.

@@ -289,6 +289,7 @@
       "original": {
         "owner": "logos-co",
         "repo": "logos-module-builder",
+        "rev": "b6cf87d30e2995e023496fcfc7f06e8127c6ac5b",
         "type": "github"
       }
     },
