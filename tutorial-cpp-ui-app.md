@@ -48,7 +48,7 @@ The plugin implements `createWidget()` which returns a `QWidget*`. The widget is
 
 ```bash
 mkdir logos-calc-ui-cpp && cd logos-calc-ui-cpp
-nix flake init -t github:logos-co/logos-module-builder/46a51e5fc321ac11b966c1cc2a2cff21d36fef95#ui-module
+nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-module
 git init && git add -A
 ```
 
@@ -623,7 +623,7 @@ Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wir
   description = "Calculator C++ UI plugin for Logos - widget frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/46a51e5fc321ac11b966c1cc2a2cff21d36fef95";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
     calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
   };
 
@@ -654,7 +654,7 @@ nix build --override-input calc_module path:../logos-calc-module
 Inspect the output with `lm` (the module inspector from `logos-module`):
 
 ```bash
-nix build 'github:logos-co/logos-module/337223f2a72710d8052ca750510cd25d33e05047#lm' --out-link ./lm-cli
+nix build 'github:logos-co/logos-module/tutorial-v1#lm' --out-link ./lm-cli
 
 # Linux
 ./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.so
@@ -715,7 +715,7 @@ Build logos-basecamp, launch it once to preinstall its bundled modules, then ins
 
 ```bash
 # Build logos-basecamp
-nix build 'github:logos-co/logos-basecamp/4958efebce73eaa8776fdfa314d4c84fce656db1' -o basecamp-result
+nix build 'github:logos-co/logos-basecamp/tutorial-v1' -o basecamp-result
 
 # Launch once to preinstall bundled modules, then close it
 ./basecamp-result/bin/logos-basecamp
@@ -745,7 +745,7 @@ BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
 
 ```bash
 # Build lgpm CLI
-nix build 'github:logos-co/logos-package-manager/e5c25989861f4487c3dc8c7b3bc0062bcbc3221f#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./pm
 
 # Install core module
 ./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
@@ -765,7 +765,7 @@ The dev build above depends on nix store paths at runtime. For a self-contained 
 
 ```bash
 # Build portable basecamp (bundles all Qt frameworks/libraries)
-nix build 'github:logos-co/logos-basecamp/4958efebce73eaa8776fdfa314d4c84fce656db1#bin-bundle-dir' -o basecamp-portable
+nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-bundle-dir' -o basecamp-portable
 
 # Launch once to preinstall bundled modules
 ./basecamp-portable/bin/logos-basecamp

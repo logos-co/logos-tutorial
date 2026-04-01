@@ -289,8 +289,8 @@
       },
       "original": {
         "owner": "logos-co",
+        "ref": "tutorial-v1",
         "repo": "logos-module-builder",
-        "rev": "46a51e5fc321ac11b966c1cc2a2cff21d36fef95",
         "type": "github"
       }
     },
