@@ -4,7 +4,7 @@
   "type": "ui_qml",
   "category": "tools",
   "description": "Calculator UI - QML frontend for the calc_module",
-  "main": "Main.qml",
+  "view": "Main.qml",
   "icon": "icons/calc.png",
   "dependencies": ["calc_module"],
 

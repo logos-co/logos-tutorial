@@ -8,12 +8,29 @@ Item {
     property string result: ""
     property string errorText: ""
 
+    // Typed replica of the backend running in ui-host (generated from calc_ui_cpp.rep).
+    readonly property var backend: logos.module("calc_ui_cpp")
+
+    // logos.watch() delivers the result of a replica slot call via callbacks.
+    // No QtRemoteObjects import needed — the bridge handles it.
+    function callCalc(method, args) {
+        if (!backend) {
+            root.errorText = "Backend not available"
+            return
+        }
+        root.errorText = ""
+        root.result = "..."
+        logos.watch(backend[method].apply(backend, args),
+            function(value) { root.result = String(value) },
+            function(error) { root.errorText = String(error) }
+        )
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
         spacing: 16
 
-        // ── Title ──────────────────────────────────────────────
         Text {
             text: "Logos Calculator (C++ backend)"
             font.pixelSize: 20
@@ -21,7 +38,6 @@ Item {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        // ── Two-operand operations ─────────────────────────────
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -42,16 +58,15 @@ Item {
 
             Button {
                 text: "Add"
-                onClicked: root.result = String(backend.add(inputA.text, inputB.text))
+                onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
             }
 
             Button {
                 text: "Multiply"
-                onClicked: root.result = String(backend.multiply(inputA.text, inputB.text))
+                onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
             }
         }
 
-        // ── Single-operand operations ──────────────────────────
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -65,21 +80,20 @@ Item {
 
             Button {
                 text: "Factorial"
-                onClicked: root.result = String(backend.factorial(inputN.text))
+                onClicked: root.callCalc("factorial", [parseInt(inputN.text) || 0])
             }
 
             Button {
                 text: "Fibonacci"
-                onClicked: root.result = String(backend.fibonacci(inputN.text))
+                onClicked: root.callCalc("fibonacci", [parseInt(inputN.text) || 0])
             }
 
             Button {
                 text: "libcalc version"
-                onClicked: root.result = backend.libVersion()
+                onClicked: root.callCalc("libVersion", [])
             }
         }
 
-        // ── Result display ─────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             height: 56
