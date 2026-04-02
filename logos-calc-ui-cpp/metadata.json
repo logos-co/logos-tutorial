@@ -5,6 +5,7 @@
   "category": "tools",
   "description": "Calculator C++ UI — widget frontend for calc_module",
   "main": "calc_ui_cpp_plugin",
+  "view": "qml/Main.qml",
   "icon": "icons/calc.png",
   "dependencies": ["calc_module"],
 
@@ -17,7 +18,7 @@
     "cmake": {
       "find_packages": [],
       "extra_sources": [],
-      "extra_include_dirs": ["interfaces"],
+      "extra_include_dirs": [],
       "extra_link_libraries": []
     }
   }

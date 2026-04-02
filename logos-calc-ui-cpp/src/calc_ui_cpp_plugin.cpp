@@ -1,47 +1,37 @@
 #include "calc_ui_cpp_plugin.h"
-#include "calc_backend.h"
 #include "logos_api.h"
-#include <QDebug>
-#include <QDir>
-#include <QQuickWidget>
-#include <QQmlContext>
-#include <QUrl>
+#include "logos_sdk.h"
 
 CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : QObject(parent) {}
-CalcUiCppPlugin::~CalcUiCppPlugin() {}
+CalcUiCppPlugin::~CalcUiCppPlugin() { delete m_logos; }
 
 void CalcUiCppPlugin::initLogos(LogosAPI* api)
 {
     m_logosAPI = api;
+    m_logos = new LogosModules(api);
 }
 
-QWidget* CalcUiCppPlugin::createWidget(LogosAPI* logosAPI)
+int CalcUiCppPlugin::add(int a, int b)
 {
-    auto* backend = new CalcBackend(logosAPI);
-
-    auto* quickWidget = new QQuickWidget();
-    quickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    quickWidget->rootContext()->setContextProperty("backend", backend);
-
-    // Dev mode: set QML_PATH to the directory containing Main.qml to load
-    // from the filesystem without rebuilding. Example: export QML_PATH=$PWD/src/qml
-    QString devSource = qgetenv("QML_PATH");
-    QUrl qmlUrl = devSource.isEmpty()
-        ? QUrl("qrc:/src/qml/Main.qml")
-        : QUrl::fromLocalFile(QDir(devSource).filePath("Main.qml"));
-
-    quickWidget->setSource(qmlUrl);
-
-    if (quickWidget->status() == QQuickWidget::Error) {
-        qWarning() << "CalcUiCppPlugin: failed to load QML";
-        for (const auto& e : quickWidget->errors())
-            qWarning() << e.toString();
-    }
-
-    return quickWidget;
+    return m_logos->calc_module.add(a, b);
 }
 
-void CalcUiCppPlugin::destroyWidget(QWidget* widget)
+int CalcUiCppPlugin::multiply(int a, int b)
 {
-    delete widget;
+    return m_logos->calc_module.multiply(a, b);
+}
+
+int CalcUiCppPlugin::factorial(int n)
+{
+    return m_logos->calc_module.factorial(n);
+}
+
+int CalcUiCppPlugin::fibonacci(int n)
+{
+    return m_logos->calc_module.fibonacci(n);
+}
+
+QString CalcUiCppPlugin::libVersion()
+{
+    return m_logos->calc_module.libVersion();
 }

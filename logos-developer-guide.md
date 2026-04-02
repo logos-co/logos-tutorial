@@ -699,22 +699,21 @@ These are non-UI modules that provide backend functionality. They run in isolate
 - Placed in the **modules directory** (`--modules-dir`)
 - Have `"type": "core"` in metadata
 
-#### C++ UI Modules (Native Widgets)
+#### C++ UI Modules (View Modules)
 
-These provide native Qt widget UIs. They implement the `IComponent` interface:
+These provide C++ backend logic with a QML view declared via the `"view"` field in `metadata.json`. They expose `Q_INVOKABLE` methods that QML calls via `logos.callModuleAsync()`:
 
 ```cpp
-class IComponent {
-public:
-    virtual ~IComponent() = default;
-    virtual QWidget* createWidget(LogosAPI* logosAPI = nullptr) = 0;
-    virtual void destroyWidget(QWidget* widget) = 0;
-};
+// Plugin exposes Q_INVOKABLE methods
+Q_INVOKABLE int add(int a, int b);
+Q_INVOKABLE int multiply(int a, int b);
+
+// QML calls them via logos.callModuleAsync("calc_ui_cpp", "add", [3, 5], callback)
 ```
 
 - Loaded via `QPluginLoader`
 - Placed in the **plugins directory** (`--ui-plugins-dir`)
-- Their widget appears as a tab in the MDI workspace
+- Their QML view appears as a tab in the MDI workspace
 
 #### QML UI Modules (Sandboxed)
 
@@ -897,7 +896,7 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
-- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — create `calc_ui_cpp`, a native C++ Qt widget plugin using `LogosAPI*` and the generated SDK.
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — create `calc_ui_cpp`, a C++ view module plugin with `Q_INVOKABLE` methods called from QML via `logos.callModuleAsync()`, using the generated typed SDK.
 
 ### 8.2 Module Dependencies
 

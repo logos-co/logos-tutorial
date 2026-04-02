@@ -8,12 +8,19 @@ Item {
     property string result: ""
     property string errorText: ""
 
+    function callCalc(method, args) {
+        root.result = "..."
+        root.errorText = ""
+        logos.callModuleAsync("calc_ui_cpp", method, args, function(r) {
+            root.result = r
+        })
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
         spacing: 16
 
-        // ── Title ──────────────────────────────────────────────
         Text {
             text: "Logos Calculator (C++ backend)"
             font.pixelSize: 20
@@ -21,7 +28,6 @@ Item {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        // ── Two-operand operations ─────────────────────────────
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -42,16 +48,15 @@ Item {
 
             Button {
                 text: "Add"
-                onClicked: root.result = String(backend.add(inputA.text, inputB.text))
+                onClicked: root.callCalc("add", [parseInt(inputA.text), parseInt(inputB.text)])
             }
 
             Button {
                 text: "Multiply"
-                onClicked: root.result = String(backend.multiply(inputA.text, inputB.text))
+                onClicked: root.callCalc("multiply", [parseInt(inputA.text), parseInt(inputB.text)])
             }
         }
 
-        // ── Single-operand operations ──────────────────────────
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -65,21 +70,20 @@ Item {
 
             Button {
                 text: "Factorial"
-                onClicked: root.result = String(backend.factorial(inputN.text))
+                onClicked: root.callCalc("factorial", [parseInt(inputN.text)])
             }
 
             Button {
                 text: "Fibonacci"
-                onClicked: root.result = String(backend.fibonacci(inputN.text))
+                onClicked: root.callCalc("fibonacci", [parseInt(inputN.text)])
             }
 
             Button {
                 text: "libcalc version"
-                onClicked: root.result = backend.libVersion()
+                onClicked: root.callCalc("libVersion", [])
             }
         }
 
-        // ── Result display ─────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             height: 56
