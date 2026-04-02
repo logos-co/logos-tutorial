@@ -16,7 +16,7 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Part 2:** [Building a QML UI App](tutorial-qml-ui-app.md) -- build `calc_ui`, a QML-only UI plugin that calls `calc_module` through the `logos.callModule()` bridge. No compilation needed.
 
-- **Part 3:** [Building a C++ UI Module](tutorial-cpp-ui-app.md) -- build `calc_ui_cpp`, a native C++ Qt widget plugin with typed backend calls to `calc_module` via `LogosAPI*`.
+- **Part 3:** [Building a C++ UI Module](tutorial-cpp-ui-app.md) -- build `calc_ui_cpp`, a C++ view module plugin with `Q_INVOKABLE` methods called from QML via `logos.callModuleAsync()`, using the generated typed SDK.
 
 ## Example Modules
 
