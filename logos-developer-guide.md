@@ -132,16 +132,16 @@ The fastest way to create a new module is using the **logos-module-builder** tem
 mkdir logos-my-module && cd logos-my-module
 
 # Scaffold a minimal core module (no external dependencies)
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1
+nix flake init -t github:logos-co/logos-module-builder
 
 # Or scaffold a module that wraps an external C/C++ library
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#with-external-lib
+nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 
-# For UI modules (C++ Qt widget with logos-standalone-app runner)
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-module
+# For ui_qml modules with C++ backend (process-isolated)
+nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 
-# For QML UI modules (with logos-standalone-app runner)
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-qml-module
+# For ui_qml modules (QML-only, no C++)
+nix flake init -t github:logos-co/logos-module-builder#ui-qml
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. For reproducible builds, pin it to a specific commit — see the `flake.nix` examples in [Section 3.2](#32-building-lgx-packages) and the [tutorials](tutorial-wrapping-c-library.md#23-flakenix--nix-build-config).
@@ -152,10 +152,10 @@ nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-qml-module
 |----------|----------|
 | `default` | Minimal core module (C++ backend, no UI) |
 | `with-external-lib` | Core module wrapping an external C/C++ library |
-| `ui-module` | C++ Qt widget UI module with standalone app runner |
-| `ui-qml-module` | QML-based UI module with standalone app runner |
+| `ui-qml-backend` | ui_qml with C++ backend + QML view (process-isolated) |
+| `ui-qml` | ui_qml QML-only (in-process, no C++) |
 
-The `ui-module` and `ui-qml-module` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
+The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
@@ -224,7 +224,8 @@ The full set of available fields:
 | `category` | No | `general` | Category (general, network, chat, wallet, integration) |
 | `description` | No | `"A Logos module"` | Human-readable description |
 | `icon` | No | `null` | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory. |
-| `main` | Yes | -- | Plugin entry point (plugin name for core/ui, `Main.qml` for QML) |
+| `main` | Yes (`core`/`ui`), optional (`ui_qml`) | -- | Plugin entry point. For `core`/`ui` modules: plugin name without extension. For `ui_qml`: optional backend plugin name (omit if QML-only). |
+| `view` | Yes (`ui_qml`) | -- | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules. |
 | `dependencies` | No | `[]` | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`. |
 | `include` | No | `[]` | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output. |
 | `nix.packages.build` | No | `[]` | Nix packages for build time |
@@ -299,7 +300,7 @@ The **`lm`** tool (from `logos-module`) lets you inspect compiled module binarie
 #### Building lm
 
 ```bash
-nix build 'github:logos-co/logos-module/tutorial-v1#lm' --out-link ./lm
+nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 ```
 
 #### Viewing Metadata
@@ -366,7 +367,7 @@ The **logos-module-viewer** is a graphical tool for inspecting loaded modules.
 
 ```bash
 # Build the viewer
-nix build 'github:logos-co/logos-module-viewer/tutorial-v1#app' --out-link ./logos-viewer
+nix build 'github:logos-co/logos-module-viewer#app' --out-link ./logos-viewer
 
 # Run it with your module
 ./logos-viewer/bin/logos-module-viewer -m ./result/lib/my_module_plugin.so
@@ -419,12 +420,12 @@ nix build .#lgx-portable
 
 This produces a `my_module-<version>.lgx` file in the `result/` directory.
 
-This works because `logos-module-builder` includes `nix-bundle-lgx` as its own dependency and `mkLogosModule` automatically creates the `lgx` and `lgx-portable` package outputs. No extra configuration is needed — it is part of the standard module template:
+This works because `logos-module-builder` includes `nix-bundle-lgx` as its own dependency and both `mkLogosModule` and `mkLogosQmlModule` automatically create the `lgx` and `lgx-portable` package outputs. No extra configuration is needed — it is part of the standard module template:
 
 ```nix
 {
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -442,13 +443,13 @@ You can also create `.lgx` packages using the `nix bundle` command directly. Thi
 
 ```bash
 # Dev variant
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1 .#lib
+nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib
 
 # Portable variant
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#portable .#lib
+nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib
 
 # Dual variant (both dev and portable in one .lgx file)
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#dual .#lib
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 ```
 
 This produces a `my_module-<version>.lgx` file in the current directory.
@@ -483,7 +484,7 @@ The **`lgpm`** CLI (Logos Package Manager) installs, searches, and manages modul
 #### Building lgpm
 
 ```bash
-nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./package-manager
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./package-manager
 ```
 
 #### Commands
@@ -536,7 +537,7 @@ To download packages from the online catalog and then install them locally, use 
 
 ```bash
 # Build lgpd
-nix build 'github:logos-co/logos-package-downloader/tutorial-v1#cli' --out-link ./downloader
+nix build 'github:logos-co/logos-package-downloader#cli' --out-link ./downloader
 
 # Search for packages
 ./downloader/bin/lgpd search waku
@@ -569,7 +570,7 @@ The **`logoscore`** CLI (from `logos-liblogos`) is a headless runtime that can l
 #### Building logoscore
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli/tutorial-v1' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
 #### Daemon Mode
@@ -671,18 +672,18 @@ logos-basecamp produces two binary variants:
 
 ```bash
 # Build the development version
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#app' --out-link ./logos-basecamp
+nix build 'github:logos-co/logos-basecamp#app' --out-link ./logos-basecamp
 
 # Run the dev binary
 ./logos-basecamp/bin/logos-basecamp
 
 # Build the portable/distributed version
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#portable' --out-link ./logos-basecamp-portable
+nix build 'github:logos-co/logos-basecamp#portable' --out-link ./logos-basecamp-portable
 
 # Or build platform-specific distributions:
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-bundle-dir'     # Flat directory bundle
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-appimage'       # Linux AppImage
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-macos-app'      # macOS .app bundle
+nix build 'github:logos-co/logos-basecamp#bin-bundle-dir'     # Flat directory bundle
+nix build 'github:logos-co/logos-basecamp#bin-appimage'       # Linux AppImage
+nix build 'github:logos-co/logos-basecamp#bin-macos-app'      # macOS .app bundle
 ```
 
 > **Note:** When installing modules into logos-basecamp, the LGX variant type must match the build type. Dev builds of basecamp expect **dev** LGX variants (e.g., `darwin-arm64-dev`), while portable builds expect **portable** variants (e.g., `darwin-arm64`). Use the `dual` bundler (see [3.2](#32-bundling-with-nix-bundle-lgx)) to produce packages that work with both.
@@ -699,32 +700,57 @@ These are non-UI modules that provide backend functionality. They run in isolate
 - Placed in the **modules directory** (`--modules-dir`)
 - Have `"type": "core"` in metadata
 
-#### C++ UI Modules (Native Widgets)
+#### ui_qml with C++ Backend (Process-Isolated)
 
-These provide native Qt widget UIs. They implement the `IComponent` interface:
+These have `"type": "ui_qml"` with both `"main"` (backend plugin) and `"view"` (QML entry point) in `metadata.json`. The C++ backend runs in a separate `ui-host` process; the QML view loads in the host app.
 
-```cpp
-class IComponent {
-public:
-    virtual ~IComponent() = default;
-    virtual QWidget* createWidget(LogosAPI* logosAPI = nullptr) = 0;
-    virtual void destroyWidget(QWidget* widget) = 0;
-};
+The remote interface is defined in a **`.rep` file** (Qt Remote Objects definition):
+
+```rep
+class CalcUiCpp
+{
+    PROP(QString status READWRITE)    // auto-synced to QML replica
+    SLOT(int add(int a, int b))       // callable from QML, returns via Promise
+    SIGNAL(errorOccurred(QString msg)) // one-shot events
+}
 ```
 
-- Loaded via `QPluginLoader`
-- Placed in the **plugins directory** (`--ui-plugins-dir`)
-- Their widget appears as a tab in the MDI workspace
+The `.rep` file is the **single source of truth** — `repc` generates:
+- `CalcUiCppSimpleSource` — base class the C++ backend inherits
+- `CalcUiCppReplica` — typed replica the QML view uses via `logos.module()`
+- A separate `_replica_factory` plugin for typed remoting
 
-#### QML UI Modules (Sandboxed)
+The C++ plugin inherits from the generated source + `ViewPluginBase`:
 
-These provide QML-based UIs in a sandboxed environment:
+```cpp
+class CalcUiCppPlugin : public CalcUiCppSimpleSource,
+                        public CalcUiCppInterface,
+                        public CalcUiCppViewPluginBase { ... };
+```
 
-- Have `"type": "ui_qml"` in their manifest
-- Entry point is `Main.qml`
-- Network access is denied
-- Filesystem access is restricted to the module's own directory
-- Can call core modules via the `logos` bridge: `logos.callModule("module", "method", [args])`
+QML accesses the backend via a typed replica:
+
+```qml
+readonly property var backend: logos.module("calc_ui_cpp")
+// Properties auto-sync:
+Text { text: backend.status }
+// Return values via Promise:
+logos.watch(backend.add(1, 2)).then(function(v) { ... })
+```
+
+- Scaffold: `nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend`
+- See [Tutorial Part 3](tutorial-cpp-ui-app.md) for a complete walkthrough
+
+#### ui_qml QML-Only (In-Process)
+
+These have `"type": "ui_qml"` with `"view"` but no `"main"` — pure QML, no C++ compilation, no process isolation:
+
+- QML view loads directly in the host app (basecamp / standalone)
+- No `.rep` file needed
+- Call core modules via the `logos` bridge: `logos.callModule("module", "method", [args])`
+- Network access denied, filesystem restricted to module directory
+- Scaffold: `nix flake init -t github:logos-co/logos-module-builder#ui-qml`
+- See [Tutorial Part 2](tutorial-qml-ui-app.md) for a complete walkthrough
 
 ---
 
@@ -777,7 +803,7 @@ The generator is bundled with `logos-cpp-sdk`. It is automatically available:
 - **In `nix develop`** -- the module dev shell includes the SDK on PATH
 - **Build it directly:**
   ```bash
-  nix build 'github:logos-co/logos-cpp-sdk/tutorial-v1#cpp-generator' --out-link ./cpp-gen
+  nix build 'github:logos-co/logos-cpp-sdk#cpp-generator' --out-link ./cpp-gen
   ./cpp-gen/bin/logos-cpp-generator --help
   ```
 
@@ -897,7 +923,7 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
-- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — create `calc_ui_cpp`, a native C++ Qt widget plugin using `LogosAPI*` and the generated SDK.
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a C++ + QML view module that combines a QML frontend with a C++ backend. The backend exposes `Q_INVOKABLE` methods using the generated typed SDK; the QML view calls them via `logos.callModuleAsync()`.
 
 ### 8.2 Module Dependencies
 
@@ -920,7 +946,7 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 
 | Repository | What It Provides | Key Outputs |
 |------------|-----------------|-------------|
-| [logos-module-builder](https://github.com/logos-co/logos-module-builder) | Build system / scaffolding | `mkLogosModule` Nix function, `LogosModule.cmake`, templates |
+| [logos-module-builder](https://github.com/logos-co/logos-module-builder) | Build system / scaffolding | `mkLogosModule`, `mkLogosQmlModule` Nix functions, `LogosModule.cmake`, templates |
 | [logos-module](https://github.com/logos-co/logos-module) | Plugin introspection | `liblogos_module.a` (static lib), `lm` (CLI) |
 | [logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk) | SDK + code generator | `LogosAPI`, `LogosResult`, `logos-cpp-generator`, `PluginInterface` |
 | [logos-liblogos](https://github.com/logos-co/logos-liblogos) | Core library | `logos_host`, `liblogos_core` |
@@ -993,9 +1019,9 @@ nix build .#lgx                                                       # Dev vari
 nix build .#lgx-portable                                              # Portable variant
 
 # Alternative: nix bundle command
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1 .#lib            # Dev variant
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#portable .#lib   # Portable variant
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#dual .#lib       # Both variants
+nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib            # Dev variant
+nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib   # Portable variant
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib       # Both variants
 ```
 
 ---
@@ -1072,8 +1098,8 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 3. **Each dependency must have a matching flake input** — the flake input name must exactly match the dependency name in `metadata.json`:
    ```nix
    inputs = {
-     logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
-     calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
+     logos-module-builder.url = "github:logos-co/logos-module-builder";
+     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
      storage_module.url = "github:logos-co/logos-storage-module";
    };
    ```
@@ -1083,20 +1109,20 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 **What changed (no more `logos-standalone-app` input):**
 
 - `logos-standalone-app` is now bundled inside `logos-module-builder` — UI module flakes no longer need it as a separate input.
-- No `logosStandalone` parameter is needed in `mkLogosModule` or `mkLogosQmlModule` calls.
+- No `logosStandalone` parameter is needed in `mkLogosQmlModule`, `mkLogosModule`, or `mkLogosQmlModule` calls.
 - Dependencies (including transitive ones) are automatically resolved from the flake input tree, bundled as LGX packages at build time, and extracted into the modules directory at runtime.
 - The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
 
-**Example C++ UI module `flake.nix`:**
+**Example C++ UI module `flake.nix` (view module — C++ backend + QML view):**
 ```nix
 {
   description = "My UI module";
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
-    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
   outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosModule {
+    logos-module-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
@@ -1109,8 +1135,8 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 {
   description = "My QML UI module";
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
-    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
   outputs = inputs@{ logos-module-builder, ... }:
     logos-module-builder.lib.mkLogosQmlModule {
@@ -1140,7 +1166,7 @@ If a module installs but fails to load, the variant type may not match:
 
 - **Dev build** of logos-basecamp needs **dev** LGX variants (`darwin-arm64-dev`)
 - **Portable build** needs **portable** variants (`darwin-arm64`)
-- Use `nix build .#lgx` and `nix build .#lgx-portable` to produce each variant separately, or `nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#dual .#lib` for a single package with both variants
+- Use `nix build .#lgx` and `nix build .#lgx-portable` to produce each variant separately, or `nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib` for a single package with both variants
 
 ### Cross-platform builds
 
@@ -1151,7 +1177,7 @@ Build on each target platform separately to create `.lgx` packages:
 nix build .#lgx-portable
 
 # Or using nix bundle for dual variant:
-nix bundle --bundler github:logos-co/nix-bundle-lgx/tutorial-v1#dual .#lib
+nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 
 # Then merge platform-specific .lgx files into one:
 ./lgx/bin/lgx merge my_module-linux.lgx my_module-macos.lgx -o my_module.lgx

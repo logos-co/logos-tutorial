@@ -1,23 +1,24 @@
-# Tutorial Part 3: Building a C++ UI Module
+# Tutorial Part 3: Building a C++ UI Module (Process-Isolated)
 
-This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-app.md) you built a QML UI plugin. Now you'll build a **native C++ Qt widget plugin** that calls `calc_module` through a typed backend class.
+This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-app.md) you built a QML-only UI plugin. Now you'll build a **ui_qml module with a C++ backend** — the backend runs in a separate `ui-host` process while the QML view loads in the host app (basecamp / standalone).
 
-**What you'll build:** A `calc_ui_cpp` C++ plugin with two options for the UI:
+**What you'll build:** A `calc_ui_cpp` module with:
 
-- **Option A — QML loaded from C++:** A `QQuickWidget` inside the plugin loading the same `Main.qml` as the QML plugin, with `CalcBackend` exposed as a context property — plus dev mode for editing QML without rebuilding
-- **Option B — Pure Qt widget:** `QPushButton`, `QLineEdit`, `QLabel` wired directly to a backend class
+- A `.rep` file defining the remote interface (slots + properties)
+- A C++ backend plugin that inherits from the generated `SimpleSource` base class
+- A QML view that calls the backend via a typed replica using `logos.watch()`
+- Process isolation: backend crashes can't bring down the host app
 
-**Why C++ over QML-only?**
+**Why C++ backend over QML-only?**
 
-| | QML plugin (Part 2) | C++ UI plugin (Part 3) |
+| | QML-only (Part 2) | C++ backend (Part 3) |
 |---|---|---|
-| Compilation | No | Yes (CMake) |
-| Backend calls | Via `logos.callModule()` IPC bridge | Via `LogosAPI*` directly in C++ |
-| Type safety | Weak — all args travel as `QVariant` | Strong — C++ types preserved |
-| Sandboxing | Yes | No |
-| QML support | Native | Optional via `QQuickWidget` |
-
-The C++ backend class provides type-safe calls via generated SDK wrappers — `int` arguments stay `int` all the way to the module without relying on runtime coercion.
+| Compilation | None | CMake + Qt |
+| Process isolation | No (QML runs in-process) | Yes (C++ in separate `ui-host` process) |
+| Backend calls | `logos.callModule()` / `logos.callModuleAsync()` to other modules | `LogosModules` typed SDK in C++ |
+| Type safety | Args travel as `QVariant` | C++ types preserved |
+| QML ↔ backend | Direct bridge | Qt Remote Objects (typed replica) |
+| `.rep` file | Not needed | Required — defines the remote interface |
 
 **Prerequisites:**
 
@@ -26,21 +27,40 @@ The C++ backend class provides type-safe calls via generated SDK wrappers — `i
 
 ---
 
-## How It Works
+## Architecture
 
 ```
-+----------------------+      CalcBackend::add(3, 5)      +-------------------+
-|   calc_ui_cpp        | --------------------------------> |   calc_module     |
-|   C++ Qt plugin      |   LogosAPI* / invokeRemoteMethod |   C++ plugin      |
-|   createWidget()     |                                  |   add(int, int)   |
-+----------------------+                                  +-------------------+
-        ^
-        | loaded by
-        v
-  logos-standalone-app / logos-basecamp
+  logos-basecamp / logos-standalone-app
+  ┌─────────────────────────────────────────────┐
+  │                                             │
+  │   QML View (Main.qml)                      │
+  │     readonly property var backend:          │
+  │       logos.module("calc_ui_cpp")           │
+  │     logos.watch(backend.add(1,2))│
+  │          │                                  │
+  │          │  Qt Remote Objects (socket)      │
+  └──────────┼──────────────────────────────────┘
+             │
+  ui-host process (separate)
+  ┌──────────┼──────────────────────────────────┐
+  │          ▼                                  │
+  │   CalcUiCppPlugin (backend)                 │
+  │     : CalcUiCppSimpleSource                 │
+  │     : CalcUiCppViewPluginBase               │
+  │     int add(int a, int b) {                 │
+  │       return m_logos->calc_module.add(a,b); │
+  │     }                                       │
+  │          │                                  │
+  │          │  LogosModules typed SDK           │
+  │          ▼                                  │
+  │   calc_module (loaded in ui-host)           │
+  └─────────────────────────────────────────────┘
 ```
 
-The plugin implements `createWidget()` which returns a `QWidget*`. The widget is shown in the host app's window. A `CalcBackend` class holds `LogosAPI*` and makes typed calls to `calc_module`.
+The `.rep` file declares the interface. At build time, Qt's `repc` compiler generates:
+- **`CalcUiCppSimpleSource`** — base class the backend inherits from
+- **`CalcUiCppReplica`** — typed replica the QML view uses
+- **`calc_ui_cpp_replica_factory`** — separate plugin that the host loads to create typed replicas
 
 ---
 
@@ -48,81 +68,70 @@ The plugin implements `createWidget()` which returns a `QWidget*`. The widget is
 
 ```bash
 mkdir logos-calc-ui-cpp && cd logos-calc-ui-cpp
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-module
+nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 git init && git add -A
 ```
 
-> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 9](#step-9-flakenix) to ensure reproducible builds.
-
-This gives you:
-
-```
-logos-calc-ui-cpp/
-├── flake.nix
-├── metadata.json
-├── CMakeLists.txt
-├── interfaces/
-│   └── IComponent.h
-└── src/
-    ├── ui_example_interface.h
-    ├── ui_example_plugin.h
-    └── ui_example_plugin.cpp
-```
-
-Rename the source files to match your module:
-
-```bash
-mv src/ui_example_interface.h src/calc_ui_cpp_interface.h
-mv src/ui_example_plugin.h    src/calc_ui_cpp_plugin.h
-mv src/ui_example_plugin.cpp  src/calc_ui_cpp_plugin.cpp
-```
+This creates the template. We'll customize it for our calculator.
 
 ---
 
-## Step 2: `metadata.json`
-
-`metadata.json` is the single source of truth — it contains both the runtime metadata (embedded into the plugin binary by Qt) and the build configuration (read by `logos-module-builder` via the `nix` section).
+## Step 2: metadata.json
 
 ```json
 {
   "name": "calc_ui_cpp",
   "version": "1.0.0",
-  "type": "ui",
+  "type": "ui_qml",
   "category": "tools",
-  "description": "Calculator C++ UI — widget frontend for calc_module",
+  "description": "Calculator C++ UI — QML view with process-isolated backend",
   "main": "calc_ui_cpp_plugin",
+  "view": "qml/Main.qml",
   "icon": "icons/calc.png",
   "dependencies": ["calc_module"],
 
   "nix": {
-    "packages": {
-      "build": [],
-      "runtime": []
-    },
+    "packages": { "build": [], "runtime": [] },
     "external_libraries": [],
-    "cmake": {
-      "find_packages": [],
-      "extra_sources": [],
-      "extra_include_dirs": [],
-      "extra_link_libraries": []
-    }
+    "cmake": { "find_packages": [], "extra_sources": [] }
   }
 }
 ```
 
-Create the icon directory and add a placeholder icon. The icon is displayed in the `logos-basecamp` sidebar when the module is loaded:
-
-```bash
-mkdir -p icons
-# Copy any PNG here — or generate a 64×64 placeholder:
-echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeklEQVR4nO3PUQkAIBTAwFfPdtazjSH8OITBAtxm7fN1wwUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWPHYBic8hlloAWpEAAAAASUVORK5CYII=" | base64 -d > icons/calc.png
-```
-
-> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match — e.g., `calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
+Key fields:
+- `"type": "ui_qml"` — tells the builder this is a QML view module
+- `"main": "calc_ui_cpp_plugin"` — the backend Qt plugin library (without extension)
+- `"view": "qml/Main.qml"` — the QML entry point
+- `"dependencies": ["calc_module"]` — core modules the backend calls
 
 ---
 
-## Step 3: `CMakeLists.txt`
+## Step 3: The `.rep` File
+
+Create `src/calc_ui_cpp.rep`:
+
+```rep
+class CalcUiCpp
+{
+    PROP(QString status READWRITE)
+
+    SLOT(int add(int a, int b))
+    SLOT(int multiply(int a, int b))
+    SLOT(int factorial(int n))
+    SLOT(int fibonacci(int n))
+    SLOT(QString libVersion())
+}
+```
+
+This is the **single source of truth** for the remote interface. `repc` generates:
+- `rep_calc_ui_cpp_source.h` — `CalcUiCppSimpleSource` with virtual slots the backend overrides
+- `rep_calc_ui_cpp_replica.h` — `CalcUiCppReplica` with typed methods and auto-synced properties
+
+**PROP** values auto-sync from backend to QML replica. **SLOT** return values are delivered as `QRemoteObjectPendingReply` — use `logos.watch()` in QML to get them as JS Promises.
+
+---
+
+## Step 4: CMakeLists.txt
 
 ```cmake
 cmake_minimum_required(VERSION 3.14)
@@ -136,92 +145,44 @@ endif()
 
 logos_module(
     NAME calc_ui_cpp
+    REP_FILE src/calc_ui_cpp.rep
     SOURCES
         src/calc_ui_cpp_interface.h
         src/calc_ui_cpp_plugin.h
         src/calc_ui_cpp_plugin.cpp
-        src/calc_backend.h
-        src/calc_backend.cpp
-    INCLUDE_DIRS
-        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
 )
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
-target_link_libraries(calc_ui_cpp_module_plugin PRIVATE Qt6::Widgets)
 ```
 
-> For Option A (QML inside the plugin) you will add `Quick QuickWidgets` and `qt_add_resources` — covered in [Step 7](#step-7-option-a--qml-loaded-from-c).
+`REP_FILE` tells `logos_module()` to:
+1. Run `repc` to generate source/replica headers
+2. Generate `LogosViewPluginBase` (typed remoting base class)
+3. Build a separate `calc_ui_cpp_replica_factory` shared library
 
 ---
 
-## Step 4: Interface Header (`src/calc_ui_cpp_interface.h`)
+## Step 5: C++ Backend Plugin
+
+### `src/calc_ui_cpp_plugin.h`
 
 ```cpp
-#ifndef CALC_UI_CPP_INTERFACE_H
-#define CALC_UI_CPP_INTERFACE_H
-
-#include <QObject>
-#include <QString>
-#include "interface.h"
-
-class CalcUiCppInterface : public PluginInterface
-{
-public:
-    virtual ~CalcUiCppInterface() = default;
-};
-
-#define CalcUiCppInterface_iid "org.logos.CalcUiCppInterface"
-Q_DECLARE_INTERFACE(CalcUiCppInterface, CalcUiCppInterface_iid)
-
-#endif // CALC_UI_CPP_INTERFACE_H
-```
-
-The template also scaffolds `interfaces/IComponent.h` — the widget interface that `logos-basecamp` uses to load C++ UI plugins. You don't need to modify this file:
-
-```cpp
-// interfaces/IComponent.h (scaffolded by the template — do not modify)
 #pragma once
 
-#include <QObject>
-#include <QWidget>
-#include <QtPlugin>
+#include <QString>
+#include <QVariantList>
+#include "calc_ui_cpp_interface.h"
+#include "LogosViewPluginBase.h"
+#include "rep_calc_ui_cpp_source.h"
 
 class LogosAPI;
+class LogosModules;
 
-class IComponent {
-public:
-    virtual ~IComponent() = default;
-    virtual QWidget* createWidget(LogosAPI* logosAPI = nullptr) = 0;
-    virtual void destroyWidget(QWidget* widget) = 0;
-};
-
-#define IComponent_iid "com.logos.component.IComponent"
-Q_DECLARE_INTERFACE(IComponent, IComponent_iid)
-```
-
----
-
-## Step 5: Plugin Header (`src/calc_ui_cpp_plugin.h`)
-
-Replace the scaffolded plugin header. This header is the same for both Option A and Option B — only the `.cpp` implementation differs.
-
-> **Key difference from core modules:** C++ UI plugins must inherit from `IComponent` (from `interfaces/IComponent.h`, scaffolded by the template) and use `IComponent_iid` as the plugin metadata IID. This is how `logos-basecamp` identifies and loads widget-based UI plugins. Without `IComponent`, basecamp will fail with "Failed to cast plugin to IComponent".
-
-```cpp
-#ifndef CALC_UI_CPP_PLUGIN_H
-#define CALC_UI_CPP_PLUGIN_H
-
-#include <QObject>
-#include <QWidget>
-#include <QVariantList>
-#include <IComponent.h>
-#include "calc_ui_cpp_interface.h"
-
-class CalcUiCppPlugin : public QObject, public CalcUiCppInterface, public IComponent
+class CalcUiCppPlugin : public CalcUiCppSimpleSource,
+                        public CalcUiCppInterface,
+                        public CalcUiCppViewPluginBase
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID IComponent_iid FILE "metadata.json")
-    Q_INTERFACES(CalcUiCppInterface PluginInterface IComponent)
+    Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")
+    Q_INTERFACES(CalcUiCppInterface)
 
 public:
     explicit CalcUiCppPlugin(QObject* parent = nullptr);
@@ -232,101 +193,90 @@ public:
 
     Q_INVOKABLE void initLogos(LogosAPI* api);
 
-    Q_INVOKABLE QWidget* createWidget(LogosAPI* logosAPI = nullptr);
-    Q_INVOKABLE void destroyWidget(QWidget* widget);
+    // Slots from .rep — override the generated virtuals
+    int add(int a, int b) override;
+    int multiply(int a, int b) override;
+    int factorial(int n) override;
+    int fibonacci(int n) override;
+    QString libVersion() override;
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 
 private:
     LogosAPI* m_logosAPI = nullptr;
+    LogosModules* m_logos = nullptr;
 };
-
-#endif // CALC_UI_CPP_PLUGIN_H
 ```
 
----
+Three base classes:
+- **`CalcUiCppSimpleSource`** — generated from `.rep`, provides the typed source for Qt Remote Objects
+- **`CalcUiCppInterface`** — standard Logos plugin interface (`name()`, `version()`)
+- **`CalcUiCppViewPluginBase`** — generated, provides `setBackend()` and `enableRemoting()`
 
-## Step 6: Backend Class
-
-The backend class is the key addition over the QML plugin. It holds a `LogosModules*` wrapper — a typed C++ SDK generated at build time from `metadata.json` — and exposes `Q_INVOKABLE` methods that call `calc_module` through it. Because the calls go through a generated typed class, argument types are preserved at compile time — no runtime coercion needed.
-
-### How the generated SDK works
-
-When `metadata.json` declares `"dependencies": ["calc_module"]` and `calc_module` is passed as a flake input via `flakeInputs`, the build system runs `logos-cpp-generator` before compilation. This produces:
-
-- `logos_sdk.h` / `logos_sdk.cpp` — the `LogosModules` umbrella class with one typed member per dependency
-- `calc_module_api.h` / `calc_module_api.cpp` — the per-module wrapper included by `logos_sdk.h`
-
-`LogosModules` is constructed with a `LogosAPI*` and provides a member named after each declared dependency (snake_case). All IPC routing happens inside the generated code — your backend just calls methods directly:
+### `src/calc_ui_cpp_plugin.cpp`
 
 ```cpp
-m_logos->calc_module.add(3, 5)   // typed: int add(int, int) over IPC
-```
+#include "calc_ui_cpp_plugin.h"
+#include "logos_api.h"
+#include "logos_sdk.h"
 
-### `src/calc_backend.h`
+CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent)
+    : CalcUiCppSimpleSource(parent) {}
 
-```cpp
-#ifndef CALC_BACKEND_H
-#define CALC_BACKEND_H
+CalcUiCppPlugin::~CalcUiCppPlugin() { delete m_logos; }
 
-#include <QObject>
-#include <QString>
-#include "logos_sdk.h"   // generated at build time from metadata.json dependencies
-
-class LogosAPI;
-
-class CalcBackend : public QObject
+void CalcUiCppPlugin::initLogos(LogosAPI* api)
 {
-    Q_OBJECT
+    m_logosAPI = api;
+    m_logos = new LogosModules(api);
+    // Register this object as the Remote Objects source
+    setBackend(this);
+}
 
-public:
-    explicit CalcBackend(LogosAPI* api, QObject* parent = nullptr);
+int CalcUiCppPlugin::add(int a, int b)
+{
+    return m_logos->calc_module.add(a, b);
+}
 
-    Q_INVOKABLE int     add(int a, int b);
-    Q_INVOKABLE int     multiply(int a, int b);
-    Q_INVOKABLE int     factorial(int n);
-    Q_INVOKABLE int     fibonacci(int n);
-    Q_INVOKABLE QString libVersion();
+int CalcUiCppPlugin::multiply(int a, int b)
+{
+    return m_logos->calc_module.multiply(a, b);
+}
 
-private:
-    LogosModules* m_logos;   // generated umbrella wrapper
-};
+int CalcUiCppPlugin::factorial(int n)
+{
+    return m_logos->calc_module.factorial(n);
+}
 
-#endif // CALC_BACKEND_H
+int CalcUiCppPlugin::fibonacci(int n)
+{
+    return m_logos->calc_module.fibonacci(n);
+}
+
+QString CalcUiCppPlugin::libVersion()
+{
+    return m_logos->calc_module.libVersion();
+}
 ```
 
-### `src/calc_backend.cpp`
-
-```cpp
-#include "calc_backend.h"
-
-CalcBackend::CalcBackend(LogosAPI* api, QObject* parent)
-    : QObject(parent), m_logos(new LogosModules(api)) {}
-
-int     CalcBackend::add(int a, int b)      { return m_logos->calc_module.add(a, b); }
-int     CalcBackend::multiply(int a, int b) { return m_logos->calc_module.multiply(a, b); }
-int     CalcBackend::factorial(int n)       { return m_logos->calc_module.factorial(n); }
-int     CalcBackend::fibonacci(int n)       { return m_logos->calc_module.fibonacci(n); }
-QString CalcBackend::libVersion()           { return m_logos->calc_module.libVersion(); }
-```
-
-`LogosModules` is constructed once with `LogosAPI*`. Each member (`calc_module`) is a generated proxy that routes calls to the corresponding module process over Qt Remote Objects IPC. No raw `invokeRemoteMethod`, no string method names, no manual `QVariant` unwrapping.
+Key points:
+- Constructor calls `CalcUiCppSimpleSource(parent)` — not `QObject(parent)`
+- `initLogos()` calls `setBackend(this)` to register with the Remote Objects host
+- Slots return values directly — they travel back to the QML replica via Qt Remote Objects
+- `m_logos->calc_module.add(a, b)` uses the generated typed SDK (type-safe, no QVariant)
 
 ---
 
-## Step 7: Option A — QML Loaded from C++
+## Step 6: QML View
 
-The plugin loads `src/qml/Main.qml` into a `QQuickWidget` and exposes `CalcBackend` as a QML context property. The QML is identical in structure to `logos-calc-ui/Main.qml` (Part 2), but calls `backend.*` methods directly instead of routing through the `logos.callModule()` IPC bridge — so argument types are preserved and there is no sandboxing overhead.
-
-### 7.1 Add the QML file
-
-Create `src/qml/Main.qml`. The structure mirrors `logos-calc-ui/Main.qml` exactly; the only difference is that buttons call `backend.*` methods directly instead of routing through `logos.callModule(...)`:
+Create `src/qml/Main.qml`:
 
 ```qml
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+
 
 Item {
     id: root
@@ -334,303 +284,103 @@ Item {
     property string result: ""
     property string errorText: ""
 
+    // Typed replica of the backend running in ui-host
+    readonly property var backend: logos.module("calc_ui_cpp")
+
+    // "status" property from the .rep — auto-synced via Qt Remote Objects
+    readonly property string status: backend ? backend.status : ""
+
+    function callCalc(method, args) {
+        if (!backend) {
+            root.errorText = "Backend not available"
+            return
+        }
+        root.errorText = ""
+        root.result = "..."
+        // logos.watch() wraps the pending reply in a JS Promise
+        logos.watch(backend[method].apply(backend, args)).then(
+            function(value) { root.result = String(value) },
+            function(error) { root.errorText = String(error) }
+        )
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
         spacing: 16
 
-        // ── Title ──────────────────────────────────────────────
         Text {
-            text: "Logos Calculator (C++ backend)"
+            text: "Calculator (C++ backend)"
             font.pixelSize: 20
             color: "#ffffff"
-            Layout.alignment: Qt.AlignHCenter
         }
 
-        // ── Two-operand operations ─────────────────────────────
         RowLayout {
             spacing: 12
-            Layout.fillWidth: true
 
-            TextField { id: inputA; placeholderText: "a"; Layout.preferredWidth: 80; validator: IntValidator {} }
-            TextField { id: inputB; placeholderText: "b"; Layout.preferredWidth: 80; validator: IntValidator {} }
-
+            TextField {
+                id: inputA; placeholderText: "a"
+                Layout.preferredWidth: 80
+                validator: IntValidator {}
+            }
+            TextField {
+                id: inputB; placeholderText: "b"
+                Layout.preferredWidth: 80
+                validator: IntValidator {}
+            }
             Button {
                 text: "Add"
-                onClicked: root.result = String(backend.add(inputA.text, inputB.text))
+                onClicked: root.callCalc("add", [parseInt(inputA.text) || 0,
+                                                  parseInt(inputB.text) || 0])
             }
             Button {
                 text: "Multiply"
-                onClicked: root.result = String(backend.multiply(inputA.text, inputB.text))
+                onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0,
+                                                       parseInt(inputB.text) || 0])
             }
         }
 
-        // ── Single-operand operations ──────────────────────────
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            TextField { id: inputN; placeholderText: "n"; Layout.preferredWidth: 80; validator: IntValidator { bottom: 0 } }
-
-            Button { text: "Factorial";       onClicked: root.result = String(backend.factorial(inputN.text)) }
-            Button { text: "Fibonacci";       onClicked: root.result = String(backend.fibonacci(inputN.text)) }
-            Button { text: "libcalc version"; onClicked: root.result = backend.libVersion() }
-        }
-
-        // ── Result display ─────────────────────────────────────
         Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
+            Layout.fillWidth: true; height: 56
+            color: root.errorText ? "#3d1a1a" : "#1a2d1a"
             radius: 8
             Text {
                 anchors.centerIn: parent
-                text: root.errorText.length > 0 ? root.errorText
-                        : (root.result.length > 0 ? root.result : "Enter values and press a button")
-                color: root.errorText.length > 0 ? "#f85149" : "#56d364"
+                text: root.errorText || root.result || "Press a button"
+                color: root.errorText ? "#f85149" : "#56d364"
                 font.pixelSize: 15
             }
         }
 
-        Item { Layout.fillHeight: true }
+        Text {
+            text: "Backend status: " + root.status
+            color: "#8b949e"; font.pixelSize: 13
+        }
     }
 }
 ```
 
-### 7.2 Update `CMakeLists.txt`
-
-Add `Quick` and `QuickWidgets`, and embed the QML as a Qt resource:
-
-```cmake
-cmake_minimum_required(VERSION 3.14)
-project(CalcUiCppPlugin LANGUAGES CXX)
-
-if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
-    include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
-else()
-    message(FATAL_ERROR "LogosModule.cmake not found. Set LOGOS_MODULE_BUILDER_ROOT.")
-endif()
-
-logos_module(
-    NAME calc_ui_cpp
-    SOURCES
-        src/calc_ui_cpp_interface.h
-        src/calc_ui_cpp_plugin.h
-        src/calc_ui_cpp_plugin.cpp
-        src/calc_backend.h
-        src/calc_backend.cpp
-    INCLUDE_DIRS
-        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces
-)
-
-find_package(Qt6 REQUIRED COMPONENTS Widgets Quick QuickWidgets)
-target_link_libraries(calc_ui_cpp_module_plugin PRIVATE
-    Qt6::Widgets
-    Qt6::Quick
-    Qt6::QuickWidgets
-)
-
-qt_add_resources(calc_ui_cpp_module_plugin "qml_resources"
-    PREFIX "/"
-    FILES
-        src/qml/Main.qml
-)
-```
-
-### 7.3 `createWidget()` — load QML
-
-Replace `calc_ui_cpp_plugin.cpp` with:
-
-```cpp
-#include "calc_ui_cpp_plugin.h"
-#include "calc_backend.h"
-#include "logos_api.h"
-#include <QDebug>
-#include <QDir>
-#include <QQuickWidget>
-#include <QQmlContext>
-#include <QUrl>
-
-CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : QObject(parent) {}
-CalcUiCppPlugin::~CalcUiCppPlugin() {}
-
-void CalcUiCppPlugin::initLogos(LogosAPI* api)
-{
-    m_logosAPI = api;
-}
-
-QWidget* CalcUiCppPlugin::createWidget(LogosAPI* logosAPI)
-{
-    auto* backend = new CalcBackend(logosAPI);
-
-    auto* quickWidget = new QQuickWidget();
-    quickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    quickWidget->rootContext()->setContextProperty("backend", backend);
-
-    // Dev mode: set QML_PATH to the directory containing Main.qml to load
-    // from the filesystem without rebuilding. Example: export QML_PATH=$PWD/src/qml
-    QString devSource = qgetenv("QML_PATH");
-    QUrl qmlUrl = devSource.isEmpty()
-        ? QUrl("qrc:/src/qml/Main.qml")
-        : QUrl::fromLocalFile(QDir(devSource).filePath("Main.qml"));
-
-    quickWidget->setSource(qmlUrl);
-
-    if (quickWidget->status() == QQuickWidget::Error) {
-        qWarning() << "CalcUiCppPlugin: failed to load QML";
-        for (const auto& e : quickWidget->errors())
-            qWarning() << e.toString();
-    }
-
-    return quickWidget;
-}
-
-void CalcUiCppPlugin::destroyWidget(QWidget* widget)
-{
-    delete widget;
-}
-```
-
-### 7.4 Dev Mode
-
-When `QML_PATH` is set, the plugin loads `Main.qml` from disk instead of the embedded resource. You can edit QML layout, styling, and property bindings without a Nix rebuild — just restart the app to pick up changes.
-
-```bash
-# Run with dev mode enabled
-QML_PATH=$PWD/src/qml \
-  nix run . 
-```
-
-> **What still requires a rebuild:**
-> - Changes to `.cpp` / `.h` files (backend logic, plugin interface)
-> - Changes to `CMakeLists.txt` or `metadata.json`
->
-> **What does not require a rebuild:**
-> - Any `.qml` change — layout, styling, property bindings, JS logic
+Key patterns:
+- `logos.module("calc_ui_cpp")` — gets the typed replica (auto-synced properties)
+- `backend.status` — PROP from `.rep`, updates automatically
+- `logos.watch(backend.add(1, 2)).then(...)` — SLOT return value as JS Promise
+- `` — required for `logos.watch()`
 
 ---
 
-## Step 8: Option B — Pure Qt Widget
-
-The plugin creates a standard Qt widget using layouts and connects button clicks to the backend. No QML, no additional Qt modules — just `Qt6::Widgets`.
-
-Replace `src/calc_ui_cpp_plugin.cpp` with:
-
-### `src/calc_ui_cpp_plugin.cpp`
-
-```cpp
-#include "calc_ui_cpp_plugin.h"
-#include "calc_backend.h"
-#include "logos_api.h"
-#include <QDebug>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-
-CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : QObject(parent) {}
-CalcUiCppPlugin::~CalcUiCppPlugin() {}
-
-void CalcUiCppPlugin::initLogos(LogosAPI* api)
-{
-    m_logosAPI = api;
-}
-
-QWidget* CalcUiCppPlugin::createWidget(LogosAPI* logosAPI)
-{
-    auto* backend = new CalcBackend(logosAPI);
-
-    auto* widget  = new QWidget();
-    auto* layout  = new QVBoxLayout(widget);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->setSpacing(16);
-
-    // ── Title ──────────────────────────────────────────────────
-    auto* title = new QLabel("Logos Calculator (C++)");
-    title->setAlignment(Qt::AlignHCenter);
-    layout->addWidget(title);
-
-    // ── Two-operand row ────────────────────────────────────────
-    auto* twoOpRow = new QHBoxLayout();
-    auto* inputA   = new QLineEdit(); inputA->setPlaceholderText("a"); inputA->setMaximumWidth(80);
-    auto* inputB   = new QLineEdit(); inputB->setPlaceholderText("b"); inputB->setMaximumWidth(80);
-    auto* addBtn   = new QPushButton("Add");
-    auto* mulBtn   = new QPushButton("Multiply");
-    twoOpRow->addWidget(inputA);
-    twoOpRow->addWidget(inputB);
-    twoOpRow->addWidget(addBtn);
-    twoOpRow->addWidget(mulBtn);
-    twoOpRow->addStretch();
-    layout->addLayout(twoOpRow);
-
-    // ── Single-operand row ─────────────────────────────────────
-    auto* oneOpRow = new QHBoxLayout();
-    auto* inputN   = new QLineEdit(); inputN->setPlaceholderText("n"); inputN->setMaximumWidth(80);
-    auto* facBtn   = new QPushButton("Factorial");
-    auto* fibBtn   = new QPushButton("Fibonacci");
-    auto* verBtn   = new QPushButton("libcalc version");
-    oneOpRow->addWidget(inputN);
-    oneOpRow->addWidget(facBtn);
-    oneOpRow->addWidget(fibBtn);
-    oneOpRow->addWidget(verBtn);
-    oneOpRow->addStretch();
-    layout->addLayout(oneOpRow);
-
-    // ── Result display ─────────────────────────────────────────
-    auto* resultLabel = new QLabel("Enter values and press a button");
-    resultLabel->setAlignment(Qt::AlignHCenter);
-    layout->addWidget(resultLabel);
-
-    layout->addStretch();
-
-    // ── Wire up buttons ────────────────────────────────────────
-    auto show = [resultLabel](const QString& v) { resultLabel->setText(v); };
-
-    QObject::connect(addBtn, &QPushButton::clicked, [=] {
-        show(QString::number(backend->add(inputA->text().toInt(), inputB->text().toInt())));
-    });
-    QObject::connect(mulBtn, &QPushButton::clicked, [=] {
-        show(QString::number(backend->multiply(inputA->text().toInt(), inputB->text().toInt())));
-    });
-    QObject::connect(facBtn, &QPushButton::clicked, [=] {
-        show(QString::number(backend->factorial(inputN->text().toInt())));
-    });
-    QObject::connect(fibBtn, &QPushButton::clicked, [=] {
-        show(QString::number(backend->fibonacci(inputN->text().toInt())));
-    });
-    QObject::connect(verBtn, &QPushButton::clicked, [=] {
-        show(backend->libVersion());
-    });
-
-    return widget;
-}
-
-void CalcUiCppPlugin::destroyWidget(QWidget* widget)
-{
-    delete widget;
-}
-```
-
----
-
-## Step 9: `flake.nix`
-
-Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wires up `apps.default` (i.e. `nix run`) for free — no manual `apps` block or `logosStandalone` parameter required. The standalone app runner is bundled with `logos-module-builder`.
-
-**Important — `flakeInputs`:** Because `metadata.json` declares `"dependencies": ["calc_module"]`, the build system runs `logos-cpp-generator` before compiling your C++ sources. The generator introspects `calc_module`'s built plugin to produce `logos_sdk.h` / `logos_sdk.cpp` (and per-module `calc_module_api.h` / `calc_module_api.cpp`). These are the files your backend includes as `#include "logos_sdk.h"`. For this to work, `calc_module` must be available as a built Nix package at code-generation time — that is what `flakeInputs` provides (the builder discovers dependency inputs by matching their names against the `dependencies` array in `metadata.json`). Without it, the build fails with `'logos_sdk.h' file not found`.
+## Step 7: flake.nix
 
 ```nix
 {
-  description = "Calculator C++ UI plugin for Logos - widget frontend for calc_module";
+  description = "Calculator C++ UI plugin — QML view with process-isolated backend";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
-    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
 
-  outputs = inputs@{ logos-module-builder, calc_module, ... }:
-    logos-module-builder.lib.mkLogosModule {
+  outputs = inputs@{ logos-module-builder, ... }:
+    logos-module-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
@@ -638,227 +388,51 @@ Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wir
 }
 ```
 
-Because `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wires up `apps.default`. It stages the compiled plugin alongside `metadata.json` and any icon files into a Nix store directory, bundles all module dependencies (direct and transitive) from their LGX packages, then produces a shell script that calls `logos-standalone-app` with that directory — exactly what `nix run` executes. All required backend modules are self-contained; no external setup is needed.
+`mkLogosQmlModule` handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
 
 ---
 
-## Step 10: Build and Test
-
-### 10.1 Build
+## Step 8: Build and Run
 
 ```bash
 git add -A
-nix flake update
-git add flake.lock
-nix build --override-input calc_module path:../logos-calc-module
+nix run . -- --load-modules calc_ui_cpp
+
+# Or from the workspace:
+./scripts/ws run logos-calc-ui-cpp --local logos-calc-ui-cpp logos-calc-module
 ```
-
-Inspect the output with `lm` (the module inspector from `logos-module`):
-
-```bash
-nix build 'github:logos-co/logos-module/tutorial-v1#lm' --out-link ./lm-cli
-
-# Linux
-./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.so
-
-# macOS
-# ./lm-cli/bin/lm ./result/lib/calc_ui_cpp_plugin.dylib
-```
-
-You should see `createWidget` and `destroyWidget` in the methods list.
-
-### 10.2 UI only (layout preview)
-
-```bash
-nix run .
-```
-
-The widget opens. No backend module is loaded, so button clicks will silently return 0 (CalcBackend logs a warning when `calc_module` is not connected) — but you can verify the layout looks correct.
-
-### 10.3 Full functionality (with modules)
-
-The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1:
-
-```bash
-nix run . --override-input calc_module path:../logos-calc-module
-```
-
-Clicking **Add**, **Multiply**, **Factorial**, or **Fibonacci** now calls the real module.
-
-> **When do you need `--override-input`?** `calc_module.url` in `flake.nix` points to the published GitHub URL. If your local `logos-calc-module` has unpushed changes or differs from what is on GitHub, you must use `--override-input calc_module path:../logos-calc-module` so nix uses your local copy. If your `calc_module` is already pushed and matches the GitHub URL, you can run `nix build` / `nix run` without the override. This is the same mechanism `ws build --local` / `ws build --auto-local` uses throughout the workspace.
 
 ---
 
-## Step 11: Load in `logos-basecamp`
+## Step 9: How the Pieces Connect
 
-### 11.1 Create LGX packages
-
-Use `--out-link` to avoid overwriting the `result` symlink:
-
-```bash
-# Package calc_module (from Part 1)
-cd ../logos-calc-module
-nix build '.#lgx' --out-link result-lgx
-nix build '.#lgx-portable' --out-link result-lgx-portable
-
-# Package the C++ UI plugin
-cd ../logos-calc-ui-cpp
-nix build '.#lgx' --out-link result-lgx
-nix build '.#lgx-portable' --out-link result-lgx-portable
-```
-
-> For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
-
-### 11.2 Build and run logos-basecamp
-
-Build logos-basecamp, launch it once to preinstall its bundled modules, then install your modules.
-
-> **Note:** `logos-basecamp` does not accept `--modules-dir` or `--ui-plugins-dir` CLI flags. It manages its own data directory and preinstalls bundled modules (main_ui, package_manager, etc.) on first launch.
-
-```bash
-# Build logos-basecamp
-nix build 'github:logos-co/logos-basecamp/tutorial-v1' -o basecamp-result
-
-# Launch once to preinstall bundled modules, then close it
-./basecamp-result/bin/logos-basecamp
-```
-
-Basecamp creates its data directory on first launch. To find where it is, check the log output for `plugins directory` or look for the directory that contains `modules/` and `plugins/` subdirectories:
-
-```bash
-# macOS (typical path, may vary):
-ls ~/Library/Application\ Support/Logos/
-
-# Linux (typical path, may vary):
-ls ~/.local/share/Logos/
-```
-
-The dev build directory is named `LogosBasecampDev` (portable builds use `LogosBasecamp`).
-
-Install your modules using `lgpm`. First, set `BASECAMP_DIR` to your platform's path:
-
-```bash
-# macOS:
-BASECAMP_DIR="$HOME/Library/Application Support/Logos/LogosBasecampDev"
-
-# Linux:
-BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
-```
-
-```bash
-# Build lgpm CLI
-nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./pm
-
-# Install core module
-./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
-  install --file ../logos-calc-module/result-lgx/*.lgx
-
-# Install UI plugin
-./pm/bin/lgpm --ui-plugins-dir "$BASECAMP_DIR/plugins" \
-  install --file result-lgx/*.lgx
-
-# Launch basecamp -- your modules appear alongside the built-in ones
-./basecamp-result/bin/logos-basecamp
-```
-
-### 11.3 Portable basecamp build (optional)
-
-The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
-
-```bash
-# Build portable basecamp (bundles all Qt frameworks/libraries)
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-bundle-dir' -o basecamp-portable
-
-# Launch once to preinstall bundled modules
-./basecamp-portable/bin/logos-basecamp
-```
-
-The portable build uses a different data directory (`LogosBasecamp` instead of `LogosBasecampDev`). Set `BASECAMP_DIR` to your platform's path:
-
-```bash
-# macOS:
-BASECAMP_DIR="$HOME/Library/Application Support/Logos/LogosBasecamp"
-
-# Linux:
-BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecamp"
-```
-
-Install your modules using the **portable** `.lgx` variants:
-
-```bash
-# Install core module (use portable variant)
-./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
-  install --file ../logos-calc-module/result-lgx-portable/*.lgx
-
-# Install UI plugin (use portable variant)
-./pm/bin/lgpm --ui-plugins-dir "$BASECAMP_DIR/plugins" \
-  install --file result-lgx-portable/*.lgx
-
-# Launch
-./basecamp-portable/bin/logos-basecamp
-```
-
-> **Important:** Portable basecamp requires portable `.lgx` variants (`result-lgx-portable`), and the dev build requires dev variants (`result-lgx`). Mixing them will cause loading failures.
-
-### 11.4 Install via logos-basecamp UI
-
-Instead of using `lgpm` on the command line, you can install modules through the basecamp UI:
-
-1. Launch `logos-basecamp`
-2. Go to **Package Manager**
-3. Click **Install from file**
-4. Select `../logos-calc-module/result-lgx/*.lgx` — installs `calc_module`
-5. Repeat for `result-lgx/*.lgx` — installs `calc_ui_cpp`
-
-The "Calculator" tab appears in the sidebar.
+1. `nix build` → compiles the C++ plugin + replica factory, bundles QML view
+2. `nix run` → launches `logos-standalone-app` which:
+   - Loads `calc_module` (dependency)
+   - Spawns a `ui-host` child process with `calc_ui_cpp_plugin.so`
+   - `ui-host` calls `initLogos()` → `setBackend(this)` → `enableRemoting(host)`
+   - Backend is now accessible over a local socket
+3. Host app loads `calc_ui_cpp_replica_factory.dylib` → creates a typed replica
+4. QML gets the replica via `logos.module("calc_ui_cpp")`
+5. `backend.add(1, 2)` → Qt Remote Objects sends call to ui-host → backend runs → returns result
+6. `backend.status` auto-syncs whenever the backend calls `setStatus(...)`
 
 ---
 
-## Known Limitations
+## Comparison: .rep Interface Patterns
 
-### QML changes not appearing after rebuild (Option A only)
-
-Qt caches compiled QML on disk. If you update your `Main.qml`, rebuild and reinstall the `.lgx`, but the old UI still appears, the cache is stale. Fix by disabling the cache before launching:
-
-```bash
-QML_DISABLE_DISK_CACHE=1 ./basecamp-result/bin/logos-basecamp
-```
-
-### UI module not loading or basecamp behaving unexpectedly
-
-When switching between portable and dev builds of basecamp, or running multiple basecamp instances, the data directory can get into a bad state (stale modules, mixed variants, corrupted preinstall). Clear it and let basecamp re-preinstall on next launch:
-
-```bash
-# Remove basecamp's data directory
-# macOS:
-rm -rf ~/Library/Application\ Support/Logos/LogosBasecampDev
-
-# Linux:
-rm -rf ~/.local/share/Logos/LogosBasecampDev
-
-# Relaunch — basecamp will re-preinstall its bundled modules
-./basecamp-result/bin/logos-basecamp
-```
-
-Then reinstall your custom modules.
-
----
-
-## Recap: Three Module Types
-
-| | Core (Part 1) | QML UI (Part 2) | C++ UI (Part 3) |
+| Pattern | .rep declaration | Backend C++ | QML usage |
 |---|---|---|---|
-| Language | C++ | QML / JS | C++ (+ optional QML) |
-| Compilation | Yes | No | Yes |
-| Backend calls | Exposed via `Q_INVOKABLE` | `logos.callModule()` IPC | `LogosAPI*` → `invokeRemoteMethod()` |
-| Type safety | Strong | Weak (QVariant/QString) | Strong |
-| Async support | — | `logos.callModuleAsync()` | `LogosAPIClient::invokeRemoteMethodAsync()` |
-| Sandboxed | No | Yes | No |
-| QML support | — | Native | Via `QQuickWidget` |
-| Template | `#default` | `#ui-qml-module` | `#ui-module` |
+| **Return value** | `SLOT(int add(int a, int b))` | `int add(...) override { return ...; }` | `logos.watch(backend.add(1,2)).then(cb)` |
+| **Property** | `PROP(QString status READWRITE)` | `setStatus("Ready")` (inherited) | `backend.status` (auto-syncs) |
+| **Signal** | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")` | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
+| **Model** | (use Q_PROPERTY on backend) | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")` |
 
-## What's Next
+---
 
-- **Generated type-safe wrappers** — instead of raw `invokeRemoteMethod`, use `logos-cpp-generator` to generate a typed `CalcModuleClient` class. See [Developer Guide](logos-developer-guide.md) Section 6.2
-- **Events** — core modules emit `eventResponse` signals; connect to them from your backend class via `LogosAPIClient`
-- **Use the Logos Design System** in Option B QML — `import Logos.Theme` and `import Logos.Controls` are available when running inside `logos-basecamp`
+## Next Steps
+
+- Add more `.rep` properties/signals for richer UI state
+- Use `logos.model()` for list views backed by `QAbstractItemModel`
+- Package as `.lgx` for distribution: `nix build .#lgx`
+- See [logos-package-manager-ui](https://github.com/logos-co/logos-package-manager-ui) for a production example

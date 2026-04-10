@@ -38,7 +38,7 @@ Key points:
 - **No compilation.** A QML plugin is just `.qml` files and a `metadata.json`.
 - **Sandboxed.** No network access, no filesystem access outside the module directory.
 - **The `logos` bridge** is injected by the host. Call core modules with `logos.callModule("module", "method", [args])`.
-- **Entry point** is always `Main.qml`.
+- **Entry point** is defined by the required `"view"` field in `metadata.json` (for this tutorial it is `Main.qml`).
 
 ---
 
@@ -48,7 +48,7 @@ Use the QML module template from `logos-module-builder`:
 
 ```bash
 mkdir logos-calc-ui && cd logos-calc-ui
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#ui-qml-module
+nix flake init -t github:logos-co/logos-module-builder#ui-qml
 git init && git add -A
 ```
 
@@ -75,7 +75,7 @@ Replace the template contents with your plugin's details. The template may gener
   "version": "1.0.0",
   "description": "Calculator UI - QML frontend for the calc_module",
   "type": "ui_qml",
-  "main": "Main.qml",
+  "view": "Main.qml",
   "dependencies": ["calc_module"],
   "category": "tools",
   "icon": "icons/calc.png",
@@ -104,9 +104,9 @@ mkdir -p icons
 echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3ziCWRkoEP2XmedfX82OkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAO0BN/SiO/PatoIAAAAASUVORK5CYII=" | base64 -d > icons/calc.png
 ```
 
-The `dependencies` field tells the host to load `calc_module` before showing your UI.
+The `view` field tells the host which QML file to load for the UI. The `dependencies` field tells the host to load `calc_module` before showing your UI.
 
-> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
+> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 ---
 
@@ -255,8 +255,8 @@ The template already has everything wired up. Update the description and add `ca
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
-    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";  # must match dependency name in metadata.json
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";  # must match dependency name in metadata.json
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -366,7 +366,7 @@ Build logos-basecamp, launch it once to preinstall its bundled modules, then ins
 
 ```bash
 # Build logos-basecamp
-nix build 'github:logos-co/logos-basecamp/tutorial-v1' -o basecamp-result
+nix build 'github:logos-co/logos-basecamp' -o basecamp-result
 
 # Launch once to preinstall bundled modules, then close it
 ./basecamp-result/bin/logos-basecamp
@@ -396,7 +396,7 @@ BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
 
 ```bash
 # Build lgpm CLI
-nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 
 # Install core module
 ./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
@@ -416,7 +416,7 @@ The dev build above depends on nix store paths at runtime. For a self-contained 
 
 ```bash
 # Build portable basecamp (bundles all Qt frameworks/libraries)
-nix build 'github:logos-co/logos-basecamp/tutorial-v1#bin-bundle-dir' -o basecamp-portable
+nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
 
 # Launch once to preinstall bundled modules
 ./basecamp-portable/bin/logos-basecamp

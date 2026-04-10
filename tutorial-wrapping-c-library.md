@@ -37,10 +37,10 @@ Before writing any C code, scaffold the Logos module project using the official 
 ```bash
 # For a module that wraps an external C library:
 mkdir logos-calc-module && cd logos-calc-module
-nix flake init -t github:logos-co/logos-module-builder/tutorial-v1#with-external-lib
+nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 
 # Or for a plain module (no external library):
-# nix flake init -t github:logos-co/logos-module-builder/tutorial-v1
+# nix flake init -t github:logos-co/logos-module-builder
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 2.3](#23-flakenix--nix-build-config) to ensure reproducible builds.
@@ -302,7 +302,7 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
   description = "Calculator module - wraps libcalc C library for Logos";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -564,7 +564,7 @@ Both library files are placed together so the plugin can find the C library at r
 The `lm` CLI tool (from `logos-module`) inspects compiled module binaries:
 
 ```bash
-nix build 'github:logos-co/logos-module/tutorial-v1#lm' --out-link ./lm
+nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 ```
 
 ### 4.2 View metadata
@@ -672,7 +672,7 @@ For scripting and CI, use `--json`:
 ### 5.1 Build logoscore
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli/tutorial-v1' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
 ### 5.2 Set up the modules directory
@@ -684,7 +684,7 @@ nix build 'github:logos-co/logos-logoscore-cli/tutorial-v1' --out-link ./logos
 nix build '.#lgx'
 
 # Install it into a modules directory using the Logos Package Manager
-nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 mkdir -p modules
 ./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
 ```
@@ -770,7 +770,7 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 To install a portable package on another machine:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager/tutorial-v1#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ./pm/bin/lgpm --modules-dir ./modules install --file result-lgx-portable/*.lgx
 ```
 
@@ -885,7 +885,7 @@ Instead of pre-building the library and placing it in `lib/`, you can have Nix f
   description = "Module wrapping libfoo from GitHub";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
 
     # Fetch the library source (non-flake)
     libfoo-src = {
