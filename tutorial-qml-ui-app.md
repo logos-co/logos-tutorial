@@ -112,7 +112,10 @@ The `view` field tells the host which QML file to load for the UI. The `dependen
 
 ## Step 3: Write `Main.qml`
 
-Replace the starter file with the calculator UI:
+Replace the starter file with the calculator UI. This demonstrates two communication patterns:
+
+1. **Direct calls** — `logos.callModule()` sends a request and returns the result immediately
+2. **Event-based** — `logos.callModule()` fires-and-forgets, the module emits an event, and QML receives it via `logos.onModuleEvent()`
 
 ```qml
 import QtQuick
@@ -124,6 +127,22 @@ Item {
 
     property string result: ""
     property string errorText: ""
+    property string versionFromEvent: ""
+
+    // ── Event subscription ────────────────────────────────────
+    // Subscribe to "versionReady" events pushed from calc_module.
+    Component.onCompleted: {
+        if (typeof logos !== "undefined" && logos.onModuleEvent)
+            logos.onModuleEvent("calc_module", "versionReady")
+    }
+
+    Connections {
+        target: typeof logos !== "undefined" ? logos : null
+        function onModuleEventReceived(moduleName, eventName, data) {
+            if (eventName === "versionReady")
+                root.versionFromEvent = data[0]
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -139,7 +158,13 @@ Item {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        // ── Two-operand operations ─────────────────────────────
+        // ── Pattern 1: Direct call (request -> response) ──────
+        Text {
+            text: "Direct calls (logos.callModule -> returns result)"
+            color: "#8b949e"
+            font.pixelSize: 12
+        }
+
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -169,7 +194,6 @@ Item {
             }
         }
 
-        // ── Single-operand operations ──────────────────────────
         RowLayout {
             spacing: 12
             Layout.fillWidth: true
@@ -197,7 +221,7 @@ Item {
             }
         }
 
-        // ── Result display ─────────────────────────────────────
+        // Direct call result
         Rectangle {
             Layout.fillWidth: true
             height: 56
@@ -213,10 +237,47 @@ Item {
             }
         }
 
+        // ── Pattern 2: Event-based (fire-and-forget -> event) ─
+        Text {
+            text: "Event-based (fire-and-forget call -> result via event)"
+            color: "#8b949e"
+            font.pixelSize: 12
+        }
+
+        RowLayout {
+            spacing: 12
+            Layout.fillWidth: true
+
+            Button {
+                text: "libcalc version (event)"
+                onClicked: {
+                    if (typeof logos !== "undefined" && logos.callModule)
+                        logos.callModule("calc_module", "libVersionNotify", [])
+                }
+            }
+        }
+
+        // Event result
+        Rectangle {
+            Layout.fillWidth: true
+            height: 56
+            color: "#1a1a2d"
+            radius: 8
+
+            Text {
+                anchors.centerIn: parent
+                text: root.versionFromEvent.length > 0
+                      ? ("Version (via event): " + root.versionFromEvent)
+                      : "Press the event button — result arrives via event"
+                color: "#7ab8ff"
+                font.pixelSize: 15
+            }
+        }
+
         Item { Layout.fillHeight: true }
     }
 
-    // ── Logos bridge helpers ───────────────────────────────────
+    // ── Direct call helpers ───────────────────────────────────
 
     function callModule(method, args) {
         root.errorText = ""
@@ -242,7 +303,13 @@ Item {
 }
 ```
 
-The `logos` object is injected by the host at runtime. The `callModule` helper checks for it and routes calls through the IPC bridge to `calc_module`.
+The UI demonstrates two communication patterns:
+
+- **Green section (direct calls):** `logos.callModule("calc_module", "libVersion", [])` sends a request to `calc_module` and returns the result synchronously. Simple request/response.
+
+- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event via `eventResponse`, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+
+The `logos` object is injected by the host at runtime.
 
 ---
 

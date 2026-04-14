@@ -399,6 +399,7 @@ public:
     Q_INVOKABLE int factorial(int n) override;
     Q_INVOKABLE int fibonacci(int n) override;
     Q_INVOKABLE QString libVersion() override;
+    Q_INVOKABLE void libVersionNotify();
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
@@ -413,7 +414,7 @@ signals:
 - `Q_PLUGIN_METADATA(IID ... FILE "metadata.json")` — embeds the metadata into the binary
 - `Q_INTERFACES(CalcModuleInterface PluginInterface)` — registers both interfaces with Qt's plugin system
 - `initLogos` must be `Q_INVOKABLE` but **not** `override` — the base class `PluginInterface` does not declare it as virtual; the Logos host calls it reflectively via `QMetaObject::invokeMethod`
-- `eventResponse` signal is required for event forwarding between modules
+- `eventResponse` signal is required for event forwarding between modules. Emit it to push data to subscribers (e.g., QML UIs listening via `logos.onModuleEvent()`)
 - `name()` must return the same string as the `name` field in `metadata.json`
 - **No `m_logosAPI` member variable** — the `LogosAPI`\* pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
 
@@ -483,6 +484,14 @@ QString CalcModulePlugin::libVersion()
     QString result = QString::fromUtf8(ver);
     qDebug() << "CalcModulePlugin::libVersion" << result;
     return result;
+}
+
+void CalcModulePlugin::libVersionNotify()
+{
+    const char* ver = calc_version();
+    QString result = QString::fromUtf8(ver);
+    qDebug() << "CalcModulePlugin::libVersionNotify" << result;
+    emit eventResponse("versionReady", {result});
 }
 ```
 

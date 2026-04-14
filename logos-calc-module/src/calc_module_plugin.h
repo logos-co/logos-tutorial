@@ -34,6 +34,7 @@ public:
     Q_INVOKABLE int factorial(int n) override;
     Q_INVOKABLE int fibonacci(int n) override;
     Q_INVOKABLE QString libVersion() override;
+    Q_INVOKABLE void libVersionNotify();
 
 signals:
     void eventResponse(const QString& eventName, const QVariantList& args);

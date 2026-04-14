@@ -55,3 +55,11 @@ QString CalcModulePlugin::libVersion()
     qDebug() << "CalcModulePlugin::libVersion" << result;
     return result;
 }
+
+void CalcModulePlugin::libVersionNotify()
+{
+    const char* ver = calc_version();
+    QString result = QString::fromUtf8(ver);
+    qDebug() << "CalcModulePlugin::libVersionNotify" << result;
+    emit eventResponse("versionReady", {result});
+}
