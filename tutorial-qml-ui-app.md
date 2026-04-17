@@ -13,7 +13,7 @@ This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrappin
 
 **Prerequisites:**
 
-- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`
+- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`, and its shared library exists in `logos-calc-module/lib/` (`.so` on Linux, `.dylib` on macOS)
 - Nix with flakes enabled (same as Part 1)
 - Basic familiarity with QML (Qt's declarative UI language)
 
@@ -257,6 +257,7 @@ The template already has everything wired up. Update the description and add `ca
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
     calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";  # must match dependency name in metadata.json
+    # calc_module.url = "path:../logos-calc-module";  # local checkout (development)
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -269,6 +270,14 @@ The template already has everything wired up. Update the description and add `ca
 ```
 
 `mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically — note that the input attribute name (`calc_module`) must match the dependency name.
+
+The `calc_module.url` can be either:
+- **`github:`** — use the published tutorial-v1 repo.
+- **`path:`** — use your local checkout (for development).
+
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`.
+
+> **Tip:** If `flake.nix` keeps the `github:` URL, use `--override-input calc_module path:../logos-calc-module` at build/run time to use your local checkout.
 
 ---
 
@@ -289,11 +298,33 @@ The app opens immediately. No modules are loaded, so clicking buttons shows "Log
 
 The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1:
 
+If the shared library is missing, rebuild it first:
+
+```bash
+# Check:
+ls ../logos-calc-module/lib/libcalc.so      # Linux
+ls ../logos-calc-module/lib/libcalc.dylib   # macOS
+
+# Rebuild if missing:
+cd ../logos-calc-module/lib
+gcc -shared -fPIC -o libcalc.so libcalc.c       # Linux
+# gcc -shared -fPIC -o libcalc.dylib libcalc.c   # macOS
+cd ../../logos-calc-ui
+```
+
+Run with a local override:
+
 ```bash
 nix run . --override-input calc_module path:../logos-calc-module
 ```
 
 Clicking **Add**, **Multiply**, **Factorial**, or **Fibonacci** now calls the real module.
+
+If `flake.nix` already uses `calc_module.url = "path:../logos-calc-module"`, run without override:
+
+```bash
+nix run .
+```
 
 ---
 

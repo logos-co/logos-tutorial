@@ -21,7 +21,7 @@ The C++ backend class provides type-safe calls via generated SDK wrappers — `i
 
 **Prerequisites:**
 
-- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`
+- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`, and its shared library exists in `logos-calc-module/lib/` (`.so` on Linux, `.dylib` on macOS)
 - Nix with flakes enabled
 
 ---
@@ -627,6 +627,7 @@ Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wir
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v1";
     calc_module.url = "github:logos-co/logos-tutorial/tutorial-v1?dir=logos-calc-module";
+    # calc_module.url = "path:../logos-calc-module";  # local checkout (development)
   };
 
   outputs = inputs@{ logos-module-builder, calc_module, ... }:
@@ -640,16 +641,43 @@ Since `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wir
 
 Because `metadata.json` declares `"type": "ui"`, `mkLogosModule` automatically wires up `apps.default`. It stages the compiled plugin alongside `metadata.json` and any icon files into a Nix store directory, bundles all module dependencies (direct and transitive) from their LGX packages, then produces a shell script that calls `logos-standalone-app` with that directory — exactly what `nix run` executes. All required backend modules are self-contained; no external setup is needed.
 
+The `calc_module.url` can be either:
+- **`github:`** — use the published tutorial-v1 repo.
+- **`path:`** — use your local checkout (for development).
+
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`.
+
 ---
 
 ## Step 10: Build and Test
 
 ### 10.1 Build
 
+If `libcalc` is missing from `logos-calc-module/lib`, rebuild it first:
+
+```bash
+# Check:
+ls ../logos-calc-module/lib/libcalc.so      # Linux
+ls ../logos-calc-module/lib/libcalc.dylib   # macOS
+
+# Rebuild if missing:
+cd ../logos-calc-module/lib
+gcc -shared -fPIC -o libcalc.so libcalc.c       # Linux
+# gcc -shared -fPIC -o libcalc.dylib libcalc.c   # macOS
+cd ../../logos-calc-ui-cpp
+```
+
+Then build the UI module:
+
 ```bash
 git add -A
 nix flake update
 git add flake.lock
+
+# If flake.nix uses path:../logos-calc-module
+nix build
+
+# If flake.nix uses github: — override to local checkout
 nix build --override-input calc_module path:../logos-calc-module
 ```
 
@@ -679,6 +707,8 @@ The widget opens. No backend module is loaded, so button clicks will silently re
 
 The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1:
 
+Run with local override:
+
 ```bash
 nix run . --override-input calc_module path:../logos-calc-module
 ```
@@ -686,6 +716,8 @@ nix run . --override-input calc_module path:../logos-calc-module
 Clicking **Add**, **Multiply**, **Factorial**, or **Fibonacci** now calls the real module.
 
 > **When do you need `--override-input`?** `calc_module.url` in `flake.nix` points to the published GitHub URL. If your local `logos-calc-module` has unpushed changes or differs from what is on GitHub, you must use `--override-input calc_module path:../logos-calc-module` so nix uses your local copy. If your `calc_module` is already pushed and matches the GitHub URL, you can run `nix build` / `nix run` without the override. This is the same mechanism `ws build --local` / `ws build --auto-local` uses throughout the workspace.
+
+If `flake.nix` already uses `calc_module.url = "path:../logos-calc-module"`, you can run `nix build` / `nix run` without `--override-input`.
 
 ---
 
