@@ -22,7 +22,7 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 
 **Prerequisites:**
 
-- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`
+- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module` with the shared library built (`.so` on Linux, `.dylib` on macOS in `logos-calc-module/lib/`)
 - Nix with flakes enabled
 
 ---
@@ -376,7 +376,12 @@ Key patterns:
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
+
+    # Option A: point to a remote repo (for CI or when calc_module is published)
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+
+    # Option B: point to your local checkout (for local development)
+    # calc_module.url = "path:../logos-calc-module";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -388,15 +393,35 @@ Key patterns:
 }
 ```
 
+The `calc_module` input attribute name must match the dependency name in `metadata.json`. The URL can be:
+- **`github:`** — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
+- **`path:`** — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
+
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
+
 `mkLogosQmlModule` handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
 
 ---
 
 ## Step 8: Build and Run
 
+First, make sure your local `calc_module` is built and its `.so`/`.dylib` is present in `lib/` (see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+
+```bash
+ls ../logos-calc-module/lib/libcalc.so    # Linux
+ls ../logos-calc-module/lib/libcalc.dylib  # macOS
+```
+
+Then build and run. Choose the approach that matches your `flake.nix` setup:
+
 ```bash
 git add -A
-nix run . -- --load-modules calc_ui_cpp
+
+# If flake.nix uses path:../logos-calc-module — just run directly:
+nix run
+
+# If flake.nix uses github: — override to use your local checkout:
+nix run --override-input calc_module path:../logos-calc-module
 
 # Or from the workspace:
 ./scripts/ws run logos-calc-ui-cpp --local logos-calc-ui-cpp logos-calc-module
