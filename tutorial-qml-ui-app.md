@@ -13,7 +13,7 @@ This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrappin
 
 **Prerequisites:**
 
-- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module`
+- Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module` with the shared library built (`.so` on Linux, `.dylib` on macOS in `logos-calc-module/lib/`)
 - Nix with flakes enabled (same as Part 1)
 - Basic familiarity with QML (Qt's declarative UI language)
 
@@ -323,7 +323,12 @@ The template already has everything wired up. Update the description and add `ca
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
-    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";  # must match dependency name in metadata.json
+
+    # Option A: point to a remote repo (for CI or when calc_module is published)
+    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+
+    # Option B: point to your local checkout (for local development)
+    # calc_module.url = "path:../logos-calc-module";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -335,7 +340,17 @@ The template already has everything wired up. Update the description and add `ca
 }
 ```
 
-`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically — note that the input attribute name (`calc_module`) must match the dependency name.
+The input attribute name (`calc_module`) must match the dependency name in `metadata.json`.
+
+The `calc_module.url` can be either:
+- **`github:`** — fetches from a remote GitHub repo. Use this for CI or when `calc_module` has been published.
+- **`path:`** — points to a local directory on disk. Use this during development when both repos live side by side (e.g., `path:../logos-calc-module`).
+
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library) for build instructions.
+
+`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
+
+> **Tip:** Even if `flake.nix` uses a `github:` URL, you can override it at build time with `--override-input calc_module path:../logos-calc-module` to use your local checkout without editing `flake.nix`. This is covered in [Step 5.2](#52-full-functionality-with-modules).
 
 ---
 
@@ -354,13 +369,79 @@ The app opens immediately. No modules are loaded, so clicking buttons shows "Log
 
 ### 5.2 Full functionality (with modules)
 
-The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1:
+The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
+
+#### Ensure `calc_module` is built
+
+Go back to your `logos-calc-module` directory and verify the shared library exists:
+
+```bash
+ls ../logos-calc-module/lib/libcalc.so    # Linux
+ls ../logos-calc-module/lib/libcalc.dylib  # macOS
+```
+
+If the file is missing, build it first (as covered in [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+
+```bash
+cd ../logos-calc-module/lib
+gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
+# gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS
+cd ../../logos-calc-ui
+```
+
+Also make sure the module itself builds successfully:
+
+```bash
+cd ../logos-calc-module
+git add -A
+nix build
+cd ../logos-calc-ui
+```
+
+The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), which is the compiled Qt plugin. The `lib/libcalc.so` (or `.dylib`) inside the source tree is the underlying C library that gets linked in during the build.
+
+#### Option A: Use `--override-input` (quick, no flake.nix edits)
+
+If your `flake.nix` points to a `github:` URL, you can override it at build time to use your local checkout:
 
 ```bash
 nix run . --override-input calc_module path:../logos-calc-module
 ```
 
-Clicking **Add**, **Multiply**, **Factorial**, or **Fibonacci** now calls the real module.
+This tells nix to resolve the `calc_module` flake input from your local directory instead of from the remote URL. Any changes you've made to `calc_module` locally (including the built `.so`/`.dylib` in `lib/`) are picked up immediately — no need to push to GitHub first.
+
+#### Option B: Set `path:` in `flake.nix` (persistent local development)
+
+If you're iterating on both repos side by side, you can point the flake input directly to your local `calc_module` checkout. In `flake.nix`, change:
+
+```nix
+# From remote:
+calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+# To local:
+calc_module.url = "path:../logos-calc-module";
+```
+
+Then run normally without overrides:
+
+```bash
+nix flake update   # re-lock with the local path
+git add flake.lock
+nix run .
+```
+
+This is convenient when you always want to build against the local copy. Switch back to `github:` when you're ready to pin to a published version.
+
+#### Option C: Pin to the remote repo
+
+If `calc_module` has been pushed to the remote repository (with the `.so`/`.dylib` committed in `lib/`), the `github:` URL in `flake.nix` already points to it. A plain `nix run .` fetches and builds `calc_module` from the remote:
+
+```bash
+nix run .
+```
+
+> **Important:** The remote repo must contain the built `.so`/`.dylib` in `lib/` (or the nix build must produce it). If the shared library is missing, the `calc_module` build will fail with linker errors.
+
+Whichever option you choose, clicking **Add**, **Multiply**, **Factorial**, or **Fibonacci** now calls the real module.
 
 ---
 
