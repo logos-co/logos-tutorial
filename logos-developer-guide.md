@@ -89,18 +89,18 @@ The **Logos platform** is a modular application framework built in C++ on top of
 
 **Key components:**
 
-| Component | Repository | Role |
-|-----------|-----------|------|
-| **logos-module-builder** | [logos-co/logos-module-builder](https://github.com/logos-co/logos-module-builder) | Scaffolding and build system for new modules |
-| **logos-module** | [logos-co/logos-module](https://github.com/logos-co/logos-module) | Plugin loading/introspection library + `lm` CLI |
-| **logos-cpp-sdk** | [logos-co/logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk) | C++ SDK, types, IPC layer, code generator |
-| **logos-liblogos** | [logos-co/logos-liblogos](https://github.com/logos-co/logos-liblogos) | Core library (`logos_host`, `liblogos_core`) |
-| **logos-logoscore-cli** | [logos-co/logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli) | Headless CLI runtime (`logoscore`) |
-| **logos-package** | [logos-co/logos-package](https://github.com/logos-co/logos-package) | LGX package format library + `lgx` CLI |
-| **logos-package-manager** | [logos-co/logos-package-manager](https://github.com/logos-co/logos-package-manager) | Local package manager library + `lgpm` CLI |
-| **logos-package-downloader** | [logos-co/logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog browser + `lgpd` CLI |
-| **logos-standalone-app** | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app) | Minimal shell for running/testing UI modules in isolation |
-| **logos-basecamp** | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp) | Desktop application shell |
+| Component                    | Repository                                                                                | Role                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **logos-module-builder**     | [logos-co/logos-module-builder](https://github.com/logos-co/logos-module-builder)         | Scaffolding and build system for new modules              |
+| **logos-module**             | [logos-co/logos-module](https://github.com/logos-co/logos-module)                         | Plugin loading/introspection library + `lm` CLI           |
+| **logos-cpp-sdk**            | [logos-co/logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk)                       | C++ SDK, types, IPC layer, code generator                 |
+| **logos-liblogos**           | [logos-co/logos-liblogos](https://github.com/logos-co/logos-liblogos)                     | Core library (`logos_host`, `liblogos_core`)              |
+| **logos-logoscore-cli**      | [logos-co/logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli)           | Headless CLI runtime (`logoscore`)                        |
+| **logos-package**            | [logos-co/logos-package](https://github.com/logos-co/logos-package)                       | LGX package format library + `lgx` CLI                    |
+| **logos-package-manager**    | [logos-co/logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package manager library + `lgpm` CLI                |
+| **logos-package-downloader** | [logos-co/logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog browser + `lgpd` CLI                       |
+| **logos-standalone-app**     | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Minimal shell for running/testing UI modules in isolation |
+| **logos-basecamp**           | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop application shell                                 |
 
 ## Prerequisites
 
@@ -152,12 +152,12 @@ nix flake init -t github:logos-co/logos-module-builder#ui-qml
 
 **Available templates:**
 
-| Template | Use Case |
-|----------|----------|
-| `default` | Minimal core module (C++ backend, no UI) |
-| `with-external-lib` | Core module wrapping an external C/C++ library |
-| `ui-qml-backend` | ui_qml with C++ backend + QML view (process-isolated) |
-| `ui-qml` | ui_qml QML-only (in-process, no C++) |
+| Template            | Use Case                                              |
+| ------------------- | ----------------------------------------------------- |
+| `default`           | Minimal core module (C++ backend, no UI)              |
+| `with-external-lib` | Core module wrapping an external C/C++ library        |
+| `ui-qml-backend`    | ui_qml with C++ backend + QML view (process-isolated) |
+| `ui-qml`            | ui_qml QML-only (in-process, no C++)                  |
 
 The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
 
@@ -220,25 +220,25 @@ The full set of available fields:
 
 **Field reference:**
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `name` | Yes | -- | Module name (used for filenames and identifiers) |
-| `version` | No | `1.0.0` | Semantic version |
-| `type` | No | `core` | Module type (`core`, `ui`, `ui_qml`) |
-| `category` | No | `general` | Category (general, network, chat, wallet, integration) |
-| `description` | No | `"A Logos module"` | Human-readable description |
-| `icon` | No | `null` | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory. |
-| `main` | Yes (`core`/`ui`), optional (`ui_qml`) | -- | Plugin entry point. For `core`/`ui` modules: plugin name without extension. For `ui_qml`: optional backend plugin name (omit if QML-only). |
-| `view` | Yes (`ui_qml`) | -- | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules. |
-| `dependencies` | No | `[]` | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`. |
-| `include` | No | `[]` | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output. |
-| `nix.packages.build` | No | `[]` | Nix packages for build time |
-| `nix.packages.runtime` | No | `[]` | Nix packages for runtime |
-| `nix.external_libraries` | No | `[]` | External C/C++ libraries to wrap. Each entry is an object — see [configuration reference](https://github.com/logos-co/logos-module-builder/blob/master/docs/configuration.md#nixexternal_libraries) for fields (`name`, `vendor_path`, `build_command`, etc.). |
-| `nix.cmake.find_packages` | No | `[]` | CMake `find_package()` calls |
-| `nix.cmake.extra_sources` | No | `[]` | Additional source files to compile |
-| `nix.cmake.extra_include_dirs` | No | `[]` | Additional include directories |
-| `nix.cmake.extra_link_libraries` | No | `[]` | Additional libraries to link |
+| Field                            | Required                               | Default            | Description                                                                                                                                                                                                                                                    |
+| -------------------------------- | -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers)                                                                                                                                                                                                               |
+| `version`                        | No                                     | `1.0.0`            | Semantic version                                                                                                                                                                                                                                               |
+| `type`                           | No                                     | `core`             | Module type (`core`, `ui`, `ui_qml`)                                                                                                                                                                                                                           |
+| `category`                       | No                                     | `general`          | Category (general, network, chat, wallet, integration)                                                                                                                                                                                                         |
+| `description`                    | No                                     | `"A Logos module"` | Human-readable description                                                                                                                                                                                                                                     |
+| `icon`                           | No                                     | `null`             | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory.                                                                                                                                    |
+| `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension. For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                                                     |
+| `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
+| `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
+| `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
+| `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
+| `nix.packages.runtime`           | No                                     | `[]`               | Nix packages for runtime                                                                                                                                                                                                                                       |
+| `nix.external_libraries`         | No                                     | `[]`               | External C/C++ libraries to wrap. Each entry is an object — see [configuration reference](https://github.com/logos-co/logos-module-builder/blob/master/docs/configuration.md#nixexternal_libraries) for fields (`name`, `vendor_path`, `build_command`, etc.). |
+| `nix.cmake.find_packages`        | No                                     | `[]`               | CMake `find_package()` calls                                                                                                                                                                                                                                   |
+| `nix.cmake.extra_sources`        | No                                     | `[]`               | Additional source files to compile                                                                                                                                                                                                                             |
+| `nix.cmake.extra_include_dirs`   | No                                     | `[]`               | Additional include directories                                                                                                                                                                                                                                 |
+| `nix.cmake.extra_link_libraries` | No                                     | `[]`               | Additional libraries to link                                                                                                                                                                                                                                   |
 
 ### 1.4 Understanding the Module Code
 
@@ -349,18 +349,14 @@ Example JSON output:
     "signature": "initLogos(LogosAPI*)",
     "returnType": "void",
     "isInvokable": true,
-    "parameters": [
-      { "name": "logosAPIInstance", "type": "LogosAPI*" }
-    ]
+    "parameters": [{ "name": "logosAPIInstance", "type": "LogosAPI*" }]
   },
   {
     "name": "doSomething",
     "signature": "doSomething(QString)",
     "returnType": "QString",
     "isInvokable": true,
-    "parameters": [
-      { "name": "input", "type": "QString" }
-    ]
+    "parameters": [{ "name": "input", "type": "QString" }]
   }
 ]
 ```
@@ -394,6 +390,7 @@ The test infrastructure has three layers:
 3. **Test Framework** — a JavaScript API for writing UI assertions (`expectTexts`, `click`, `waitFor`, etc.)
 
 When you run `nix build .#integration-test`, the builder:
+
 - Launches `logos-standalone-app` with your plugin in headless mode (`QT_QPA_PLATFORM=offscreen`)
 - Connects to the QML inspector
 - Runs all `.mjs` test files in your `tests/` directory
@@ -406,13 +403,19 @@ Create `.mjs` files in `tests/`. Each file imports the test framework and define
 import { resolve } from "node:path";
 
 // CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
-const root = process.env.LOGOS_QT_MCP || new URL("../result-mcp", import.meta.url).pathname;
-const { test, run } = await import(resolve(root, "test-framework/framework.mjs"));
+const root =
+  process.env.LOGOS_QT_MCP ||
+  new URL("../result-mcp", import.meta.url).pathname;
+const { test, run } = await import(
+  resolve(root, "test-framework/framework.mjs")
+);
 
 test("my_module: loads UI", async (app) => {
   await app.waitFor(
-    async () => { await app.expectTexts(["Hello"]); },
-    { timeout: 15000, interval: 500, description: "UI to load" }
+    async () => {
+      await app.expectTexts(["Hello"]);
+    },
+    { timeout: 15000, interval: 500, description: "UI to load" },
   );
 });
 
@@ -425,6 +428,7 @@ run();
 ```
 
 Key test APIs:
+
 - `app.expectTexts(["text1", "text2"])` — assert text is visible in the UI
 - `app.click("Button Text")` — find an element by text and click it
 - `app.waitFor(fn, opts)` — retry an assertion until it passes or times out
@@ -531,20 +535,20 @@ This produces a `my_module-<version>.lgx` file in the current directory.
 
 **Bundling modes:**
 
-| Mode | Built-in Command | `nix bundle` Command | Variant Created | Use Case |
-|------|-----------------|---------------------|----------------|----------|
-| **Dev** | `nix build .#lgx` | `nix bundle --bundler ...#default .#lib` | `darwin-arm64-dev` | Local development (requires Nix store) |
-| **Portable** | `nix build .#lgx-portable` | `nix bundle --bundler ...#portable .#lib` | `darwin-arm64` | Distribution (self-contained, no Nix needed) |
-| **Dual** | *(not available as built-in)* | `nix bundle --bundler ...#dual .#lib` | Both dev and portable | One package for both environments |
+| Mode         | Built-in Command              | `nix bundle` Command                      | Variant Created       | Use Case                                     |
+| ------------ | ----------------------------- | ----------------------------------------- | --------------------- | -------------------------------------------- |
+| **Dev**      | `nix build .#lgx`             | `nix bundle --bundler ...#default .#lib`  | `darwin-arm64-dev`    | Local development (requires Nix store)       |
+| **Portable** | `nix build .#lgx-portable`    | `nix bundle --bundler ...#portable .#lib` | `darwin-arm64`        | Distribution (self-contained, no Nix needed) |
+| **Dual**     | _(not available as built-in)_ | `nix bundle --bundler ...#dual .#lib`     | Both dev and portable | One package for both environments            |
 
 **Variant naming:**
 
-| Nix System | Dev Variant | Portable Variant |
-|-----------|------------|-----------------|
-| `aarch64-darwin` | `darwin-arm64-dev` | `darwin-arm64` |
-| `x86_64-darwin` | `darwin-amd64-dev` | `darwin-amd64` |
-| `aarch64-linux` | `linux-arm64-dev` | `linux-arm64` |
-| `x86_64-linux` | `linux-amd64-dev` | `linux-amd64` |
+| Nix System       | Dev Variant        | Portable Variant |
+| ---------------- | ------------------ | ---------------- |
+| `aarch64-darwin` | `darwin-arm64-dev` | `darwin-arm64`   |
+| `x86_64-darwin`  | `darwin-amd64-dev` | `darwin-amd64`   |
+| `aarch64-linux`  | `linux-arm64-dev`  | `linux-arm64`    |
+| `x86_64-linux`   | `linux-amd64-dev`  | `linux-amd64`    |
 
 > **Important:** The variant type matters when installing into `logos-basecamp`. A dev build of basecamp expects dev variants, and a portable build expects portable variants. Use the `dual` bundler to produce packages that work with both.
 
@@ -582,12 +586,12 @@ nix build 'github:logos-co/logos-package-manager#cli' --out-link ./package-manag
 
 #### Global Options
 
-| Option | Description |
-|--------|-------------|
-| `--modules-dir <path>` | Target directory for installed core modules |
-| `--ui-plugins-dir <path>` | Target directory for UI plugins |
-| `--json` | Output in JSON format |
-| `-h, --help` | Show help |
+| Option                    | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `--modules-dir <path>`    | Target directory for installed core modules |
+| `--ui-plugins-dir <path>` | Target directory for UI plugins             |
+| `--json`                  | Output in JSON format                       |
+| `-h, --help`              | Show help                                   |
 
 ### 5.2 Installing from Local Files
 
@@ -711,28 +715,28 @@ For one-shot execution (load, call, exit), use the legacy inline flags:
 
 **Inline mode flags:**
 
-| Flag | Description |
-|------|-------------|
-| `-m, --modules-dir <dir>` | Directory containing module libraries (repeatable) |
-| `-l, --load-modules <name1,name2>` | Comma-separated list of modules to load |
-| `-c "<module>.<method>(args)"` | Call a method after loading (repeatable, sequential) |
-| `--quit-on-finish` | Exit after all `-c` calls complete |
-| `@file.json` | Pass a file's contents as a method argument |
+| Flag                               | Description                                          |
+| ---------------------------------- | ---------------------------------------------------- |
+| `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
+| `-l, --load-modules <name1,name2>` | Comma-separated list of modules to load              |
+| `-c "<module>.<method>(args)"`     | Call a method after loading (repeatable, sequential) |
+| `--quit-on-finish`                 | Exit after all `-c` calls complete                   |
+| `@file.json`                       | Pass a file's contents as a method argument          |
 
 **Daemon commands:**
 
-| Command | Description |
-|---------|-------------|
-| `status` | Show daemon and module health |
-| `load-module <name>` | Load a module into the daemon |
-| `unload-module <name>` | Unload a module |
-| `reload-module <name>` | Reload (unload + load) a module |
-| `list-modules [--loaded]` | List available or loaded modules |
-| `module-info <name>` | Show detailed module information |
+| Command                         | Description                      |
+| ------------------------------- | -------------------------------- |
+| `status`                        | Show daemon and module health    |
+| `load-module <name>`            | Load a module into the daemon    |
+| `unload-module <name>`          | Unload a module                  |
+| `reload-module <name>`          | Reload (unload + load) a module  |
+| `list-modules [--loaded]`       | List available or loaded modules |
+| `module-info <name>`            | Show detailed module information |
 | `call <module> <method> [args]` | Call a method on a loaded module |
-| `watch <module> [--event]` | Watch events from a module |
-| `stats` | Show module resource usage |
-| `stop` | Stop the daemon |
+| `watch <module> [--event]`      | Watch events from a module       |
+| `stats`                         | Show module resource usage       |
+| `stop`                          | Stop the daemon                  |
 
 ---
 
@@ -791,6 +795,7 @@ class CalcUiCpp
 ```
 
 The `.rep` file is the **single source of truth** — `repc` generates:
+
 - `CalcUiCppSimpleSource` — base class the C++ backend inherits
 - `CalcUiCppReplica` — typed replica the QML view uses via `logos.module()`
 - A separate `_replica_factory` plugin for typed remoting
@@ -973,10 +978,10 @@ Q_INVOKABLE LogosResult MyModulePlugin::fetchData(const QString& id) {
 
 The SDK supports two communication modes:
 
-| Mode | Use Case | Mechanism |
-|------|----------|-----------|
-| **Remote** (default) | Desktop apps | Qt Remote Objects (IPC between processes) |
-| **Local** | Mobile apps, single-process | In-process `PluginRegistry` |
+| Mode                 | Use Case                    | Mechanism                                 |
+| -------------------- | --------------------------- | ----------------------------------------- |
+| **Remote** (default) | Desktop apps                | Qt Remote Objects (IPC between processes) |
+| **Local**            | Mobile apps, single-process | In-process `PluginRegistry`               |
 
 Set the mode before creating any `LogosAPI` instances:
 
@@ -1019,18 +1024,18 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 
 ## Reference: Repository Map
 
-| Repository | What It Provides | Key Outputs |
-|------------|-----------------|-------------|
-| [logos-module-builder](https://github.com/logos-co/logos-module-builder) | Build system / scaffolding | `mkLogosModule`, `mkLogosQmlModule` Nix functions, `LogosModule.cmake`, templates |
-| [logos-module](https://github.com/logos-co/logos-module) | Plugin introspection | `liblogos_module.a` (static lib), `lm` (CLI) |
-| [logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk) | SDK + code generator | `LogosAPI`, `LogosResult`, `logos-cpp-generator`, `PluginInterface` |
-| [logos-liblogos](https://github.com/logos-co/logos-liblogos) | Core library | `logos_host`, `liblogos_core` |
-| [logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli) | Headless CLI runtime | `logoscore` (CLI) |
-| [logos-package](https://github.com/logos-co/logos-package) | Package format | `lgx` (CLI), `liblgx` (library) |
-| [logos-package-manager](https://github.com/logos-co/logos-package-manager) | Local package management | `lgpm` (CLI) |
-| [logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog + downloads | `lgpd` (CLI) |
-| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app) | Minimal UI module runner | `logos-standalone-app` (loads a single UI plugin for testing) |
-| [logos-basecamp](https://github.com/logos-co/logos-basecamp) | Desktop app shell | `LogosApp` (GUI), MDI workspace, plugin loader |
+| Repository                                                                       | What It Provides           | Key Outputs                                                                       |
+| -------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| [logos-module-builder](https://github.com/logos-co/logos-module-builder)         | Build system / scaffolding | `mkLogosModule`, `mkLogosQmlModule` Nix functions, `LogosModule.cmake`, templates |
+| [logos-module](https://github.com/logos-co/logos-module)                         | Plugin introspection       | `liblogos_module.a` (static lib), `lm` (CLI)                                      |
+| [logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk)                       | SDK + code generator       | `LogosAPI`, `LogosResult`, `logos-cpp-generator`, `PluginInterface`               |
+| [logos-liblogos](https://github.com/logos-co/logos-liblogos)                     | Core library               | `logos_host`, `liblogos_core`                                                     |
+| [logos-logoscore-cli](https://github.com/logos-co/logos-logoscore-cli)           | Headless CLI runtime       | `logoscore` (CLI)                                                                 |
+| [logos-package](https://github.com/logos-co/logos-package)                       | Package format             | `lgx` (CLI), `liblgx` (library)                                                   |
+| [logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package management   | `lgpm` (CLI)                                                                      |
+| [logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog + downloads | `lgpd` (CLI)                                                                      |
+| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Minimal UI module runner   | `logos-standalone-app` (loads a single UI plugin for testing)                     |
+| [logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop app shell          | `LogosApp` (GUI), MDI workspace, plugin loader                                    |
 
 ## Reference: CLI Tools Summary
 
@@ -1125,6 +1130,7 @@ This happens when running a module outside the full Logos runtime (e.g., in the 
 ### Module not discovered by logos-basecamp
 
 Check that:
+
 1. The module binary is in the correct directory (modules dir for core, plugins dir for UI)
 2. The `metadata.json` file is present alongside the binary
 3. The `name` field in metadata matches the binary name (e.g., `my_module_plugin.so` for module named `my_module`)
@@ -1163,6 +1169,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with the standalone app.
 
 2. **Dependencies must be listed in `metadata.json`** under the `"dependencies"` array:
+
    ```json
    {
      "name": "my_ui_module",
@@ -1172,6 +1179,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
    ```
 
 3. **Each dependency must have a matching flake input** — the flake input name must exactly match the dependency name in `metadata.json`:
+
    ```nix
    inputs = {
      logos-module-builder.url = "github:logos-co/logos-module-builder";
@@ -1190,6 +1198,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 - The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
 
 **Example C++ UI module `flake.nix` (view module — C++ backend + QML view):**
+
 ```nix
 {
   description = "My UI module";
@@ -1207,6 +1216,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 ```
 
 **Example QML UI module `flake.nix`:**
+
 ```nix
 {
   description = "My QML UI module";
@@ -1224,6 +1234,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 ```
 
 If the module doesn't appear, check:
+
 1. The `modules/` directory contains a subdirectory for your module with `manifest.json` and the plugin binary
 2. The variant in the manifest matches your platform (e.g., `darwin-arm64-dev` for dev builds on Apple Silicon)
 3. Use `lm` to verify the plugin binary is a valid Qt plugin: `./lm/bin/lm ./modules/my_module/my_module_plugin.dylib`
