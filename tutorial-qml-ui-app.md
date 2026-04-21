@@ -343,6 +343,7 @@ The template already has everything wired up. Update the description and add `ca
 The input attribute name (`calc_module`) must match the dependency name in `metadata.json`.
 
 The `calc_module.url` can be either:
+
 - **`github:`** — fetches from a remote GitHub repo. Use this for CI or when `calc_module` has been published.
 - **`path:`** — points to a local directory on disk. Use this during development when both repos live side by side (e.g., `path:../logos-calc-module`).
 
@@ -480,6 +481,7 @@ Rectangle {
 Available components: `LogosButton`, `LogosTextField`, `LogosText`, `LogosTabButton`.
 
 Available theme tokens via `Theme.palette`:
+
 - Colors: `background`, `backgroundSecondary`, `backgroundMuted`, `text`, `textMuted`, `border`, `overlayOrange`
 - Spacing: `Theme.spacing.radiusSmall`, `Theme.spacing.radiusXlarge`
 - Typography: `Theme.typography.secondaryText`, `Theme.typography.weightMedium`
@@ -623,11 +625,29 @@ Edit `Main.qml`, close and re-run — changes appear immediately without `nix bu
 
 ### 7.6 Testing without any runtime
 
-You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout. The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" -- but you can verify the layout and styling work correctly.
+You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout.
+
+#### Install
+
+You'll need to have QML and any included modules (`QtQuick` and submodules `Controls`, and `Layout`).
+
+Eg, to simply install on linux (apt package manager):
 
 ```bash
-# If you have Qt installed
+sudo apt install qml-qt6 qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts
+```
+
+#### Viewing the QML
+
+The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" -- but you can verify the layout and styling work correctly.
+
+```bash
+# If you have Qt and included modules installed
+# macOS:
 qml Main.qml
+
+# Linux:
+qml_qt6 Main.qml
 ```
 
 ---
@@ -646,13 +666,19 @@ Create `tests/ui-tests.mjs`:
 import { resolve } from "node:path";
 
 // CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
-const root = process.env.LOGOS_QT_MCP || new URL("../result-mcp", import.meta.url).pathname;
-const { test, run } = await import(resolve(root, "test-framework/framework.mjs"));
+const root =
+  process.env.LOGOS_QT_MCP ||
+  new URL("../result-mcp", import.meta.url).pathname;
+const { test, run } = await import(
+  resolve(root, "test-framework/framework.mjs")
+);
 
 test("calc_ui: loads and shows title", async (app) => {
   await app.waitFor(
-    async () => { await app.expectTexts(["Calculator"]); },
-    { timeout: 15000, interval: 500, description: "calc_ui to load" }
+    async () => {
+      await app.expectTexts(["Calculator"]);
+    },
+    { timeout: 15000, interval: 500, description: "calc_ui to load" },
   );
 });
 
@@ -664,8 +690,10 @@ test("calc_ui: click add and check result", async (app) => {
   await app.click("Add");
   // Verify the result appears (depends on your UI)
   await app.waitFor(
-    async () => { await app.expectTexts(["Result:"]); },
-    { timeout: 5000, interval: 500, description: "result to appear" }
+    async () => {
+      await app.expectTexts(["Result:"]);
+    },
+    { timeout: 5000, interval: 500, description: "result to appear" },
   );
 });
 
@@ -737,14 +765,14 @@ Then reinstall your custom modules.
 
 ## Recap
 
-| | Core Module (Part 1) | QML UI Plugin (Part 2) |
-|---|---|---|
-| Language | C++ | QML / JavaScript |
-| Files | `.cpp`, `.h`, `CMakeLists.txt`, `metadata.json` | `Main.qml`, `metadata.json` |
-| Compilation | Yes (CMake → `.so`) | No (file copy) |
-| `metadata.type` | `"core"` | `"ui_qml"` |
-| Test command | `logoscore -m ./result/lib -l calc_module` | `nix run .` |
-| Calls other modules | Via `LogosAPI*` (C++) | Via `logos.callModule()` (JS) |
+|                     | Core Module (Part 1)                            | QML UI Plugin (Part 2)        |
+| ------------------- | ----------------------------------------------- | ----------------------------- |
+| Language            | C++                                             | QML / JavaScript              |
+| Files               | `.cpp`, `.h`, `CMakeLists.txt`, `metadata.json` | `Main.qml`, `metadata.json`   |
+| Compilation         | Yes (CMake → `.so`)                             | No (file copy)                |
+| `metadata.type`     | `"core"`                                        | `"ui_qml"`                    |
+| Test command        | `logoscore -m ./result/lib -l calc_module`      | `nix run .`                   |
+| Calls other modules | Via `LogosAPI*` (C++)                           | Via `logos.callModule()` (JS) |
 
 ---
 
