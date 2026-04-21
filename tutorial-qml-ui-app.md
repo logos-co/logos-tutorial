@@ -647,7 +647,7 @@ The `logos` bridge won't be available, so clicking buttons will show "Logos brid
 qml Main.qml
 
 # Linux:
-qml_qt6 Main.qml
+qml6 Main.qml
 ```
 
 ---
