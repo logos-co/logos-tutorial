@@ -11,14 +11,14 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 
 **Why C++ backend over QML-only?**
 
-| | QML-only (Part 2) | C++ backend (Part 3) |
-|---|---|---|
-| Compilation | None | CMake + Qt |
-| Process isolation | No (QML runs in-process) | Yes (C++ in separate `ui-host` process) |
-| Backend calls | `logos.callModule()` / `logos.callModuleAsync()` to other modules | `LogosModules` typed SDK in C++ |
-| Type safety | Args travel as `QVariant` | C++ types preserved |
-| QML ↔ backend | Direct bridge | Qt Remote Objects (typed replica) |
-| `.rep` file | Not needed | Required — defines the remote interface |
+|                   | QML-only (Part 2)                                                 | C++ backend (Part 3)                    |
+| ----------------- | ----------------------------------------------------------------- | --------------------------------------- |
+| Compilation       | None                                                              | CMake + Qt                              |
+| Process isolation | No (QML runs in-process)                                          | Yes (C++ in separate `ui-host` process) |
+| Backend calls     | `logos.callModule()` / `logos.callModuleAsync()` to other modules | `LogosModules` typed SDK in C++         |
+| Type safety       | Args travel as `QVariant`                                         | C++ types preserved                     |
+| QML ↔ backend     | Direct bridge                                                     | Qt Remote Objects (typed replica)       |
+| `.rep` file       | Not needed                                                        | Required — defines the remote interface |
 
 **Prerequisites:**
 
@@ -58,6 +58,7 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 ```
 
 The `.rep` file declares the interface. At build time, Qt's `repc` compiler generates:
+
 - **`CalcUiCppSimpleSource`** — base class the backend inherits from
 - **`CalcUiCppReplica`** — typed replica the QML view uses
 - **`calc_ui_cpp_replica_factory`** — separate plugin that the host loads to create typed replicas
@@ -99,6 +100,7 @@ This creates the template. We'll customize it for our calculator.
 ```
 
 Key fields:
+
 - `"type": "ui_qml"` — tells the builder this is a QML view module
 - `"main": "calc_ui_cpp_plugin"` — the backend Qt plugin library (without extension)
 - `"view": "qml/Main.qml"` — the QML entry point
@@ -124,6 +126,7 @@ class CalcUiCpp
 ```
 
 This is the **single source of truth** for the remote interface. `repc` generates:
+
 - `rep_calc_ui_cpp_source.h` — `CalcUiCppSimpleSource` with virtual slots the backend overrides
 - `rep_calc_ui_cpp_replica.h` — `CalcUiCppReplica` with typed methods and auto-synced properties
 
@@ -154,6 +157,7 @@ logos_module(
 ```
 
 `REP_FILE` tells `logos_module()` to:
+
 1. Run `repc` to generate source/replica headers
 2. Generate `LogosViewPluginBase` (typed remoting base class)
 3. Build a separate `calc_ui_cpp_replica_factory` shared library
@@ -210,6 +214,7 @@ private:
 ```
 
 Three base classes:
+
 - **`CalcUiCppSimpleSource`** — generated from `.rep`, provides the typed source for Qt Remote Objects
 - **`CalcUiCppInterface`** — standard Logos plugin interface (`name()`, `version()`)
 - **`CalcUiCppViewPluginBase`** — generated, provides `setBackend()` and `enableRemoting()`
@@ -261,6 +266,7 @@ QString CalcUiCppPlugin::libVersion()
 ```
 
 Key points:
+
 - Constructor calls `CalcUiCppSimpleSource(parent)` — not `QObject(parent)`
 - `initLogos()` calls `setBackend(this)` to register with the Remote Objects host
 - Slots return values directly — they travel back to the QML replica via Qt Remote Objects
@@ -298,7 +304,7 @@ Item {
         root.errorText = ""
         root.result = "..."
         // logos.watch() wraps the pending reply in a JS Promise
-        logos.watch(backend[method].apply(backend, args)).then(
+        logos.watch(backend[method].apply(backend, args),
             function(value) { root.result = String(value) },
             function(error) { root.errorText = String(error) }
         )
@@ -361,10 +367,11 @@ Item {
 ```
 
 Key patterns:
+
 - `logos.module("calc_ui_cpp")` — gets the typed replica (auto-synced properties)
 - `backend.status` — PROP from `.rep`, updates automatically
-- `logos.watch(backend.add(1, 2)).then(...)` — SLOT return value as JS Promise
-- `` — required for `logos.watch()`
+- `logos.watch(backend.add(1, 2), ...)` — SLOT return value as JS Promise
+- ``— required for`logos.watch()`
 
 ---
 
@@ -394,6 +401,7 @@ Key patterns:
 ```
 
 The `calc_module` input attribute name must match the dependency name in `metadata.json`. The URL can be:
+
 - **`github:`** — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
 - **`path:`** — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
 
@@ -454,13 +462,19 @@ Create `tests/ui-tests.mjs`:
 import { resolve } from "node:path";
 
 // CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
-const root = process.env.LOGOS_QT_MCP || new URL("../result-mcp", import.meta.url).pathname;
-const { test, run } = await import(resolve(root, "test-framework/framework.mjs"));
+const root =
+  process.env.LOGOS_QT_MCP ||
+  new URL("../result-mcp", import.meta.url).pathname;
+const { test, run } = await import(
+  resolve(root, "test-framework/framework.mjs")
+);
 
 test("calc_ui_cpp: loads and shows title", async (app) => {
   await app.waitFor(
-    async () => { await app.expectTexts(["UI Example (C++ backend)"]); },
-    { timeout: 15000, interval: 500, description: "UI to load" }
+    async () => {
+      await app.expectTexts(["UI Example (C++ backend)"]);
+    },
+    { timeout: 15000, interval: 500, description: "UI to load" },
   );
 });
 
@@ -491,12 +505,12 @@ node tests/ui-tests.mjs       # in another terminal
 
 ## Comparison: .rep Interface Patterns
 
-| Pattern | .rep declaration | Backend C++ | QML usage |
-|---|---|---|---|
-| **Return value** | `SLOT(int add(int a, int b))` | `int add(...) override { return ...; }` | `logos.watch(backend.add(1,2)).then(cb)` |
-| **Property** | `PROP(QString status READWRITE)` | `setStatus("Ready")` (inherited) | `backend.status` (auto-syncs) |
-| **Signal** | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")` | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
-| **Model** | (use Q_PROPERTY on backend) | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")` |
+| Pattern          | .rep declaration                     | Backend C++                                 | QML usage                                                              |
+| ---------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------- |
+| **Return value** | `SLOT(int add(int a, int b))`        | `int add(...) override { return ...; }`     | `logos.watch(backend.add(1,2), cb)`                                    |
+| **Property**     | `PROP(QString status READWRITE)`     | `setStatus("Ready")` (inherited)            | `backend.status` (auto-syncs)                                          |
+| **Signal**       | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")`                | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
+| **Model**        | (use Q_PROPERTY on backend)          | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")`                                  |
 
 ---
 
