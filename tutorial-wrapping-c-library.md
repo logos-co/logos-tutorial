@@ -693,7 +693,7 @@ nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 nix build '.#lgx'
 
 # Install it into a modules directory using the Logos Package Manager
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/e5c25989861f4487c3dc8c7b3bc0062bcbc3221f#cli' --out-link ./pm
 mkdir -p modules
 ./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
 ```
@@ -779,7 +779,7 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 To install a portable package on another machine:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/e5c25989861f4487c3dc8c7b3bc0062bcbc3221f#cli' --out-link ./pm
 ./pm/bin/lgpm --modules-dir ./modules install --file result-lgx-portable/*.lgx
 ```
 
