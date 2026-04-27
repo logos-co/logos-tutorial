@@ -26,6 +26,14 @@ Item {
         )
     }
 
+    function clearCalculator() {
+        inputA.clear()
+        inputB.clear()
+        inputN.clear()
+        root.result = ""
+        root.errorText = ""
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 24
@@ -64,6 +72,11 @@ Item {
             Button {
                 text: "Multiply"
                 onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
+            }
+
+            Button {
+                text: "Clear"
+                onClicked: root.clearCalculator()
             }
         }
 
