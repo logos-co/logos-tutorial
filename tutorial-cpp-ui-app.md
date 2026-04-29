@@ -471,6 +471,20 @@ nix run --override-input calc_module path:../logos-calc-module
 ./scripts/ws run logos-calc-ui-cpp --local logos-calc-ui-cpp logos-calc-module
 ```
 
+### Live reloading QML with `DEV_QML_PATH`
+
+For rapid iteration on **QML only** without rebuilding the C++ backend, point `DEV_QML_PATH` at the directory that contains your view entry’s **basename** (see `metadata.json` `"view"`). This tutorial sets `"view": "qml/Main.qml"`, so the directory must contain `Main.qml` (here: `qml/` at the repo root):
+
+```bash
+DEV_QML_PATH=$PWD/qml nix run .
+```
+
+Edit `Main.qml` (and other QML under that tree), quit, and run again — the host loads those files from disk. **Changing C++ (`.cpp`, `.rep`, CMake) still requires** `nix build` (or a full `nix run` build).
+
+> **Naming:** Only `DEV_QML_PATH` is honored by `logos-standalone-app`. See `repos/logos-standalone-app/README.md`.
+
+> This does not work with `logos-basecamp` — Basecamp loads QML plugins from its own install tree, so source edits are not picked up until you rebuild and reinstall the `.lgx`.
+
 ---
 
 ## Step 9: How the Pieces Connect

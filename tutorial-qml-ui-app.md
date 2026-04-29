@@ -613,13 +613,15 @@ The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml
 
 ### 7.5 Live reloading with `logos-standalone-app`
 
-For rapid iteration on QML without rebuilding, set `QML_PATH` to your QML source directory:
+For rapid iteration on QML without rebuilding, set `DEV_QML_PATH` to the directory that contains your view entry file (see `metadata.json` `view` — basename must exist under that directory). Example for this tutorial’s layout (`view`: `Main.qml` at repo root):
 
 ```bash
-QML_PATH=$PWD nix run .
+DEV_QML_PATH=$PWD nix run .
 ```
 
-Edit `Main.qml`, close and re-run — changes appear immediately without `nix build`. When `QML_PATH` is set, the plugin loads QML files from the filesystem instead of from Qt resources, so your edits are picked up on each launch.
+Edit `Main.qml`, close and re-run — changes appear immediately without `nix build`. When `DEV_QML_PATH` is set, `logos-standalone-app` loads that file from disk instead of the installed copy.
+
+> **Naming:** Only `DEV_QML_PATH` is honored. See `repos/logos-standalone-app/README.md`.
 
 > This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so changes to your source files are not reflected until you rebuild and reinstall the `.lgx` package.
 
