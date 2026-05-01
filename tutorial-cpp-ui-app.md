@@ -411,6 +411,57 @@ Key patterns:
 
 ---
 
+## Step 6.5: Use the Logos Design System in your QML
+
+The QML you load above runs inside the host (`logos-basecamp` / `logos-standalone-app`), which already has `logos-design-system` on the QML import path. Use its themed components rather than rolling your own visuals — your module gets the polished look automatically as the design system evolves.
+
+```qml
+import Logos.Theme
+import Logos.Controls
+import Logos.Icons        // optional shared icon assets
+
+LogosButton {
+    text: qsTr("Add")
+    onClicked: root.callCalc("add", [parseInt(inputA.text) || 0,
+                                     parseInt(inputB.text) || 0])
+}
+
+LogosTextField {
+    id: inputA
+    placeholderText: qsTr("a")
+}
+
+Rectangle {
+    color: Theme.palette.backgroundSecondary
+    radius: Theme.spacing.radiusSmall
+    LogosText { text: qsTr("Result"); color: Theme.palette.text }
+}
+```
+
+**Discover what's available** by running the storybook:
+
+```bash
+cd repos/logos-design-system && nix run
+```
+
+The sidebar splits components into:
+
+- **Controls** — designed per Figma, production-ready (`LogosButton`, `LogosBadge`, `LogosCheckbox`, `LogosComboBox`, `LogosIconButton`, `LogosPaginator`, `LogosSearchBar`, `LogosTabBar`, `LogosTable`, `LogosText`, `LogosTextField`, `LogosToolTip`, …).
+- **Controls (not designed)** — placeholders with stable APIs but unstyled visuals (`LogosDialog`, `LogosDrawer`, `LogosScrollView`, `LogosSpinner`, `LogosTextArea`, `LogosSwitch`, …). You can ship with them; they'll get the polished look applied later without you having to change your QML.
+
+**Theme tokens** (use these instead of hex literals or magic font sizes):
+
+- `Theme.palette.*` — `background`, `backgroundSecondary`, `surface`, `text`, `textSecondary`, `border`, `primary`, `success`, `warning`, `error`, `info`, `hover`, `pressed`, …
+- `Theme.spacing.*` — `tiny`, `small`, `medium`, `large`, `xlarge`, `xxlarge`, `radiusSmall`, `radiusMedium`, `radiusLarge`
+- `Theme.typography.*` — `pageTitleText` (36), `titleText` (30), `panelTitleText` (24), `subtitleText` (16), `primaryText` (14), `secondaryText` (12); `weightRegular` / `weightMedium` / `weightBold`; `publicSans`
+- `Logos.Icons.LogosIcons.*` — `arrowLeft`, `arrowRight`, `refresh`, `install`, `trash`, `more`, `search`, …
+
+**Feedback and contributions**
+
+Feel free to report bugs, file feature requests, or contribute components / theme tokens upstream — all welcome at `logos-co/logos-design-system`. The same fix lifts every consumer, so upstreaming is the most impactful path. If you can sketch the public API you'd like to use in a feature request, it makes review and implementation much faster.
+
+---
+
 ## Step 7: flake.nix
 
 ```nix
@@ -473,13 +524,32 @@ nix run --override-input calc_module path:../logos-calc-module
 
 ### Live reloading QML with `DEV_QML_PATH`
 
-For rapid iteration on **QML only** without rebuilding the C++ backend, point `DEV_QML_PATH` at the directory that contains your view entry’s **basename** (see `metadata.json` `"view"`). This tutorial sets `"view": "qml/Main.qml"`, so the directory must contain `Main.qml` (here: `qml/` at the repo root):
+For QML iteration, point `DEV_QML_PATH` at the directory that contains your view entry's **basename** (from `metadata.json` `"view"`). This tutorial sets `"view": "qml/Main.qml"`, so the directory must contain `Main.qml` (here: `qml/` at the repo root):
 
 ```bash
 DEV_QML_PATH=$PWD/qml nix run .
 ```
 
-Edit `Main.qml` (and other QML under that tree), quit, and run again — the host loads those files from disk. **Changing C++ (`.cpp`, `.rep`, CMake) still requires** `nix build` (or a full `nix run` build).
+When `DEV_QML_PATH` is set, `logos-standalone-app` loads QML from your source tree at runtime instead of the installed copy — so edits to `Main.qml` (and any QML under that tree) are picked up on the next relaunch without you having to re-sync files.
+
+**Important — what this does *not* skip.** `nix run` always re-evaluates the flake and rehashes the source tree before launching. By default `src = ./.` includes every tracked file, including `*.qml` — so:
+
+- **Any source change, including QML edits, rebuilds the plugin** before the app starts. `DEV_QML_PATH` only kicks in *after* the build is done; it doesn't shortcut the rebuild itself.
+- **C++ / `.rep` / `metadata.json` / CMake changes** rebuild as normal.
+- The flake-evaluation overhead on each `nix run` is fixed and unavoidable while invoking through nix.
+
+For the absolute fastest loop (no nix involvement after the first build), do the build once and run the resulting binary directly:
+
+```bash
+# Build once — populates result/ in the nix store
+nix build .
+
+# Subsequent runs: invoke the bundled standalone wrapper directly,
+# skipping nix entirely. DEV_QML_PATH still redirects QML loading.
+DEV_QML_PATH=$PWD/qml ./result/bin/run-logos-standalone-ui
+```
+
+(Adjust the binary name to whatever `ls result/bin/` shows on your build.)
 
 > **Naming:** Only `DEV_QML_PATH` is honored by `logos-standalone-app`. See `repos/logos-standalone-app/README.md`.
 
@@ -569,4 +639,5 @@ node tests/ui-tests.mjs       # in another terminal
 - Add more `.rep` properties/signals for richer UI state
 - Use `logos.model()` for list views backed by `QAbstractItemModel`
 - Package as `.lgx` for distribution: `nix build .#lgx`
+- **Use the Logos Design System** in your QML — see [Step 6.5](#step-65-use-the-logos-design-system-in-your-qml). Browse components in the storybook (`cd repos/logos-design-system && nix run`); file issues at `logos-co/logos-design-system` (bugs on designed components, *feature* type for new components / variants / theme tokens).
 - See [logos-package-manager-ui](https://github.com/logos-co/logos-package-manager-ui) for a production example
