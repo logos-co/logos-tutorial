@@ -448,43 +448,83 @@ Whichever option you choose, clicking **Add**, **Multiply**, **Factorial**, or *
 
 ## Step 6: Using the Logos Design System
 
-`logos-basecamp` has `logos-design-system` on its QML import path. You can use its themed components directly without any extra setup in your module.
+`logos-basecamp` (and `logos-standalone-app`) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
 
 ```qml
-import Logos.Theme 1.0
-import Logos.Controls 1.0
+import Logos.Theme
+import Logos.Controls
+import Logos.Icons        // optional: shared icon assets (LogosIcons.search, .install, .refresh, …)
 ```
 
-Replace the plain `Button` and `TextField` with the styled equivalents:
+### Why use it
+
+Hardcoding colors, font sizes, or rolling your own button means your module looks subtly different from every other module in basecamp, drifts as the design evolves, and re-implements work the design system already does. Using `Logos.Controls` + `Theme` tokens means your module gets the polished look automatically as the design system is updated — no churn on your side.
+
+### What's available
+
+Run the storybook to browse every component interactively with live property editors:
+
+```bash
+cd repos/logos-design-system
+nix run                  # or: ws run logos-design-system
+```
+
+The sidebar splits components into two sections:
+
+- **Controls** — *designed per Figma, production-ready*. Use these directly. Examples: `LogosButton`, `LogosBadge`, `LogosCheckbox`, `LogosComboBox`, `LogosIconButton`, `LogosPaginator`, `LogosSearchBar`, `LogosTabBar` / `LogosTabButton`, `LogosTable` / `LogosTableColumn`, `LogosText`, `LogosTextField`, `LogosToolTip`.
+- **Controls (not designed)** — *placeholders with stable APIs but unstyled visuals*. Functional, you can ship with them, and you'll inherit the polished look automatically when each gets its design pass — no QML changes on your side. Examples: `LogosDialog`, `LogosDrawer`, `LogosFrame`, `LogosGroupBox`, `LogosItemDelegate`, `LogosMenu`, `LogosProgressBar`, `LogosRadioButton`, `LogosScrollBar` / `LogosScrollView`, `LogosSlider`, `LogosSpinBox`, `LogosSpinner`, `LogosStackView`, `LogosSwitch`, `LogosTextArea`, `LogosToolBar`.
+
+Each storybook page exposes a `designed: true/false` flag if you want to see at a glance which it is.
+
+### Replace raw Qt controls with Logos equivalents
 
 ```qml
 // Instead of Button:
 LogosButton {
-    text: "Add"
+    text: qsTr("Add")
     onClicked: callTwoOp("add", inputA.text, inputB.text)
 }
 
 // Instead of TextField:
 LogosTextField {
     id: inputA
-    placeholderText: "a"
+    placeholderText: qsTr("a")
 }
 
 // Use theme colors instead of hardcoded hex values:
 Rectangle {
     color: Theme.palette.backgroundSecondary
-    // ...
     Text { color: Theme.palette.text }
 }
 ```
 
-Available components: `LogosButton`, `LogosTextField`, `LogosText`, `LogosTabButton`.
+### Theme tokens — avoid hardcoding magic numbers
 
-Available theme tokens via `Theme.palette`:
+```qml
+// Palette  — Theme.palette.*
+//   background, backgroundSecondary, backgroundMuted, surface,
+//   text, textSecondary, textMuted, textTertiary,
+//   border, borderSubtle, primary, success, warning, error, info, hover, pressed, …
 
-- Colors: `background`, `backgroundSecondary`, `backgroundMuted`, `text`, `textMuted`, `border`, `overlayOrange`
-- Spacing: `Theme.spacing.radiusSmall`, `Theme.spacing.radiusXlarge`
-- Typography: `Theme.typography.secondaryText`, `Theme.typography.weightMedium`
+// Spacing  — Theme.spacing.*
+//   tiny, small, medium, large, xlarge, xxlarge,
+//   radiusSmall, radiusMedium, radiusLarge
+
+// Typography  — Theme.typography.*
+//   pageTitleText (36), titleText (30), panelTitleText (24),
+//   subtitleText (16), primaryText (14), secondaryText (12),
+//   weightRegular (400), weightMedium (500), weightBold (700),
+//   publicSans (font family)
+
+// Icons  — Logos.Icons.LogosIcons.*
+//   arrowLeft, arrowRight, refresh, install, trash, more, search, …
+```
+
+If a token you need is missing, file a feature issue — don't inline a hex literal or a magic number; that just stores up drift.
+
+### Feedback and contributions
+
+Feel free to report bugs, file feature requests, or contribute components / theme tokens upstream — all welcome at `logos-co/logos-design-system`. The same fix lifts every consumer, so upstreaming is the most impactful path. If you can sketch the public API you'd like to use in a feature request, it makes review and implementation much faster.
 
 ---
 
@@ -613,13 +653,32 @@ The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml
 
 ### 7.5 Live reloading with `logos-standalone-app`
 
-For rapid iteration on QML without rebuilding, set `DEV_QML_PATH` to the directory that contains your view entry file (see `metadata.json` `view` — basename must exist under that directory). Example for this tutorial’s layout (`view`: `Main.qml` at repo root):
+For QML iteration, set `DEV_QML_PATH` to the directory that contains your view entry file (the basename from `metadata.json` `view` must exist under that directory). For this tutorial's layout (`view`: `Main.qml` at repo root):
 
 ```bash
 DEV_QML_PATH=$PWD nix run .
 ```
 
-Edit `Main.qml`, close and re-run — changes appear immediately without `nix build`. When `DEV_QML_PATH` is set, `logos-standalone-app` loads that file from disk instead of the installed copy.
+When `DEV_QML_PATH` is set, `logos-standalone-app` loads QML from your source tree at runtime instead of the installed copy — so edits in `Main.qml` are picked up on the next relaunch without you having to manually re-sync files.
+
+**Important — what this does *not* skip.** `nix run` always re-evaluates the flake and rehashes the source tree before launching. By default `src = ./.` includes every tracked file, including `*.qml` — so:
+
+- **Any source change, including QML edits, rebuilds the plugin** before the app starts. `DEV_QML_PATH` only kicks in *after* the build is done; it doesn't shortcut the rebuild itself.
+- **C++ / `.rep` / `metadata.json` / CMake changes** rebuild as normal.
+- The flake-evaluation overhead on each `nix run` is fixed and unavoidable while invoking through nix.
+
+For the absolute fastest loop (no nix involvement after the first build), do the build once and run the resulting binary directly:
+
+```bash
+# Build once — populates result/ in the nix store
+nix build .
+
+# Subsequent runs: invoke the bundled standalone wrapper directly,
+# skipping nix entirely. DEV_QML_PATH still redirects QML loading.
+DEV_QML_PATH=$PWD ./result/bin/run-logos-standalone-ui
+```
+
+(Adjust the binary name to whatever `ls result/bin/` shows on your build.)
 
 > **Naming:** Only `DEV_QML_PATH` is honored. See `repos/logos-standalone-app/README.md`.
 
