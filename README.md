@@ -18,6 +18,8 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Part 3:** [Building a C++ UI Module (Process-Isolated)](tutorial-cpp-ui-app.md) — build `calc_ui_cpp`, a `ui_qml` module with a C++ backend that runs in a separate `ui-host` process. Define the remote interface in a `.rep` file; the C++ backend inherits from the generated `SimpleSource`; QML accesses it via a typed replica using `logos.module()` and `QtRemoteObjects.watch()`. Scaffold: `nix flake init -t ...#ui-qml-backend`
 
+- **logos-dev-boost:** [Scaffolding Modules with logos-dev-boost](tutorial-dev-boost.md) — use the `logos-dev-boost` CLI to auto-generate modules from C library directories. Wraps libcalc (source-only) and sqlcipher (pre-built `.so`), including integration tests that create encrypted databases. Covers `--type module`, `--type full-app`, and `--lib-dir`.
+
 ## Example Modules
 
 Working module source code used by the tutorials:
