@@ -48,7 +48,7 @@ Use the QML module template from `logos-module-builder`:
 
 ```bash
 mkdir logos-calc-ui && cd logos-calc-ui
-nix flake init -t github:logos-co/logos-module-builder#ui-qml
+nix flake init -t github:logos-co/logos-module-builder/tutorial-v2#ui-qml
 git init && git add -A
 ```
 
@@ -106,7 +106,7 @@ echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3
 
 The `view` field tells the host which QML file to load for the UI. The `dependencies` field tells the host to load `calc_module` before showing your UI.
 
-> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
+> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `calc_module.url = "github:logos-co/logos-tutorial/tutorial-v2?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 ---
 
@@ -322,10 +322,10 @@ The template already has everything wired up. Update the description and add `ca
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v2";
 
     # Option A: point to a remote repo (for CI or when calc_module is published)
-    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v2?dir=logos-calc-module";
 
     # Option B: point to your local checkout (for local development)
     # calc_module.url = "path:../logos-calc-module";
@@ -417,7 +417,7 @@ If you're iterating on both repos side by side, you can point the flake input di
 
 ```nix
 # From remote:
-calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+calc_module.url = "github:logos-co/logos-tutorial/tutorial-v2?dir=logos-calc-module";
 # To local:
 calc_module.url = "path:../logos-calc-module";
 ```
@@ -546,7 +546,7 @@ nix build '.#lgx' --out-link result-lgx
 nix build '.#lgx-portable' --out-link result-lgx-portable
 ```
 
-> For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
+> For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Building LGX Packages](logos-developer-guide.md#42-building-lgx-packages).
 
 ### 7.2 Build and run logos-basecamp
 
@@ -556,7 +556,7 @@ Build logos-basecamp, launch it once to preinstall its bundled modules, then ins
 
 ```bash
 # Build logos-basecamp
-nix build 'github:logos-co/logos-basecamp' -o basecamp-result
+nix build 'github:logos-co/logos-basecamp/tutorial-v2' -o basecamp-result
 
 # Launch once to preinstall bundled modules, then close it
 ./basecamp-result/bin/logos-basecamp
@@ -586,7 +586,7 @@ BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
 
 ```bash
 # Build lgpm CLI
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/tutorial-v2#cli' --out-link ./pm
 
 # Install core module
 ./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
@@ -606,7 +606,7 @@ The dev build above depends on nix store paths at runtime. For a self-contained 
 
 ```bash
 # Build portable basecamp (bundles all Qt frameworks/libraries)
-nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
+nix build 'github:logos-co/logos-basecamp/tutorial-v2#bin-bundle-dir' -o basecamp-portable
 
 # Launch once to preinstall bundled modules
 ./basecamp-portable/bin/logos-basecamp

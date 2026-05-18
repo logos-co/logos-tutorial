@@ -11,6 +11,9 @@ Item {
     // Typed replica of the backend running in ui-host (generated from calc_ui_cpp.rep).
     readonly property var backend: logos.module("calc_ui_cpp")
 
+    // "status" PROP from calc_ui_cpp.rep — auto-synced from the backend via Qt Remote Objects.
+    readonly property string status: backend ? backend.status : ""
+
     // logos.watch() delivers the result of a replica slot call via callbacks.
     // No QtRemoteObjects import needed — the bridge handles it.
     function callCalc(method, args) {
@@ -107,6 +110,12 @@ Item {
                 color: root.errorText.length > 0 ? "#f85149" : "#56d364"
                 font.pixelSize: 15
             }
+        }
+
+        Text {
+            text: "Backend status: " + root.status
+            color: "#8b949e"
+            font.pixelSize: 13
         }
 
         Item { Layout.fillHeight: true }

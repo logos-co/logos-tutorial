@@ -69,7 +69,7 @@ The `.rep` file declares the interface. At build time, Qt's `repc` compiler gene
 
 ```bash
 mkdir logos-calc-ui-cpp && cd logos-calc-ui-cpp
-nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
+nix flake init -t github:logos-co/logos-module-builder/tutorial-v2#ui-qml-backend
 git init && git add -A
 ```
 
@@ -469,10 +469,10 @@ Feel free to report bugs, file feature requests, or contribute components / them
   description = "Calculator C++ UI plugin — QML view with process-isolated backend";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v2";
 
     # Option A: point to a remote repo (for CI or when calc_module is published)
-    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+    calc_module.url = "github:logos-co/logos-tutorial/tutorial-v2?dir=logos-calc-module";
 
     # Option B: point to your local checkout (for local development)
     # calc_module.url = "path:../logos-calc-module";
