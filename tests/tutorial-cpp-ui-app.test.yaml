@@ -369,7 +369,10 @@ inspect:
 basecamp:
   install_as: "ui"
   core_deps:
-    - "../logos-calc-module"
+    - path: "../logos-calc-module"
+      setup:
+        - "cd lib && cc {shared_flags} -o libcalc.{ext} libcalc.c"
+        - "git add ."
 
   tests:
     - name: "Navigate to sidebar calc_ui_cpp"

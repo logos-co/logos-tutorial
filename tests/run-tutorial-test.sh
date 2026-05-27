@@ -496,10 +496,24 @@ if should_run_phase "basecamp"; then
         if [[ "$CORE_DEPS_COUNT" != "0" && "$CORE_DEPS_COUNT" != "null" ]]; then
             mkdir -p "$BASECAMP_USER_DIR/modules"
             for i in $(seq 0 $((CORE_DEPS_COUNT - 1))); do
-                DEP_PATH=$(yq_read ".basecamp.core_deps[$i]")
+                DEP_PATH=$(yq_read ".basecamp.core_deps[$i].path // .basecamp.core_deps[$i]")
                 DEP_FULL_PATH="$SCRIPT_DIR/$DEP_PATH"
                 if [[ -d "$DEP_FULL_PATH" ]]; then
                     echo "  Installing core dependency: $DEP_PATH"
+
+                    # Run setup steps declared in the YAML (e.g. compile vendor libs, git add)
+                    DEP_SETUP_COUNT=$(yq_read ".basecamp.core_deps[$i].setup | length")
+                    if [[ "$DEP_SETUP_COUNT" != "0" ]] && [[ "$DEP_SETUP_COUNT" != "null" ]]; then
+                        for j in $(seq 0 $((DEP_SETUP_COUNT - 1))); do
+                            DEP_SETUP_CMD=$(yq_read ".basecamp.core_deps[$i].setup[$j]")
+                            DEP_SETUP_CMD=$(expand_platform "$DEP_SETUP_CMD")
+                            [[ "$VERBOSE" == "true" ]] && printf "        setup: %s\n" "$DEP_SETUP_CMD"
+                            if ! (cd "$DEP_FULL_PATH" && eval "$DEP_SETUP_CMD") 2>&1; then
+                                echo "  WARNING: core dep setup failed: $DEP_SETUP_CMD"
+                            fi
+                        done
+                    fi
+
                     DEP_INSTALL="$(mktemp -d)"
                     if (cd "$DEP_FULL_PATH" && nix build '.#install' -o "$DEP_INSTALL/result" 2>&1); then
                         cp -r "$DEP_INSTALL"/result/modules/* "$BASECAMP_USER_DIR/modules/" 2>/dev/null || true
