@@ -1,0 +1,352 @@
+name: "Tutorial: Building a QML UI for Your Logos Module"
+tutorial: tutorial-qml-ui-app.md
+
+scaffold:
+  template: "github:logos-co/logos-module-builder#ui-qml"
+
+files:
+  - path: metadata.json
+    content: |
+      {
+        "name": "calc_ui",
+        "version": "1.0.0",
+        "description": "Calculator UI - QML frontend for the calc_module",
+        "type": "ui_qml",
+        "view": "Main.qml",
+        "dependencies": ["calc_module"],
+        "category": "tools",
+        "icon": "icons/calc.png",
+
+        "nix": {
+          "packages": {
+            "build": [],
+            "runtime": []
+          },
+          "external_libraries": [],
+          "cmake": {
+            "find_packages": [],
+            "extra_sources": [],
+            "extra_include_dirs": [],
+            "extra_link_libraries": []
+          }
+        }
+      }
+
+  - path: Main.qml
+    content: |
+      import QtQuick
+      import QtQuick.Controls
+      import QtQuick.Layouts
+
+      Item {
+          id: root
+
+          property string result: ""
+          property string errorText: ""
+          property string versionFromEvent: ""
+
+          // Subscribe to "versionReady" events pushed from calc_module.
+          Component.onCompleted: {
+              if (typeof logos !== "undefined" && logos.onModuleEvent)
+                  logos.onModuleEvent("calc_module", "versionReady")
+          }
+
+          Connections {
+              target: typeof logos !== "undefined" ? logos : null
+              function onModuleEventReceived(moduleName, eventName, data) {
+                  if (eventName === "versionReady")
+                      root.versionFromEvent = data[0]
+              }
+          }
+
+          ColumnLayout {
+              anchors.fill: parent
+              anchors.margins: 24
+              spacing: 16
+
+              // ── Title ──────────────────────────────────────────────
+              Text {
+                  text: "Logos Calculator"
+                  font.pixelSize: 20
+                  font.weight: Font.DemiBold
+                  color: "#ffffff"
+                  Layout.alignment: Qt.AlignHCenter
+              }
+
+              // ── Pattern 1: Direct call (request -> response) ──────
+              Text {
+                  text: "Direct calls (logos.callModule -> returns result)"
+                  color: "#8b949e"
+                  font.pixelSize: 12
+              }
+
+              RowLayout {
+                  spacing: 12
+                  Layout.fillWidth: true
+
+                  TextField {
+                      id: inputA
+                      placeholderText: "a"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator {}
+                  }
+
+                  TextField {
+                      id: inputB
+                      placeholderText: "b"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator {}
+                  }
+
+                  Button {
+                      text: "Add"
+                      onClicked: callTwoOp("add", inputA.text, inputB.text)
+                  }
+
+                  Button {
+                      text: "Multiply"
+                      onClicked: callTwoOp("multiply", inputA.text, inputB.text)
+                  }
+              }
+
+              RowLayout {
+                  spacing: 12
+                  Layout.fillWidth: true
+
+                  TextField {
+                      id: inputN
+                      placeholderText: "n"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator { bottom: 0 }
+                  }
+
+                  Button {
+                      text: "Factorial"
+                      onClicked: callOneOp("factorial", inputN.text)
+                  }
+
+                  Button {
+                      text: "Fibonacci"
+                      onClicked: callOneOp("fibonacci", inputN.text)
+                  }
+
+                  Button {
+                      text: "libcalc version"
+                      onClicked: callModule("libVersion", [])
+                  }
+              }
+
+              // Direct call result
+              Rectangle {
+                  Layout.fillWidth: true
+                  height: 56
+                  color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
+                  radius: 8
+
+                  Text {
+                      anchors.centerIn: parent
+                      text: root.errorText.length > 0 ? root.errorText
+                              : (root.result.length > 0 ? root.result : "Enter values and press a button")
+                      color: root.errorText.length > 0 ? "#f85149" : "#56d364"
+                      font.pixelSize: 15
+                  }
+              }
+
+              // ── Pattern 2: Event-based (fire-and-forget -> event) ─
+              Text {
+                  text: "Event-based (fire-and-forget call -> result via event)"
+                  color: "#8b949e"
+                  font.pixelSize: 12
+              }
+
+              RowLayout {
+                  spacing: 12
+                  Layout.fillWidth: true
+
+                  Button {
+                      text: "libcalc version (event)"
+                      onClicked: {
+                          if (typeof logos !== "undefined" && logos.callModule)
+                              logos.callModule("calc_module", "libVersionNotify", [])
+                      }
+                  }
+              }
+
+              // Event result
+              Rectangle {
+                  Layout.fillWidth: true
+                  height: 56
+                  color: "#1a1a2d"
+                  radius: 8
+
+                  Text {
+                      anchors.centerIn: parent
+                      text: root.versionFromEvent.length > 0
+                            ? ("Version (via event): " + root.versionFromEvent)
+                            : "Press the event button — result arrives via event"
+                      color: "#7ab8ff"
+                      font.pixelSize: 15
+                  }
+              }
+
+              Item { Layout.fillHeight: true }
+          }
+
+          // ── Direct call helpers ───────────────────────────────────
+
+          function callModule(method, args) {
+              root.errorText = ""
+              root.result = ""
+
+              if (typeof logos === "undefined" || !logos.callModule) {
+                  root.errorText = "Logos bridge not available"
+                  return
+              }
+
+              root.result = String(logos.callModule("calc_module", method, args))
+          }
+
+          function callTwoOp(method, a, b) {
+              if (a === "" || b === "") { root.errorText = "Enter values for a and b"; return }
+              callModule(method, [parseInt(a), parseInt(b)])
+          }
+
+          function callOneOp(method, n) {
+              if (n === "") { root.errorText = "Enter a value for n"; return }
+              callModule(method, [parseInt(n)])
+          }
+      }
+
+  - path: icons/calc.png
+    encoding: base64
+    content: "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3ziCWRkoEP2XmedfX82OkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAO0BN/SiO/PatoIAAAAASUVORK5CYII="
+
+  - path: flake.nix
+    content: |
+      {
+        description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
+
+        inputs = {
+          logos-module-builder.url = "github:logos-co/logos-module-builder";
+          calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+        };
+
+        outputs = inputs@{ logos-module-builder, ... }:
+          logos-module-builder.lib.mkLogosQmlModule {
+            src = ./.;
+            configFile = ./metadata.json;
+            flakeInputs = inputs;
+          };
+      }
+
+  - path: .gitignore
+    content: |
+      result
+      result-*
+      modules/
+
+  - path: tests/ui-tests.mjs
+    content: |
+      import { resolve } from "node:path";
+
+      const root =
+        process.env.LOGOS_QT_MCP ||
+        new URL("../result-mcp", import.meta.url).pathname;
+      const { test, run } = await import(
+        resolve(root, "test-framework/framework.mjs")
+      );
+
+      test("calc_ui: loads and shows title", async (app) => {
+        await app.waitFor(
+          async () => {
+            await app.expectTexts(["Calculator"]);
+          },
+          { timeout: 15000, interval: 500, description: "calc_ui to load" },
+        );
+      });
+
+      test("calc_ui: add button visible", async (app) => {
+        await app.expectTexts(["Add"]);
+      });
+
+      run();
+
+build:
+  - name: "Initialize git repo"
+    run: "git init && git add -A && nix flake update && git add flake.lock"
+
+  - name: "Build QML module package"
+    run: "nix build"
+
+  - name: "Main.qml in output"
+    check_file: "result/lib/Main.qml"
+
+  - name: "metadata.json in output"
+    check_file: "result/lib/metadata.json"
+
+  - name: "Icon in output"
+    check_file: "result/lib/icons/calc.png"
+
+  - name: "Build LGX package"
+    run: "nix build '.#lgx' --out-link result-lgx"
+
+  - name: "LGX file produced"
+    check_file: "result-lgx/*.lgx"
+
+inspect:
+  - name: "Output metadata has correct name"
+    run: "cat result/lib/metadata.json"
+    expect_contains:
+      - "\"name\": \"calc_ui\""
+      - "\"type\": \"ui_qml\""
+      - "\"view\": \"Main.qml\""
+
+  - name: "Main.qml has expected content"
+    run: "cat result/lib/Main.qml"
+    expect_contains:
+      - "Logos Calculator"
+      - "logos.callModule"
+      - "calc_module"
+
+basecamp:
+  install_as: "ui"
+  core_deps:
+    - "../logos-calc-module"
+
+  tests:
+    - name: "Navigate to sidebar calc_ui"
+      action: click
+      target: "calc_ui"
+    - name: "UI title visible"
+      action: wait_for
+      texts: ["Logos Calculator"]
+      timeout: 15000
+    - name: "Add button visible"
+      action: wait_for
+      texts: ["Add"]
+      timeout: 5000
+    - name: "Multiply button visible"
+      action: wait_for
+      texts: ["Multiply"]
+      timeout: 5000
+    - name: "Factorial button visible"
+      action: wait_for
+      texts: ["Factorial"]
+      timeout: 5000
+    - name: "Enter first number"
+      action: set_text
+      find_by: "placeholderText"
+      find_value: "a"
+      value: "3"
+    - name: "Enter second number"
+      action: set_text
+      find_by: "placeholderText"
+      find_value: "b"
+      value: "5"
+    - name: "Click Add"
+      action: click
+      target: "Add"
+    - name: "Result shows 8"
+      action: wait_for
+      texts: ["8"]
+      timeout: 10000

@@ -11,6 +11,7 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 
 **Why C++ backend over QML-only?**
 
+
 |                   | QML-only (Part 2)                                                 | C++ backend (Part 3)                    |
 | ----------------- | ----------------------------------------------------------------- | --------------------------------------- |
 | Compilation       | None                                                              | CMake + Qt                              |
@@ -19,6 +20,7 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 | Type safety       | Args travel as `QVariant`                                         | C++ types preserved                     |
 | QML ↔ backend     | Direct bridge                                                     | Qt Remote Objects (typed replica)       |
 | `.rep` file       | Not needed                                                        | Required — defines the remote interface |
+
 
 **Prerequisites:**
 
@@ -59,9 +61,9 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
 
 The `.rep` file declares the interface. At build time, Qt's `repc` compiler generates:
 
-- **`CalcUiCppSimpleSource`** — base class the backend inherits from
-- **`CalcUiCppReplica`** — typed replica the QML view uses
-- **`calc_ui_cpp_replica_factory`** — separate plugin that the host loads to create typed replicas
+- `**CalcUiCppSimpleSource**` — base class the backend inherits from
+- `**CalcUiCppReplica**` — typed replica the QML view uses
+- `**calc_ui_cpp_replica_factory**` — separate plugin that the host loads to create typed replicas
 
 ---
 
@@ -163,6 +165,7 @@ Q_DECLARE_INTERFACE(CalcUiCppInterface, CalcUiCppInterface_iid)
 ```
 
 Your plugin header should then include `calc_ui_cpp_interface.h` and use:
+
 - `Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")`
 - `Q_INTERFACES(CalcUiCppInterface)`
 
@@ -251,9 +254,9 @@ private:
 
 Three base classes:
 
-- **`CalcUiCppSimpleSource`** — generated from `.rep`, provides the typed source for Qt Remote Objects
-- **`CalcUiCppInterface`** — standard Logos plugin interface (`name()`, `version()`)
-- **`CalcUiCppViewPluginBase`** — generated, provides `setBackend()` and `enableRemoting()`
+- `**CalcUiCppSimpleSource**` — generated from `.rep`, provides the typed source for Qt Remote Objects
+- `**CalcUiCppInterface**` — standard Logos plugin interface (`name()`, `version()`)
+- `**CalcUiCppViewPluginBase**` — generated, provides `setBackend()` and `enableRemoting()`
 
 ### `src/calc_ui_cpp_plugin.cpp`
 
@@ -451,7 +454,7 @@ The sidebar splits components into:
 
 **Theme tokens** (use these instead of hex literals or magic font sizes):
 
-- `Theme.palette.*` — `background`, `backgroundSecondary`, `surface`, `text`, `textSecondary`, `border`, `primary`, `success`, `warning`, `error`, `info`, `hover`, `pressed`, …
+- `Theme.palette.`* — `background`, `backgroundSecondary`, `surface`, `text`, `textSecondary`, `border`, `primary`, `success`, `warning`, `error`, `info`, `hover`, `pressed`, …
 - `Theme.spacing.*` — `tiny`, `small`, `medium`, `large`, `xlarge`, `xxlarge`, `radiusSmall`, `radiusMedium`, `radiusLarge`
 - `Theme.typography.*` — `pageTitleText` (36), `titleText` (30), `panelTitleText` (24), `subtitleText` (16), `primaryText` (14), `secondaryText` (12); `weightRegular` / `weightMedium` / `weightBold`; `publicSans`
 - `Logos.Icons.LogosIcons.*` — `arrowLeft`, `arrowRight`, `refresh`, `install`, `trash`, `more`, `search`, …
@@ -489,8 +492,8 @@ Feel free to report bugs, file feature requests, or contribute components / them
 
 The `calc_module` input attribute name must match the dependency name in `metadata.json`. The URL can be:
 
-- **`github:`** — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
-- **`path:`** — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
+- `**github:**` — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
+- `**path:**` — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
 
@@ -561,10 +564,10 @@ DEV_QML_PATH=$PWD/qml ./result/bin/run-logos-standalone-ui
 
 1. `nix build` → compiles the C++ plugin + replica factory, bundles QML view
 2. `nix run` → launches `logos-standalone-app` which:
-   - Loads `calc_module` (dependency)
-   - Spawns a `ui-host` child process with `calc_ui_cpp_plugin.so`
-   - `ui-host` calls `initLogos()` → `setBackend(this)` → `enableRemoting(host)`
-   - Backend is now accessible over a local socket
+  - Loads `calc_module` (dependency)
+  - Spawns a `ui-host` child process with `calc_ui_cpp_plugin.so`
+  - `ui-host` calls `initLogos()` → `setBackend(this)` → `enableRemoting(host)`
+  - Backend is now accessible over a local socket
 3. Host app loads `calc_ui_cpp_replica_factory.dylib` → creates a typed replica
 4. QML gets the replica via `logos.module("calc_ui_cpp")`
 5. `backend.add(1, 2)` → Qt Remote Objects sends call to ui-host → backend runs → returns result
@@ -625,12 +628,14 @@ node tests/ui-tests.mjs       # in another terminal
 
 ## Comparison: .rep Interface Patterns
 
+
 | Pattern          | .rep declaration                     | Backend C++                                 | QML usage                                                              |
 | ---------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------- |
 | **Return value** | `SLOT(int add(int a, int b))`        | `int add(...) override { return ...; }`     | `logos.watch(backend.add(1,2), cb)`                                    |
 | **Property**     | `PROP(QString status READWRITE)`     | `setStatus("Ready")` (inherited)            | `backend.status` (auto-syncs)                                          |
 | **Signal**       | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")`                | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
 | **Model**        | (use Q_PROPERTY on backend)          | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")`                                  |
+
 
 ---
 
@@ -641,3 +646,4 @@ node tests/ui-tests.mjs       # in another terminal
 - Package as `.lgx` for distribution: `nix build .#lgx`
 - **Use the Logos Design System** in your QML — see [Step 6.5](#step-65-use-the-logos-design-system-in-your-qml). Browse components in the storybook (`cd repos/logos-design-system && nix run`); file issues at `logos-co/logos-design-system` (bugs on designed components, *feature* type for new components / variants / theme tokens).
 - See [logos-package-manager-ui](https://github.com/logos-co/logos-package-manager-ui) for a production example
+

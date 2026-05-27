@@ -1,0 +1,377 @@
+name: "Tutorial: Wrapping a C Library"
+tutorial: tutorial-wrapping-c-library.md
+
+scaffold:
+  template: "github:logos-co/logos-module-builder#with-external-lib"
+
+files:
+  - path: lib/libcalc.h
+    content: |
+      #ifndef LIBCALC_H
+      #define LIBCALC_H
+
+      #ifdef __cplusplus
+      extern "C" {
+      #endif
+
+      /** Add two integers. */
+      int calc_add(int a, int b);
+
+      /** Multiply two integers. */
+      int calc_multiply(int a, int b);
+
+      /** Compute factorial of n (n must be >= 0). Returns -1 on error. */
+      int calc_factorial(int n);
+
+      /** Compute the nth Fibonacci number (n must be >= 0). Returns -1 on error. */
+      int calc_fibonacci(int n);
+
+      /** Return the library version string. Caller must NOT free. */
+      const char* calc_version(void);
+
+      #ifdef __cplusplus
+      }
+      #endif
+
+      #endif /* LIBCALC_H */
+
+  - path: lib/libcalc.c
+    content: |
+      #include "libcalc.h"
+
+      int calc_add(int a, int b)
+      {
+          return a + b;
+      }
+
+      int calc_multiply(int a, int b)
+      {
+          return a * b;
+      }
+
+      int calc_factorial(int n)
+      {
+          if (n < 0) return -1;
+          if (n <= 1) return 1;
+          int result = 1;
+          for (int i = 2; i <= n; i++) {
+              result *= i;
+          }
+          return result;
+      }
+
+      int calc_fibonacci(int n)
+      {
+          if (n < 0) return -1;
+          if (n == 0) return 0;
+          if (n == 1) return 1;
+          int a = 0, b = 1;
+          for (int i = 2; i <= n; i++) {
+              int tmp = a + b;
+              a = b;
+              b = tmp;
+          }
+          return b;
+      }
+
+      const char* calc_version(void)
+      {
+          return "1.0.0";
+      }
+
+  - path: metadata.json
+    content: |
+      {
+        "name": "calc_module",
+        "version": "1.0.0",
+        "type": "core",
+        "category": "general",
+        "description": "Calculator module wrapping libcalc C library",
+        "main": "calc_module_plugin",
+        "dependencies": [],
+
+        "nix": {
+          "packages": {
+            "build": [],
+            "runtime": []
+          },
+          "external_libraries": [
+            {
+              "name": "calc",
+              "vendor_path": "lib"
+            }
+          ],
+          "cmake": {
+            "find_packages": [],
+            "extra_sources": [],
+            "extra_include_dirs": ["lib"],
+            "extra_link_libraries": []
+          }
+        }
+      }
+
+  - path: CMakeLists.txt
+    content: |
+      cmake_minimum_required(VERSION 3.14)
+      project(CalcModulePlugin LANGUAGES CXX)
+
+      # Include the Logos Module CMake helper (provided by logos-module-builder)
+      if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
+          include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
+      elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake")
+          include(cmake/LogosModule.cmake)
+      else()
+          message(FATAL_ERROR "LogosModule.cmake not found")
+      endif()
+
+      # Define the module with its external library dependency
+      logos_module(
+          NAME calc_module
+          SOURCES
+              src/calc_module_interface.h
+              src/calc_module_plugin.h
+              src/calc_module_plugin.cpp
+          EXTERNAL_LIBS
+              calc
+      )
+
+  - path: src/calc_module_interface.h
+    content: |
+      #ifndef CALC_MODULE_INTERFACE_H
+      #define CALC_MODULE_INTERFACE_H
+
+      #include <QObject>
+      #include <QString>
+      #include "interface.h"
+
+      class CalcModuleInterface : public PluginInterface
+      {
+      public:
+          virtual ~CalcModuleInterface() = default;
+
+          Q_INVOKABLE virtual int add(int a, int b) = 0;
+          Q_INVOKABLE virtual int multiply(int a, int b) = 0;
+          Q_INVOKABLE virtual int factorial(int n) = 0;
+          Q_INVOKABLE virtual int fibonacci(int n) = 0;
+          Q_INVOKABLE virtual QString libVersion() = 0;
+      };
+
+      #define CalcModuleInterface_iid "org.logos.CalcModuleInterface"
+      Q_DECLARE_INTERFACE(CalcModuleInterface, CalcModuleInterface_iid)
+
+      #endif // CALC_MODULE_INTERFACE_H
+
+  - path: src/calc_module_plugin.h
+    content: |
+      #ifndef CALC_MODULE_PLUGIN_H
+      #define CALC_MODULE_PLUGIN_H
+
+      #include <QObject>
+      #include <QString>
+      #include "calc_module_interface.h"
+
+      // Include the C library header
+      #include "lib/libcalc.h"
+
+      class LogosAPI;
+
+      class CalcModulePlugin : public QObject, public CalcModuleInterface
+      {
+          Q_OBJECT
+          Q_PLUGIN_METADATA(IID CalcModuleInterface_iid FILE "metadata.json")
+          Q_INTERFACES(CalcModuleInterface PluginInterface)
+
+      public:
+          explicit CalcModulePlugin(QObject* parent = nullptr);
+          ~CalcModulePlugin() override;
+
+          // PluginInterface
+          QString name() const override { return "calc_module"; }
+          QString version() const override { return "1.0.0"; }
+
+          Q_INVOKABLE void initLogos(LogosAPI* api);
+
+          // CalcModuleInterface
+          Q_INVOKABLE int add(int a, int b) override;
+          Q_INVOKABLE int multiply(int a, int b) override;
+          Q_INVOKABLE int factorial(int n) override;
+          Q_INVOKABLE int fibonacci(int n) override;
+          Q_INVOKABLE QString libVersion() override;
+          Q_INVOKABLE void libVersionNotify();
+
+      signals:
+          void eventResponse(const QString& eventName, const QVariantList& args);
+
+      };
+
+      #endif // CALC_MODULE_PLUGIN_H
+
+  - path: src/calc_module_plugin.cpp
+    content: |
+      #include "calc_module_plugin.h"
+      #include "logos_api.h"
+      #include <QDebug>
+
+      CalcModulePlugin::CalcModulePlugin(QObject* parent)
+          : QObject(parent)
+      {
+          qDebug() << "CalcModulePlugin: created";
+      }
+
+      CalcModulePlugin::~CalcModulePlugin()
+      {
+          qDebug() << "CalcModulePlugin: destroyed";
+      }
+
+      void CalcModulePlugin::initLogos(LogosAPI* api)
+      {
+          logosAPI = api;
+          qDebug() << "CalcModulePlugin: LogosAPI initialized";
+      }
+
+      int CalcModulePlugin::add(int a, int b)
+      {
+          int result = calc_add(a, b);
+          qDebug() << "CalcModulePlugin::add" << a << "+" << b << "=" << result;
+          return result;
+      }
+
+      int CalcModulePlugin::multiply(int a, int b)
+      {
+          int result = calc_multiply(a, b);
+          qDebug() << "CalcModulePlugin::multiply" << a << "*" << b << "=" << result;
+          return result;
+      }
+
+      int CalcModulePlugin::factorial(int n)
+      {
+          int result = calc_factorial(n);
+          qDebug() << "CalcModulePlugin::factorial" << n << "! =" << result;
+          return result;
+      }
+
+      int CalcModulePlugin::fibonacci(int n)
+      {
+          int result = calc_fibonacci(n);
+          qDebug() << "CalcModulePlugin::fibonacci fib(" << n << ") =" << result;
+          return result;
+      }
+
+      QString CalcModulePlugin::libVersion()
+      {
+          const char* ver = calc_version();
+          QString result = QString::fromUtf8(ver);
+          qDebug() << "CalcModulePlugin::libVersion" << result;
+          return result;
+      }
+
+      void CalcModulePlugin::libVersionNotify()
+      {
+          const char* ver = calc_version();
+          QString result = QString::fromUtf8(ver);
+          qDebug() << "CalcModulePlugin::libVersionNotify" << result;
+          emit eventResponse("versionReady", {result});
+      }
+
+  - path: flake.nix
+    content: |
+      {
+        description = "Calculator module - wraps libcalc C library for Logos";
+
+        inputs = {
+          logos-module-builder.url = "github:logos-co/logos-module-builder";
+        };
+
+        outputs = inputs@{ logos-module-builder, ... }:
+          logos-module-builder.lib.mkLogosModule {
+            src = ./.;
+            configFile = ./metadata.json;
+            flakeInputs = inputs;
+          };
+      }
+
+  - path: .gitignore
+    content: |
+      result
+      result-*
+      build/
+
+build:
+  - name: "Compile shared library"
+    run: "cd lib && cc {shared_flags} -o libcalc.{ext} libcalc.c && cd .."
+
+  - name: "Initialize git repo"
+    run: "git init && git add -A && nix flake update && git add flake.lock"
+
+  - name: "Build plugin library"
+    run: "nix build '.#lib'"
+
+  - name: "Build full package"
+    run: "nix build"
+
+  - name: "Plugin file exists"
+    check_file: "result/lib/calc_module_plugin.{ext}"
+
+  - name: "External library bundled"
+    check_file: "result/lib/libcalc.{ext}"
+
+inspect:
+  - name: "Metadata correct"
+    run: "lm metadata result/lib/calc_module_plugin.{ext}"
+    expect_contains:
+      - "Name:         calc_module"
+      - "Version:      1.0.0"
+      - "Type:         core"
+
+  - name: "Methods visible"
+    run: "lm methods result/lib/calc_module_plugin.{ext}"
+    expect_contains:
+      - "int add(int a, int b)"
+      - "int multiply(int a, int b)"
+      - "int factorial(int n)"
+      - "int fibonacci(int n)"
+      - "QString libVersion()"
+
+logoscore:
+  setup:
+    - "nix build '.#install'"
+    - "cp -r result/modules ./modules"
+
+  tests:
+    - name: "add(3, 5) = 8"
+      call: "calc_module.add(3, 5)"
+      expect: "Result: 8"
+    - name: "multiply(4, 7) = 28"
+      call: "calc_module.multiply(4, 7)"
+      expect: "Result: 28"
+    - name: "factorial(5) = 120"
+      call: "calc_module.factorial(5)"
+      expect: "Result: 120"
+    - name: "fibonacci(10) = 55"
+      call: "calc_module.fibonacci(10)"
+      expect: "Result: 55"
+    - name: "libVersion() = 1.0.0"
+      call: "calc_module.libVersion()"
+      expect: "Result: 1.0.0"
+
+basecamp:
+  install_as: "core"
+
+  tests:
+    - name: "Navigate to Modules"
+      action: click
+      target: "Modules"
+    - name: "Open Core Modules tab"
+      action: click
+      target: "Core Modules"
+    - name: "calc_module appears"
+      action: wait_for
+      texts: ["calc_module"]
+      timeout: 10000
+    - name: "Load calc_module"
+      action: click
+      target: "Load Plugin"
+    - name: "Shows as loaded"
+      action: wait_for
+      texts: ["(Loaded)"]
+      timeout: 10000

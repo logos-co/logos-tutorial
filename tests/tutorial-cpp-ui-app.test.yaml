@@ -1,0 +1,402 @@
+name: "Tutorial: Building a C++ UI Module (Process-Isolated)"
+tutorial: tutorial-cpp-ui-app.md
+
+scaffold:
+  template: "github:logos-co/logos-module-builder#ui-qml-backend"
+
+files:
+  - path: metadata.json
+    content: |
+      {
+        "name": "calc_ui_cpp",
+        "version": "1.0.0",
+        "type": "ui_qml",
+        "category": "tools",
+        "description": "Calculator C++ UI — QML view with process-isolated backend for calc_module",
+        "main": "calc_ui_cpp_plugin",
+        "view": "qml/Main.qml",
+        "icon": "icons/calc.png",
+        "dependencies": ["calc_module"],
+
+        "nix": {
+          "packages": {
+            "build": [],
+            "runtime": []
+          },
+          "external_libraries": [],
+          "cmake": {
+            "find_packages": [],
+            "extra_sources": [],
+            "extra_include_dirs": [],
+            "extra_link_libraries": []
+          }
+        }
+      }
+
+  - path: src/calc_ui_cpp.rep
+    content: |
+      class CalcUiCpp
+      {
+          PROP(QString status READWRITE)
+
+          SLOT(int add(int a, int b))
+          SLOT(int multiply(int a, int b))
+          SLOT(int factorial(int n))
+          SLOT(int fibonacci(int n))
+          SLOT(QString libVersion())
+      }
+
+  - path: src/calc_ui_cpp_interface.h
+    content: |
+      #ifndef CALC_UI_CPP_INTERFACE_H
+      #define CALC_UI_CPP_INTERFACE_H
+
+      #include <QObject>
+      #include <QString>
+      #include "interface.h"
+
+      class CalcUiCppInterface : public PluginInterface
+      {
+      public:
+          virtual ~CalcUiCppInterface() = default;
+      };
+
+      #define CalcUiCppInterface_iid "org.logos.CalcUiCppInterface"
+      Q_DECLARE_INTERFACE(CalcUiCppInterface, CalcUiCppInterface_iid)
+
+      #endif // CALC_UI_CPP_INTERFACE_H
+
+  - path: src/calc_ui_cpp_plugin.h
+    content: |
+      #ifndef CALC_UI_CPP_PLUGIN_H
+      #define CALC_UI_CPP_PLUGIN_H
+
+      #include <QString>
+      #include <QVariantList>
+      #include "calc_ui_cpp_interface.h"
+      #include "LogosViewPluginBase.h"
+      #include "rep_calc_ui_cpp_source.h"
+
+      class LogosAPI;
+      class LogosModules;
+
+      class CalcUiCppPlugin : public CalcUiCppSimpleSource,
+                              public CalcUiCppInterface,
+                              public CalcUiCppViewPluginBase
+      {
+          Q_OBJECT
+          Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")
+          Q_INTERFACES(CalcUiCppInterface)
+
+      public:
+          explicit CalcUiCppPlugin(QObject* parent = nullptr);
+          ~CalcUiCppPlugin() override;
+
+          QString name()    const override { return "calc_ui_cpp"; }
+          QString version() const override { return "1.0.0"; }
+
+          Q_INVOKABLE void initLogos(LogosAPI* api);
+
+          int add(int a, int b) override;
+          int multiply(int a, int b) override;
+          int factorial(int n) override;
+          int fibonacci(int n) override;
+          QString libVersion() override;
+
+      signals:
+          void eventResponse(const QString& eventName, const QVariantList& args);
+
+      private:
+          LogosAPI* m_logosAPI = nullptr;
+          LogosModules* m_logos = nullptr;
+      };
+
+      #endif // CALC_UI_CPP_PLUGIN_H
+
+  - path: src/calc_ui_cpp_plugin.cpp
+    content: |
+      #include "calc_ui_cpp_plugin.h"
+      #include "logos_api.h"
+      #include "logos_sdk.h"
+
+      CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : CalcUiCppSimpleSource(parent) {}
+      CalcUiCppPlugin::~CalcUiCppPlugin() { delete m_logos; }
+
+      void CalcUiCppPlugin::initLogos(LogosAPI* api)
+      {
+          if (m_logos) return;
+          m_logosAPI = api;
+          m_logos = new LogosModules(api);
+          setBackend(this);
+      }
+
+      int CalcUiCppPlugin::add(int a, int b)
+      {
+          return m_logos->calc_module.add(a, b);
+      }
+
+      int CalcUiCppPlugin::multiply(int a, int b)
+      {
+          return m_logos->calc_module.multiply(a, b);
+      }
+
+      int CalcUiCppPlugin::factorial(int n)
+      {
+          return m_logos->calc_module.factorial(n);
+      }
+
+      int CalcUiCppPlugin::fibonacci(int n)
+      {
+          return m_logos->calc_module.fibonacci(n);
+      }
+
+      QString CalcUiCppPlugin::libVersion()
+      {
+          return m_logos->calc_module.libVersion();
+      }
+
+  - path: src/qml/Main.qml
+    content: |
+      import QtQuick
+      import QtQuick.Controls
+      import QtQuick.Layouts
+
+      Item {
+          id: root
+
+          property string result: ""
+          property string errorText: ""
+
+          readonly property var backend: logos.module("calc_ui_cpp")
+          readonly property string status: backend ? backend.status : ""
+
+          function callCalc(method, args) {
+              if (!backend) {
+                  root.errorText = "Backend not available"
+                  return
+              }
+              root.errorText = ""
+              root.result = "..."
+              logos.watch(backend[method].apply(backend, args),
+                  function(value) { root.result = String(value) },
+                  function(error) { root.errorText = String(error) }
+              )
+          }
+
+          ColumnLayout {
+              anchors.fill: parent
+              anchors.margins: 24
+              spacing: 16
+
+              Text {
+                  text: "Logos Calculator (C++ backend)"
+                  font.pixelSize: 20
+                  color: "#ffffff"
+                  Layout.alignment: Qt.AlignHCenter
+              }
+
+              RowLayout {
+                  spacing: 12
+                  Layout.fillWidth: true
+
+                  TextField {
+                      id: inputA
+                      placeholderText: "a"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator {}
+                  }
+
+                  TextField {
+                      id: inputB
+                      placeholderText: "b"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator {}
+                  }
+
+                  Button {
+                      text: "Add"
+                      onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
+                  }
+
+                  Button {
+                      text: "Multiply"
+                      onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
+                  }
+              }
+
+              RowLayout {
+                  spacing: 12
+                  Layout.fillWidth: true
+
+                  TextField {
+                      id: inputN
+                      placeholderText: "n"
+                      Layout.preferredWidth: 80
+                      validator: IntValidator { bottom: 0 }
+                  }
+
+                  Button {
+                      text: "Factorial"
+                      onClicked: root.callCalc("factorial", [parseInt(inputN.text) || 0])
+                  }
+
+                  Button {
+                      text: "Fibonacci"
+                      onClicked: root.callCalc("fibonacci", [parseInt(inputN.text) || 0])
+                  }
+
+                  Button {
+                      text: "libcalc version"
+                      onClicked: root.callCalc("libVersion", [])
+                  }
+              }
+
+              Rectangle {
+                  Layout.fillWidth: true
+                  height: 56
+                  color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
+                  radius: 8
+
+                  Text {
+                      anchors.centerIn: parent
+                      text: root.errorText.length > 0 ? root.errorText
+                              : (root.result.length > 0 ? root.result : "Enter values and press a button")
+                      color: root.errorText.length > 0 ? "#f85149" : "#56d364"
+                      font.pixelSize: 15
+                  }
+              }
+
+              Text {
+                  text: "Backend status: " + root.status
+                  color: "#8b949e"
+                  font.pixelSize: 13
+              }
+
+              Item { Layout.fillHeight: true }
+          }
+      }
+
+  - path: CMakeLists.txt
+    content: |
+      cmake_minimum_required(VERSION 3.14)
+      project(CalcUiCppPlugin LANGUAGES CXX)
+
+      if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
+          include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
+      else()
+          message(FATAL_ERROR "LogosModule.cmake not found. Set LOGOS_MODULE_BUILDER_ROOT.")
+      endif()
+
+      logos_module(
+          NAME calc_ui_cpp
+          REP_FILE src/calc_ui_cpp.rep
+          SOURCES
+              src/calc_ui_cpp_interface.h
+              src/calc_ui_cpp_plugin.h
+              src/calc_ui_cpp_plugin.cpp
+      )
+
+  - path: flake.nix
+    content: |
+      {
+        description = "Calculator C++ UI plugin for Logos - QML view with process-isolated backend for calc_module";
+
+        inputs = {
+          logos-module-builder.url = "github:logos-co/logos-module-builder";
+          calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
+        };
+
+        outputs = inputs@{ logos-module-builder, calc_module, ... }:
+          logos-module-builder.lib.mkLogosQmlModule {
+            src = ./.;
+            configFile = ./metadata.json;
+            flakeInputs = inputs;
+          };
+      }
+
+  - path: icons/calc.png
+    encoding: base64
+    content: "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3ziCWRkoEP2XmedfX82OkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAO0BN/SiO/PatoIAAAAASUVORK5CYII="
+
+  - path: .gitignore
+    content: |
+      result
+      result-*
+      modules/
+
+build:
+  - name: "Initialize git repo"
+    run: "git init && git add -A && nix flake update && git add flake.lock"
+
+  - name: "Build C++ UI module"
+    run: "nix build"
+
+  - name: "Backend plugin exists"
+    check_file: "result/lib/calc_ui_cpp_plugin.{ext}"
+
+  - name: "Replica factory exists"
+    check_file: "result/lib/calc_ui_cpp_replica_factory.{ext}"
+
+  - name: "QML view in output"
+    check_file: "result/lib/qml/Main.qml"
+
+  - name: "metadata.json in output"
+    check_file: "result/lib/metadata.json"
+
+  - name: "Build LGX package"
+    run: "nix build '.#lgx' --out-link result-lgx"
+
+  - name: "LGX file produced"
+    check_file: "result-lgx/*.lgx"
+
+inspect:
+  - name: "Output metadata has correct name"
+    run: "cat result/lib/metadata.json"
+    expect_contains:
+      - "\"name\": \"calc_ui_cpp\""
+      - "\"type\": \"ui_qml\""
+      - "\"main\": \"calc_ui_cpp_plugin\""
+      - "\"view\": \"qml/Main.qml\""
+
+  - name: "Main.qml has expected content"
+    run: "cat result/lib/qml/Main.qml"
+    expect_contains:
+      - "Logos Calculator (C++ backend)"
+      - "logos.module"
+      - "logos.watch"
+      - "calc_ui_cpp"
+
+basecamp:
+  install_as: "ui"
+  core_deps:
+    - "../logos-calc-module"
+
+  tests:
+    - name: "Navigate to sidebar calc_ui_cpp"
+      action: click
+      target: "calc_ui_cpp"
+    - name: "UI title visible"
+      action: wait_for
+      texts: ["Logos Calculator (C++ backend)"]
+      timeout: 15000
+    - name: "Add button visible"
+      action: wait_for
+      texts: ["Add"]
+      timeout: 5000
+    - name: "Enter first number"
+      action: set_text
+      find_by: "placeholderText"
+      find_value: "a"
+      value: "3"
+    - name: "Enter second number"
+      action: set_text
+      find_by: "placeholderText"
+      find_value: "b"
+      value: "5"
+    - name: "Click Add"
+      action: click
+      target: "Add"
+    - name: "Result shows 8"
+      action: wait_for
+      texts: ["8"]
+      timeout: 10000
