@@ -69,7 +69,7 @@ The `.rep` file declares the interface. At build time, Qt's `repc` compiler gene
 
 ```bash
 mkdir logos-calc-ui-cpp && cd logos-calc-ui-cpp
-nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
+nix flake init -t github:logos-co/logos-app-builder#ui-qml-backend
 git init && git add -A
 ```
 
@@ -469,7 +469,7 @@ Feel free to report bugs, file feature requests, or contribute components / them
   description = "Calculator C++ UI plugin — QML view with process-isolated backend";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-app-builder.url = "github:logos-co/logos-app-builder";
 
     # Option A: point to a remote repo (for CI or when calc_module is published)
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
@@ -478,8 +478,8 @@ Feel free to report bugs, file feature requests, or contribute components / them
     # calc_module.url = "path:../logos-calc-module";
   };
 
-  outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosQmlModule {
+  outputs = inputs@{ logos-app-builder, ... }:
+    logos-app-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
@@ -494,7 +494,7 @@ The `calc_module` input attribute name must match the dependency name in `metada
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
 
-`mkLogosQmlModule` handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
+`mkLogosQmlModule` (from `logos-app-builder`) handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
 
 ---
 
@@ -574,7 +574,7 @@ DEV_QML_PATH=$PWD/qml ./result/bin/run-logos-standalone-ui
 
 ## Step 10: UI Integration Tests (Optional)
 
-Add automated UI tests using the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework. Just create `.mjs` files in `tests/` and `logos-module-builder` auto-wires `nix build .#integration-test`.
+Add automated UI tests using the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework. Just create `.mjs` files in `tests/` and `logos-app-builder` auto-wires `nix build .#integration-test`.
 
 Create `tests/ui-tests.mjs`:
 

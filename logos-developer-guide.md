@@ -499,7 +499,7 @@ nix build .#lgx-portable
 
 This produces a `my_module-<version>.lgx` file in the `result/` directory.
 
-This works because `logos-module-builder` includes `nix-bundle-lgx` as its own dependency and both `mkLogosModule` and `mkLogosQmlModule` automatically create the `lgx` and `lgx-portable` package outputs. No extra configuration is needed — it is part of the standard module template:
+This works because both `logos-module-builder` and `logos-app-builder` include `nix-bundle-lgx` as a dependency, and `mkLogosModule` / `mkLogosQmlModule` automatically create the `lgx` and `lgx-portable` package outputs. No extra configuration is needed — it is part of the standard module template:
 
 ```nix
 {
@@ -1026,7 +1026,8 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 
 | Repository                                                                       | What It Provides           | Key Outputs                                                                       |
 | -------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------- |
-| [logos-module-builder](https://github.com/logos-co/logos-module-builder)         | Build system / scaffolding | `mkLogosModule`, `mkLogosQmlModule` Nix functions, `LogosModule.cmake`, templates |
+| [logos-module-builder](https://github.com/logos-co/logos-module-builder)         | Core module build system   | `mkLogosModule`, `buildCppPlugin` Nix functions, `LogosModule.cmake`, templates  |
+| [logos-app-builder](https://github.com/logos-co/logos-app-builder)               | UI/app build system        | `mkLogosQmlModule`, `mkLogosApp` Nix functions, UI templates                     |
 | [logos-module](https://github.com/logos-co/logos-module)                         | Plugin introspection       | `liblogos_module.a` (static lib), `lm` (CLI)                                      |
 | [logos-cpp-sdk](https://github.com/logos-co/logos-cpp-sdk)                       | SDK + code generator       | `LogosAPI`, `LogosResult`, `logos-cpp-generator`, `PluginInterface`               |
 | [logos-liblogos](https://github.com/logos-co/logos-liblogos)                     | Core library               | `logos_host`, `liblogos_core`                                                     |
@@ -1166,7 +1167,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 
 **Requirements for auto-bundled dependencies:**
 
-1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with the standalone app.
+1. **Module type must be `"ui"` or use `mkLogosQmlModule` (from `logos-app-builder`)** — only UI modules get `apps.default` wired up with the standalone app.
 
 2. **Dependencies must be listed in `metadata.json`** under the `"dependencies"` array:
 
@@ -1192,8 +1193,8 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 
 **What changed (no more `logos-standalone-app` input):**
 
-- `logos-standalone-app` is now bundled inside `logos-module-builder` — UI module flakes no longer need it as a separate input.
-- No `logosStandalone` parameter is needed in `mkLogosQmlModule`, `mkLogosModule`, or `mkLogosQmlModule` calls.
+- `logos-standalone-app` is bundled inside `logos-app-builder` — UI module flakes no longer need it as a separate input.
+- No `logosStandalone` parameter is needed in `mkLogosQmlModule` or `mkLogosApp` calls.
 - Dependencies (including transitive ones) are automatically resolved from the flake input tree, bundled as LGX packages at build time, and extracted into the modules directory at runtime.
 - The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
 
@@ -1203,11 +1204,11 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 {
   description = "My UI module";
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-app-builder.url = "github:logos-co/logos-app-builder";
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
-  outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosQmlModule {
+  outputs = inputs@{ logos-app-builder, ... }:
+    logos-app-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
@@ -1221,11 +1222,11 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 {
   description = "My QML UI module";
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-app-builder.url = "github:logos-co/logos-app-builder";
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
   };
-  outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosQmlModule {
+  outputs = inputs@{ logos-app-builder, ... }:
+    logos-app-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;

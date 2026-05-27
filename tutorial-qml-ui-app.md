@@ -44,15 +44,15 @@ Key points:
 
 ## Step 1: Scaffold
 
-Use the QML module template from `logos-module-builder`:
+Use the QML module template from `logos-app-builder`:
 
 ```bash
 mkdir logos-calc-ui && cd logos-calc-ui
-nix flake init -t github:logos-co/logos-module-builder#ui-qml
+nix flake init -t github:logos-co/logos-app-builder#ui-qml
 git init && git add -A
 ```
 
-> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 4](#step-4-update-flakenix) to ensure reproducible builds.
+> **Note:** The generated `flake.nix` uses an unpinned `logos-app-builder` URL. Replace it with the pinned version shown in [Step 4](#step-4-update-flakenix) to ensure reproducible builds.
 
 This gives you:
 
@@ -322,7 +322,7 @@ The template already has everything wired up. Update the description and add `ca
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-app-builder.url = "github:logos-co/logos-app-builder";
 
     # Option A: point to a remote repo (for CI or when calc_module is published)
     calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
@@ -331,8 +331,8 @@ The template already has everything wired up. Update the description and add `ca
     # calc_module.url = "path:../logos-calc-module";
   };
 
-  outputs = inputs@{ logos-module-builder, ... }:
-    logos-module-builder.lib.mkLogosQmlModule {
+  outputs = inputs@{ logos-app-builder, ... }:
+    logos-app-builder.lib.mkLogosQmlModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
@@ -349,7 +349,7 @@ The `calc_module.url` can be either:
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library) for build instructions.
 
-`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
+`mkLogosQmlModule` (from `logos-app-builder`) handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
 
 > **Tip:** Even if `flake.nix` uses a `github:` URL, you can override it at build time with `--override-input calc_module path:../logos-calc-module` to use your local checkout without editing `flake.nix`. This is covered in [Step 5.2](#52-full-functionality-with-modules).
 
@@ -715,7 +715,7 @@ qml6 Main.qml
 
 ## Step 8: UI Integration Tests (Optional)
 
-You can add automated UI tests that verify your QML plugin renders correctly. The test infrastructure is built into `logos-module-builder` — just add `.mjs` test files to a `tests/` directory and you get `nix build .#integration-test` for free.
+You can add automated UI tests that verify your QML plugin renders correctly. The test infrastructure is built into `logos-app-builder` — just add `.mjs` test files to a `tests/` directory and you get `nix build .#integration-test` for free.
 
 Tests use the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework, which connects to the QML inspector inside `logos-standalone-app` and can find elements, click buttons, verify text, and take screenshots.
 
