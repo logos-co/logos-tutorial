@@ -139,41 +139,19 @@ const char* calc_version(void)
 }
 ```
 
-### 1.5 Build the shared library
+### 1.5 Verify library source
 
-```bash
-cd lib
-
-# Linux
-gcc -shared -fPIC -o libcalc.so libcalc.c
-
-# macOS
-# gcc -shared -fPIC -o libcalc.dylib libcalc.c
-
-cd ..
-```
-
-Verify the symbols are exported:
-
-```bash
-# Linux
-nm -D lib/libcalc.so | grep calc
-
-# macOS
-# nm -gU lib/libcalc.dylib | grep calc
-```
-
-You should see each symbol marked with `T` (text/code section). Addresses will vary:
+At this point your `lib/` directory should contain:
 
 ```
-0000000000001139 T calc_add
-0000000000001179 T calc_factorial
-00000000000011f5 T calc_fibonacci
-0000000000001159 T calc_multiply
-0000000000001299 T calc_version
+lib/
+├── libcalc.h    # Header with function declarations
+└── libcalc.c    # Implementation
 ```
 
-> **Wrapping a third-party library?** If you're wrapping an existing library (e.g., from a system package or a GitHub repo), you don't need to write the C code — just place the pre-built `.so`/`.dylib` and its header file in `lib/`.
+The C library will be compiled automatically by CMake during `nix build` (as a static library linked into the plugin). No manual compilation step is needed.
+
+> **Wrapping a third-party library?** If you're wrapping an existing library (e.g., from a system package or a GitHub repo), you can either place the source in `lib/` and build it via CMake, or use `externalLibInputs` in `flake.nix` to fetch and build it from a separate flake input (see the "Appendix" section for the flake-input approach).
 
 ---
 
@@ -197,8 +175,7 @@ logos-calc-module/
 ├── CMakeLists.txt     # CMake build file (~20 lines)
 ├── lib/
 │   ├── libcalc.h      # C library header
-│   ├── libcalc.c      # C library source
-│   └── libcalc.so     # Pre-built shared library
+│   └── libcalc.c      # C library source (compiled by CMake)
 └── src/
     ├── calc_module_interface.h   # Interface declaration
     ├── calc_module_plugin.h      # Plugin header
@@ -207,7 +184,7 @@ logos-calc-module/
 
 ### 2.1 `metadata.json` — Module Configuration
 
-> **Edit:** Change `name`, `description`, `main`, `nix.external_libraries[].name`, and `nix.cmake.extra_include_dirs` to match your module and library.
+> **Edit:** Change `name`, `description`, `main`, and `nix.cmake.extra_include_dirs` to match your module and library.
 
 This is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
 
@@ -226,12 +203,7 @@ This is the single source of truth for your module. It is embedded into the plug
       "build": [],
       "runtime": []
     },
-    "external_libraries": [
-      {
-        "name": "calc",
-        "vendor_path": "lib"
-      }
-    ],
+    "external_libraries": [],
     "cmake": {
       "find_packages": [],
       "extra_sources": [],
@@ -244,20 +216,19 @@ This is the single source of truth for your module. It is embedded into the plug
 
 **Key fields explained:**
 
-| Field                                  | What it does                                                                                                                                                                                                                                                                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                                 | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                                                                                                                        |
-| `nix.external_libraries[].name`        | Library name **without the `lib` prefix** — the builder looks for `lib<name>.so` / `lib<name>.dylib` in the directory specified by `vendor_path`. So `name: calc` matches the file `libcalc.so` / `libcalc.dylib`. This follows the standard Unix library naming convention where `-lcalc` links against `libcalc`. |
-| `nix.external_libraries[].vendor_path` | Where to find the pre-built library. `"lib"` means the `lib/` directory in your project root                                                                                                                                                                                                                        |
-| `nix.cmake.extra_include_dirs`         | Added to the CMake include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                                                                                                                     |
+| Field                          | What it does                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `name`                         | Module name — must be a valid C identifier (used in filenames, method calls)                                             |
+| `nix.external_libraries`       | External libraries fetched from flake inputs (empty here since we build libcalc directly via CMake)                      |
+| `nix.cmake.extra_include_dirs` | Added to the CMake include path so your C++ code can `#include "libcalc.h"`                                              |
 
 ### 2.2 `CMakeLists.txt` — Build File
 
-> **Edit:** Change `project()` name, `NAME`, `SOURCES` filenames, and `EXTERNAL_LIBS` to match your module and library.
+> **Edit:** Change `project()` name, `NAME`, `SOURCES` filenames, and `LINK_TARGETS` to match your module and library.
 
 ```cmake
 cmake_minimum_required(VERSION 3.14)
-project(CalcModulePlugin LANGUAGES CXX)
+project(CalcModulePlugin LANGUAGES CXX C)
 
 # Include the Logos Module CMake helper (provided by logos-module-builder)
 if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
@@ -268,30 +239,35 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
-# Define the module with its external library dependency
+# Build the external C library as a static library
+add_library(calc STATIC lib/libcalc.c)
+target_include_directories(calc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+
+# Define the module with its statically-linked library dependency
 logos_module(
     NAME calc_module
     SOURCES
         src/calc_module_interface.h
         src/calc_module_plugin.h
         src/calc_module_plugin.cpp
-    EXTERNAL_LIBS
+    LINK_TARGETS
         calc
 )
 ```
 
 The template generates this with default names (e.g., `external_lib`). You **must** update:
 
-- **`project()`** — rename to match your module (e.g., `CalcModulePlugin`)
+- **`project()`** — rename to match your module (e.g., `CalcModulePlugin`). Include `C` in `LANGUAGES` since we're compiling C source.
+- **`add_library()`** — builds the C library source as a static library that gets linked into the plugin
 - **`NAME`** — your module name (must match `name` in `metadata.json`, e.g., `calc_module`)
 - **`SOURCES`** — your renamed source files
-- **`EXTERNAL_LIBS`** — names of external libraries to link (must match `nix.external_libraries[].name` in `metadata.json`)
+- **`LINK_TARGETS`** — CMake targets to link (the `calc` static library we defined above)
 
 The `if/elseif/else` block above it is boilerplate — don't change it.
 
 > **Common mistake:** If `NAME` doesn't match `name` in `metadata.json`, the build will succeed but the install phase will fail because it looks for `<name>_plugin.dylib` based on `metadata.json`.
 
-**How `EXTERNAL_LIBS calc` works:** The `logos_module()` CMake function searches `lib/` for `libcalc.so` (Linux) or `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
+**How `LINK_TARGETS calc` works:** The `logos_module()` CMake function links the `calc` CMake target (our static library) into the plugin. Since it's a static library, all symbols are resolved at link time — no runtime library loading needed.
 
 ### 2.3 `flake.nix` — Nix Build Config
 
@@ -550,19 +526,17 @@ The first build takes a while (5-15 minutes) as Nix downloads Qt, the Logos SDK,
 ls -la result/lib/
 ```
 
-You should see two files (extensions depend on your platform):
+You should see one file (extension depends on your platform):
 
 ```
 # Linux
-calc_module_plugin.so   # Your Logos module plugin
-libcalc.so              # The C library (copied alongside)
+calc_module_plugin.so   # Your Logos module plugin (libcalc linked statically)
 
 # macOS
 calc_module_plugin.dylib
-libcalc.dylib
 ```
 
-Both library files are placed together so the plugin can find the C library at runtime via RPATH.
+Since libcalc is statically linked, only the plugin file is needed — no separate library file to deploy.
 
 ---
 
@@ -698,12 +672,11 @@ mkdir -p modules
 ./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
 ```
 
-This extracts the plugin, external libraries, and manifest into the correct directory structure:
+This extracts the plugin and manifest into the correct directory structure:
 
 ```
 modules/calc_module/
 ├── calc_module_plugin.dylib   # (or .so on Linux)
-├── libcalc.dylib              # (or .so on Linux)
 ├── manifest.json              # Auto-generated by lgx
 └── variant                    # Platform variant identifier
 ```
@@ -1012,7 +985,7 @@ Q_INVOKABLE void initLogos(LogosAPI* api);  // No override!
 Cannot load library calc_module_plugin.so: libcalc.so: cannot open shared object file
 ```
 
-**Fix:** Ensure `libcalc.so` / `libcalc.dylib` is in the same directory as the plugin. The build system sets RPATH to `$ORIGIN` (Linux) / `@loader_path` (macOS) so the plugin looks for libraries in its own directory.
+**Fix:** This error occurs when using `EXTERNAL_LIBS` with shared libraries. The recommended approach is to build the C library as a static library via CMake (using `add_library(calc STATIC ...)` + `LINK_TARGETS`), which eliminates runtime library loading entirely. If you must use shared libraries, ensure the `.so` / `.dylib` is in the same directory as the plugin — the build system sets RPATH to `$ORIGIN` (Linux) / `@loader_path` (macOS).
 
 ### `initLogos` stores API pointer in wrong variable
 
@@ -1060,6 +1033,6 @@ The first `nix build` downloads Qt 6, the Logos C++ SDK, the code generator, and
 
 If you get "undefined symbol" errors for your C library functions:
 
-1. Verify the `.so`/`.dylib` is in `lib/` before building
+1. Verify `lib/libcalc.c` and `lib/libcalc.h` exist
 2. Verify the header has `extern "C"` guards
-3. Check the symbols are exported: `nm -D lib/libcalc.so | grep calc`
+3. After building, check symbols are linked: `nm -g result/lib/calc_module_plugin.dylib | grep calc`

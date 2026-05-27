@@ -95,12 +95,7 @@ files:
             "build": [],
             "runtime": []
           },
-          "external_libraries": [
-            {
-              "name": "calc",
-              "vendor_path": "lib"
-            }
-          ],
+          "external_libraries": [],
           "cmake": {
             "find_packages": [],
             "extra_sources": [],
@@ -113,7 +108,7 @@ files:
   - path: CMakeLists.txt
     content: |
       cmake_minimum_required(VERSION 3.14)
-      project(CalcModulePlugin LANGUAGES CXX)
+      project(CalcModulePlugin LANGUAGES CXX C)
 
       # Include the Logos Module CMake helper (provided by logos-module-builder)
       if(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})
@@ -124,14 +119,18 @@ files:
           message(FATAL_ERROR "LogosModule.cmake not found")
       endif()
 
-      # Define the module with its external library dependency
+      # Build the external C library as a static library
+      add_library(calc STATIC lib/libcalc.c)
+      target_include_directories(calc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+
+      # Define the module with its statically-linked library dependency
       logos_module(
           NAME calc_module
           SOURCES
               src/calc_module_interface.h
               src/calc_module_plugin.h
               src/calc_module_plugin.cpp
-          EXTERNAL_LIBS
+          LINK_TARGETS
               calc
       )
 
@@ -297,9 +296,6 @@ files:
       build/
 
 build:
-  - name: "Compile shared library"
-    run: "cd lib && cc {shared_flags} -o libcalc.{ext} libcalc.c && cd .."
-
   - name: "Initialize git repo"
     run: "git init && git add -A && nix flake update && git add flake.lock"
 
@@ -311,9 +307,6 @@ build:
 
   - name: "Plugin file exists"
     check_file: "result/lib/calc_module_plugin.{ext}"
-
-  - name: "External library bundled"
-    check_file: "result/lib/libcalc.{ext}"
 
 inspect:
   - name: "Metadata correct"

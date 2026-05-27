@@ -1,6 +1,9 @@
 name: "Tutorial: Building a C++ UI Module (Process-Isolated)"
 tutorial: tutorial-cpp-ui-app.md
 
+build_overrides:
+  calc_module: "../logos-calc-module"
+
 scaffold:
   template: "github:logos-co/logos-module-builder#ui-qml-backend"
 

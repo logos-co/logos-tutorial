@@ -12,12 +12,7 @@
       "build": [],
       "runtime": []
     },
-    "external_libraries": [
-      {
-        "name": "calc",
-        "vendor_path": "lib"
-      }
-    ],
+    "external_libraries": [],
     "cmake": {
       "find_packages": [],
       "extra_sources": [],

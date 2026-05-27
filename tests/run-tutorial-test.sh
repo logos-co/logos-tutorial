@@ -169,6 +169,7 @@ expand_platform() {
 # ── Banner ────────────────────────────────────────────────────────────────────
 
 TUTORIAL_NAME=$(yq_read '.name')
+SCRIPT_DIR="$(cd "$(dirname "$SPEC_FILE")" && pwd)"
 echo "================================================================="
 echo " Tutorial Test: $TUTORIAL_NAME"
 echo "================================================================="
@@ -178,6 +179,35 @@ echo "  workdir  : $WORKDIR"
 echo "  platform : $(uname -s) (ext=$EXT)"
 echo "  phases   : $PHASES"
 echo ""
+
+# ── Build Overrides ──────────────────────────────────────────────────────────
+# Parse build_overrides from YAML: these become --override-input flags for nix commands.
+
+NIX_OVERRIDE_FLAGS=""
+OVERRIDE_KEYS=$(yq_read '.build_overrides | keys | .[]' 2>/dev/null || true)
+if [[ -n "$OVERRIDE_KEYS" && "$OVERRIDE_KEYS" != "null" ]]; then
+    while IFS= read -r key; do
+        [[ -z "$key" ]] && continue
+        REL_PATH=$(yq_read ".build_overrides[\"$key\"]")
+        ABS_PATH="$(cd "$SCRIPT_DIR" && cd "$REL_PATH" 2>/dev/null && pwd)" || true
+        if [[ -n "$ABS_PATH" && -d "$ABS_PATH" ]]; then
+            NIX_OVERRIDE_FLAGS="$NIX_OVERRIDE_FLAGS --override-input $key path:$ABS_PATH"
+            [[ "$VERBOSE" == "true" ]] && echo "  override : $key -> $ABS_PATH"
+        else
+            echo "  WARNING: build_overrides.$key path not found: $SCRIPT_DIR/$REL_PATH"
+        fi
+    done <<< "$OVERRIDE_KEYS"
+fi
+
+# Helper: append override flags to nix build commands
+inject_nix_overrides() {
+    local cmd="$1"
+    if [[ -n "$NIX_OVERRIDE_FLAGS" && "$cmd" == *"nix build"* ]]; then
+        echo "${cmd}${NIX_OVERRIDE_FLAGS}"
+        return
+    fi
+    echo "$cmd"
+}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE 0: Scaffold
@@ -264,6 +294,7 @@ if should_run_phase "build"; then
 
             if [[ "$STEP_RUN" != "null" ]] && [[ -n "$STEP_RUN" ]]; then
                 STEP_RUN=$(expand_platform "$STEP_RUN")
+                STEP_RUN=$(inject_nix_overrides "$STEP_RUN")
                 [[ "$VERBOSE" == "true" ]] && printf "        cmd: %s\n" "$STEP_RUN"
                 if (cd "$WORKDIR" && eval "$STEP_RUN") 2>&1; then
                     pass "$STEP_NAME"
@@ -357,6 +388,7 @@ if should_run_phase "logoscore"; then
             for i in $(seq 0 $((SETUP_COUNT - 1))); do
                 cmd=$(yq_read ".logoscore.setup[$i]")
                 cmd=$(expand_platform "$cmd")
+                cmd=$(inject_nix_overrides "$cmd")
                 [[ "$VERBOSE" == "true" ]] && printf "        cmd: %s\n" "$cmd"
                 if ! (cd "$WORKDIR" && eval "$cmd") 2>&1; then
                     fail "logoscore setup: $cmd" "setup command failed"
@@ -491,7 +523,6 @@ if should_run_phase "basecamp"; then
         export LOGOS_QT_MCP="$QT_MCP"
 
         # Install core dependencies first (other modules this plugin depends on)
-        SCRIPT_DIR="$(cd "$(dirname "$SPEC_FILE")" && pwd)"
         CORE_DEPS_COUNT=$(yq_read '.basecamp.core_deps | length')
         if [[ "$CORE_DEPS_COUNT" != "0" && "$CORE_DEPS_COUNT" != "null" ]]; then
             mkdir -p "$BASECAMP_USER_DIR/modules"
@@ -518,7 +549,8 @@ if should_run_phase "basecamp"; then
         INSTALL_AS=$(yq_read '.basecamp.install_as')
         if [[ "$INSTALL_AS" != "null" ]]; then
             echo "  Building install package..."
-            if (cd "$WORKDIR" && nix build '.#install' -o result-install 2>&1); then
+            INSTALL_CMD="nix build '.#install' -o result-install${NIX_OVERRIDE_FLAGS}"
+            if (cd "$WORKDIR" && eval "$INSTALL_CMD") 2>&1; then
                 if [[ "$INSTALL_AS" == "core" ]]; then
                     mkdir -p "$BASECAMP_USER_DIR/modules"
                     cp -r "$WORKDIR"/result-install/modules/* "$BASECAMP_USER_DIR/modules/"
