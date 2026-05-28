@@ -1,5 +1,17 @@
 {
   "nodes": {
+    "calc-src": {
+      "flake": false,
+      "locked": {
+        "path": "./lib",
+        "type": "path"
+      },
+      "original": {
+        "path": "./lib",
+        "type": "path"
+      },
+      "parent": []
+    },
     "logos-capability-module": {
       "inputs": {
         "logos-module-builder": "logos-module-builder_2"
@@ -7703,6 +7715,7 @@
     },
     "root": {
       "inputs": {
+        "calc-src": "calc-src",
         "logos-module-builder": "logos-module-builder"
       }
     }

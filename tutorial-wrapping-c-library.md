@@ -23,7 +23,7 @@ This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.d
   ```bash
   nix flake --help >/dev/null 2>&1 && echo "Flakes enabled" || echo "Flakes NOT enabled — check nix.conf"
   ```
-- **A C compiler** (gcc or clang) for building the C library. Only needed if you're building the `.so`/`.dylib` yourself rather than using a pre-built library.
+- **A C compiler** (gcc or clang) — only needed for the optional local sanity check in Step 1.5. The Nix build compiles the C library itself, so you don't need a compiler on hand for the actual module build.
 - Basic familiarity with C and C++.
 
 ---
@@ -139,28 +139,53 @@ const char* calc_version(void)
 }
 ```
 
-### 1.5 Build the shared library
+### 1.5 Add a Makefile to build the library
+
+The Nix build (Step 3) compiles `libcalc` from source for you — you don't ship a
+pre-built binary. To do that it needs a build command, so add a small
+`lib/Makefile` that produces the shared library with the platform-correct
+extension:
+
+```make
+# Pick the platform-correct shared-library extension.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  EXT := dylib
+else
+  EXT := so
+endif
+
+# $(CC)/$(CFLAGS) are honored from the environment when set (the Nix stdenv
+# exports CC); these are the fallbacks for a plain local build.
+CFLAGS ?= -shared -fPIC -O2
+
+shared:
+	mkdir -p build
+	$(CC) $(CFLAGS) -o build/libcalc.$(EXT) libcalc.c
+
+clean:
+	rm -rf build
+
+.PHONY: shared clean
+```
+
+> Recipe lines in a `Makefile` must be indented with a **tab**, not spaces.
+
+**Optional sanity check.** Compile it once locally to confirm your C code builds
+and exports the expected symbols (the Nix build does this for real in Step 3):
 
 ```bash
 cd lib
-
-# Linux
-gcc -shared -fPIC -o libcalc.so libcalc.c
-
-# macOS
-# gcc -shared -fPIC -o libcalc.dylib libcalc.c
-
+make shared      # → build/libcalc.so on Linux, build/libcalc.dylib on macOS
 cd ..
 ```
 
-Verify the symbols are exported:
-
 ```bash
 # Linux
-nm -D lib/libcalc.so | grep calc
+nm -D lib/build/libcalc.so | grep calc
 
 # macOS
-# nm -gU lib/libcalc.dylib | grep calc
+# nm -gU lib/build/libcalc.dylib | grep calc
 ```
 
 You should see each symbol marked with `T` (text/code section). Addresses will vary:
@@ -173,7 +198,10 @@ You should see each symbol marked with `T` (text/code section). Addresses will v
 0000000000001299 T calc_version
 ```
 
-> **Wrapping a third-party library?** If you're wrapping an existing library (e.g., from a system package or a GitHub repo), you don't need to write the C code — just place the pre-built `.so`/`.dylib` and its header file in `lib/`.
+> **Wrapping a third-party library you already have as a binary?** You can skip
+> building from source and ship the pre-built `.so`/`.dylib` instead — see the
+> staging note in [Step 2.1](#21-metadatajson--module-configuration). Just
+> remember Nix only sees git-tracked files, so the binary **must** be committed.
 
 ---
 
@@ -198,7 +226,7 @@ logos-calc-module/
 ├── lib/
 │   ├── libcalc.h      # C library header
 │   ├── libcalc.c      # C library source
-│   └── libcalc.so     # Pre-built shared library
+│   └── Makefile       # Builds libcalc from source (run by the Nix build)
 └── src/
     ├── calc_module_interface.h   # Interface declaration
     ├── calc_module_plugin.h      # Plugin header
@@ -229,7 +257,8 @@ This is the single source of truth for your module. It is embedded into the plug
     "external_libraries": [
       {
         "name": "calc",
-        "vendor_path": "lib"
+        "build_command": "make shared",
+        "output_pattern": "build/libcalc.*"
       }
     ],
     "cmake": {
@@ -246,10 +275,23 @@ This is the single source of truth for your module. It is embedded into the plug
 
 | Field                                  | What it does                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                                 | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                                                                                                                        |
-| `nix.external_libraries[].name`        | Library name **without the `lib` prefix** — the builder looks for `lib<name>.so` / `lib<name>.dylib` in the directory specified by `vendor_path`. So `name: calc` matches the file `libcalc.so` / `libcalc.dylib`. This follows the standard Unix library naming convention where `-lcalc` links against `libcalc`. |
-| `nix.external_libraries[].vendor_path` | Where to find the pre-built library. `"lib"` means the `lib/` directory in your project root                                                                                                                                                                                                                        |
-| `nix.cmake.extra_include_dirs`         | Added to the CMake include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                                                                                                                     |
+| `name`                                    | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                                                                                                                        |
+| `nix.external_libraries[].name`           | Library name **without the `lib` prefix**. So `name: calc` corresponds to `libcalc.so` / `libcalc.dylib`, following the standard Unix convention where `-lcalc` links against `libcalc`. The builder uses it to name the built artifact and to match `EXTERNAL_LIBS calc` in `CMakeLists.txt`.                        |
+| `nix.external_libraries[].build_command`  | Shell command that builds the library **from source**. It runs in the source tree passed via `externalLibInputs` in `flake.nix` (see [Step 2.3](#23-flakenix--nix-build-config)). Here it invokes the `lib/Makefile`'s `make shared` target. The Nix stdenv exports `$CC`/`$CXX`, and `make`/`pkg-config` are on `PATH`. |
+| `nix.external_libraries[].output_pattern` | Glob (relative to the build dir) the builder uses to locate the compiled library. `"build/libcalc.*"` matches the `build/libcalc.so` / `build/libcalc.dylib` that `make shared` produces.                                                                                                                            |
+| `nix.cmake.extra_include_dirs`            | Added to the CMake include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                                                                                                                     |
+
+> **Build from source vs. ship a binary — and why you must `git add` a binary.**
+> This example builds `libcalc` from source on every Nix build, so there's
+> nothing to commit but the `.c`/`.h`/`Makefile` sources. If instead you receive
+> a library **pre-built** (a third-party `.so`/`.dylib`), drop `build_command`
+> and `output_pattern`, set `"vendor_path": "lib"`, and place the binary in
+> `lib/` — **but you must `git add` it.** Nix flakes only see git-tracked files,
+> so an un-staged binary is invisible to the build, and the failure is *silent*:
+> `find_library` misses it (a CMake warning, not an error), the plugin still
+> links because the C symbols resolve lazily, and it only crashes when something
+> tries to load it. Always commit a vendored binary, or build it from source as
+> shown here.
 
 ### 2.2 `CMakeLists.txt` — Build File
 
@@ -291,11 +333,11 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
 
 > **Common mistake:** If `NAME` doesn't match `name` in `metadata.json`, the build will succeed but the install phase will fail because it looks for `<name>_plugin.dylib` based on `metadata.json`.
 
-**How `EXTERNAL_LIBS calc` works:** The `logos_module()` CMake function searches `lib/` for `libcalc.so` (Linux) or `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
+**How `EXTERNAL_LIBS calc` works:** Before CMake runs, the builder has compiled `libcalc` from source (Step 2.1) and staged the result into `lib/`. The `logos_module()` CMake function then finds `libcalc.so` (Linux) or `libcalc.dylib` (macOS) there, links it to your plugin, and sets up RPATH so the library is found at runtime.
 
 ### 2.3 `flake.nix` — Nix Build Config
 
-> **Edit:** Change `description`. Add flake inputs here if your module depends on other modules or fetches a library from source (see [Advanced: Wrapping a Library from a Flake Input](#advanced-wrapping-a-library-from-a-flake-input)).
+> **Edit:** Change `description`, and point `externalLibInputs` at your library's source. Add other flake inputs here too if your module depends on other modules (see [Advanced: Wrapping a Library from a Flake Input](#advanced-wrapping-a-library-from-a-flake-input)).
 
 ```nix
 {
@@ -303,18 +345,38 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v2";
+
+    # The C library source, built from source by Nix (see metadata.json's
+    # build_command). flake = false means "just give me the source tree".
+    calc-src = {
+      url = "path:./lib";
+      flake = false;
+    };
   };
 
-  outputs = inputs@{ logos-module-builder, ... }:
+  outputs = inputs@{ logos-module-builder, calc-src, ... }:
     logos-module-builder.lib.mkLogosModule {
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
+
+      # Hand the C source to the builder. The attribute name (calc) must match
+      # the external_libraries[].name in metadata.json.
+      externalLibInputs = {
+        calc = calc-src;
+      };
     };
 }
 ```
 
-That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). Note that `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
+That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). `configFile` points to `metadata.json` (the single source of truth), `flakeInputs = inputs` passes all flake inputs to the builder so module dependencies resolve automatically, and `externalLibInputs` hands the builder the C source it compiles via `build_command`.
+
+> **Bundled source via `path:./lib`.** The `calc-src` input is a relative
+> [path input](https://nix.dev/manual/nix/latest/command-ref/new-cli/nix3-flake#path-like-syntax)
+> pointing at the `lib/` directory in this same repo, so the C source stays
+> bundled with the module — no separate repository needed. To pull the source
+> from a subfolder of a remote repo instead, use the `?dir=` locator, e.g.
+> `url = "github:you/your-repo?dir=lib";`.
 
 > **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
@@ -518,6 +580,10 @@ result-*
 
 # CMake build directory
 build/
+
+# Compiled C library (built from source by the Nix external-lib derivation,
+# or by `make shared` for a local sanity check)
+lib/build/
 ```
 
 Then initialise the repo:
@@ -555,7 +621,7 @@ You should see two files (extensions depend on your platform):
 ```
 # Linux
 calc_module_plugin.so   # Your Logos module plugin
-libcalc.so              # The C library (copied alongside)
+libcalc.so              # The C library (built from source, staged alongside)
 
 # macOS
 calc_module_plugin.dylib
@@ -885,7 +951,7 @@ Q_INVOKABLE QString getData() {
 
 ## Advanced: Wrapping a Library from a Flake Input
 
-Instead of pre-building the library and placing it in `lib/`, you can have Nix fetch and build it from source. This is useful for libraries hosted on GitHub.
+The main example already builds its library from source via `externalLibInputs`, using a relative `path:./lib` input for the bundled `lib/` directory. The same mechanism works when the library source lives in its **own GitHub repository** — you just point the input at the remote instead of a local path. This is the common case when wrapping a third-party C/C++ library.
 
 ### flake.nix with external library input
 
@@ -1058,8 +1124,10 @@ The first `nix build` downloads Qt 6, the Logos C++ SDK, the code generator, and
 
 ### Symbol not found errors
 
-If you get "undefined symbol" errors for your C library functions:
+If the plugin fails to load with "undefined symbol" errors for your C library functions, the library wasn't linked. The build does **not** fail in this case — `find_library` only prints a warning and the plugin links anyway, so the breakage surfaces at load time. Check:
 
-1. Verify the `.so`/`.dylib` is in `lib/` before building
-2. Verify the header has `extern "C"` guards
-3. Check the symbols are exported: `nm -D lib/libcalc.so | grep calc`
+1. The library actually built — the build log should show a `logos-external-<name>` derivation running your `build_command` and a `Found: build/lib<name>...` line.
+2. `output_pattern` matches what the build produces (`build/libcalc.*` ↔ `build/libcalc.{so,dylib}`).
+3. The header has `extern "C"` guards.
+4. The symbols are exported: `nm -gU lib/build/libcalc.dylib | grep calc` (macOS) / `nm -D lib/build/libcalc.so | grep calc` (Linux).
+5. If you vendored a **prebuilt** binary (`vendor_path`) instead of building from source, confirm it is committed — Nix can't see an un-staged file, and `find_library` misses it silently. Verify the plugin actually links the library: `otool -L result/lib/calc_module_plugin.dylib | grep calc` (macOS) / `ldd result/lib/calc_module_plugin.so | grep calc` (Linux) should list `libcalc`. If it doesn't, the library wasn't found at build time.
