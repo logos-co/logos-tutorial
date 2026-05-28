@@ -347,7 +347,7 @@ The `calc_module.url` can be either:
 - **`github:`** — fetches from a remote GitHub repo. Use this for CI or when `calc_module` has been published.
 - **`path:`** — points to a local directory on disk. Use this during development when both repos live side by side (e.g., `path:../logos-calc-module`).
 
-> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library) for build instructions.
+> **Important:** `calc_module` bundles a small C library (`libcalc`) that is compiled **from source** during its own Nix build — there's no prebuilt `.so`/`.dylib` to stage. Building `calc_module` (which happens automatically when this app pulls it in as a dependency) compiles it for you. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-add-a-makefile-to-build-the-library) for how that works.
 
 `mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
 
@@ -370,36 +370,20 @@ The app opens immediately. No modules are loaded, so clicking buttons shows "Log
 
 ### 5.2 Full functionality (with modules)
 
-The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
+The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, just make sure it builds cleanly — its C library is compiled from source as part of that build, so there's nothing to pre-build by hand.
 
-#### Ensure `calc_module` is built
+#### Ensure `calc_module` builds
 
-Go back to your `logos-calc-module` directory and verify the shared library exists:
-
-```bash
-ls ../logos-calc-module/lib/libcalc.so    # Linux
-ls ../logos-calc-module/lib/libcalc.dylib  # macOS
-```
-
-If the file is missing, build it first (as covered in [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
-
-```bash
-cd ../logos-calc-module/lib
-gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
-# gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS
-cd ../../logos-calc-ui
-```
-
-Also make sure the module itself builds successfully:
+`calc_module`'s C library is compiled from source during its Nix build (from `lib/libcalc.c` via `lib/Makefile`, see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-add-a-makefile-to-build-the-library)), so there's no `.so`/`.dylib` to build or place by hand. Confirm the module builds:
 
 ```bash
 cd ../logos-calc-module
-git add -A
+git add -A          # Nix only sees git-tracked files
 nix build
 cd ../logos-calc-ui
 ```
 
-The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), which is the compiled Qt plugin. The `lib/libcalc.so` (or `.dylib`) inside the source tree is the underlying C library that gets linked in during the build.
+The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), the compiled Qt plugin, alongside `result/lib/libcalc.so` (or `.dylib`) — the C library built from source and staged next to the plugin.
 
 #### Option A: Use `--override-input` (quick, no flake.nix edits)
 

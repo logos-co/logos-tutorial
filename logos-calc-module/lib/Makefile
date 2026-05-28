@@ -10,13 +10,16 @@ else
   EXT := so
 endif
 
-# $(CC) and $(CFLAGS) are honored from the environment when set (the Nix
-# stdenv exports CC); these are the fallbacks for a plain local build.
-CFLAGS ?= -shared -fPIC -O2
+# Extra optimization/compile flags — overridable from the environment (the Nix
+# stdenv exports CC, and may set CFLAGS/LDFLAGS). The shared-library flags
+# (-shared -fPIC) are passed literally on the recipe line below, NOT via
+# CFLAGS, so an env-provided CFLAGS can't accidentally drop them and turn this
+# into a plain executable named libcalc.so/.dylib.
+CFLAGS ?= -O2
 
 shared:
 	mkdir -p build
-	$(CC) $(CFLAGS) -o build/libcalc.$(EXT) libcalc.c
+	$(CC) -shared -fPIC $(CFLAGS) $(LDFLAGS) -o build/libcalc.$(EXT) libcalc.c
 
 clean:
 	rm -rf build

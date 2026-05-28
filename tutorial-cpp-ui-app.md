@@ -492,7 +492,7 @@ The `calc_module` input attribute name must match the dependency name in `metada
 - **`github:`** — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
 - **`path:`** — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
 
-> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
+> **Important:** `calc_module` bundles a small C library (`libcalc`) compiled **from source** during its own Nix build — there's no prebuilt `.so`/`.dylib` to stage. Building `calc_module` (which happens automatically when this app pulls it in) compiles it for you. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-add-a-makefile-to-build-the-library).
 
 `mkLogosQmlModule` handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
 
@@ -500,11 +500,10 @@ The `calc_module` input attribute name must match the dependency name in `metada
 
 ## Step 8: Build and Run
 
-First, make sure your local `calc_module` is built and its `.so`/`.dylib` is present in `lib/` (see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+First, make sure your local `calc_module` builds cleanly — its C library is compiled from source during the Nix build (from `lib/libcalc.c` via `lib/Makefile`), so there's nothing to pre-build by hand (see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-add-a-makefile-to-build-the-library)):
 
 ```bash
-ls ../logos-calc-module/lib/libcalc.so    # Linux
-ls ../logos-calc-module/lib/libcalc.dylib  # macOS
+cd ../logos-calc-module && git add -A && nix build && cd -
 ```
 
 Then build and run. Choose the approach that matches your `flake.nix` setup:
