@@ -1,5 +1,6 @@
 name: "Tutorial: Wrapping a C Library as a Logos Module"
 output: tutorial-wrapping-c-library.md
+project_name: logos-calc-module
 release: ""
 
 intro: |
@@ -29,7 +30,7 @@ prerequisites:
 sections:
   # ── Step 1: Scaffold ──────────────────────────────────────────────────────
   - title: "Scaffold the Module Project"
-    phase: scaffold
+    step: true
     text: |
       Before writing any C code, scaffold the Logos module project using the official template. This gives you the correct `flake.nix`, `metadata.json`, directory structure, and build configuration out of the box.
     steps:
@@ -53,7 +54,7 @@ sections:
 
   # ── Step 2: Write the C library ────────────────────────────────────────────
   - title: "Write the C Library"
-    phase: files
+    step: true
     text: |
       Create the C library that your module will wrap. Place the header and implementation in the `lib/` directory.
     steps:
@@ -180,7 +181,7 @@ sections:
 
   # ── Step 3: Configure the Logos Module ──────────────────────────────────────
   - title: "Configure the Logos Module"
-    phase: files
+    step: true
     text: |
       The template generated skeleton files with placeholder names (`external_lib`, `example_lib`). Now rename and customize them for your library. You need to edit **every generated file**.
 
@@ -498,7 +499,7 @@ sections:
 
   # ── Step 4: Build the Module ────────────────────────────────────────────────
   - title: "Build the Module"
-    phase: build
+    step: true
     steps:
       - title: "Initialize the Git repo"
         text: |
@@ -556,7 +557,7 @@ sections:
 
   # ── Step 5: Inspect the Module ──────────────────────────────────────────────
   - title: "Inspect the Module"
-    phase: inspect
+    step: true
     text: |
       Use the `lm` CLI tool (from `logos-module`) to inspect the compiled module binary.
     steps:
@@ -673,7 +674,7 @@ sections:
 
   # ── Step 6: Test with logoscore ─────────────────────────────────────────────
   - title: "Test with `logoscore`"
-    phase: logoscore
+    step: true
     steps:
       - title: "Build logoscore"
         run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"

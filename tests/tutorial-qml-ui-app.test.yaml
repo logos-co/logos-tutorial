@@ -1,5 +1,8 @@
 name: "Tutorial Part 2: Building a QML UI for Your Logos Module"
 output: tutorial-qml-ui-app.md
+project_name: logos-calc-ui
+requires:
+  - tutorial-wrapping-c-library.test.yaml
 release: ""
 
 intro: |
@@ -43,7 +46,7 @@ sections:
 
   # ── Step 1: Scaffold ───────────────────────────────────────────────────────
   - title: "Scaffold"
-    phase: scaffold
+    step: true
     text: |
       Create a new directory and initialise it from the QML module template:
 
@@ -67,7 +70,7 @@ sections:
 
   # ── Step 2: Update metadata.json ───────────────────────────────────────────
   - title: "Update `metadata.json`"
-    phase: files
+    step: true
     text: |
       Replace the template contents with your plugin's details. The template may generate an extra `nix` section — keep it as-is, it's used by the builder:
     steps:
@@ -114,7 +117,7 @@ sections:
 
   # ── Step 3: Write Main.qml ─────────────────────────────────────────────────
   - title: "Write `Main.qml`"
-    phase: files
+    step: true
     text: |
       Replace the starter file with the calculator UI. This demonstrates two communication patterns:
 
@@ -319,7 +322,7 @@ sections:
 
   # ── Step 4: Update flake.nix ───────────────────────────────────────────────
   - title: "Update `flake.nix`"
-    phase: files
+    step: true
     text: |
       The template already has everything wired up. Update the description and add `calc_module` as a dependency input:
     steps:
@@ -363,7 +366,7 @@ sections:
 
   # ── Step 5: Test with nix run ──────────────────────────────────────────────
   - title: "Test with `nix run`"
-    phase: build
+    step: true
     steps:
       - title: "UI only (layout preview)"
         run: "git add -A"
@@ -398,51 +401,63 @@ sections:
         post_text: |
           The app opens immediately. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
 
-      - title: "Full functionality (with modules)"
+  # ── Step 5b: Full functionality (with modules) ───────────────────────────
+  # Requires ../logos-calc-module from Part 1. Use --phase modules to enable.
+  - title: "Full functionality (with modules)"
+    step: true
+    text: |
+      The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
+    steps:
+      - title: "Ensure `calc_module` is built"
         text: |
-          The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
-
-          #### Ensure `calc_module` is built
-
           Go back to your `logos-calc-module` directory and verify the shared library exists:
-
-          ```bash
+        run: "ls ../logos-calc-module/lib/libcalc.{ext}"
+        code_block: |
           ls ../logos-calc-module/lib/libcalc.so    # Linux
           ls ../logos-calc-module/lib/libcalc.dylib  # macOS
-          ```
-
+        post_text: |
           If the file is missing, build it first (as covered in [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+        extra_run:
+          run: "cd ../logos-calc-module/lib && gcc {shared_flags} -o libcalc.{ext} libcalc.c && cd ../../logos-calc-ui"
+          code_block: |
+            cd ../logos-calc-module/lib
+            gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
+            # gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS
+            cd ../../logos-calc-ui
+          post_text: |
+            Also make sure the module itself builds successfully:
 
-          ```bash
-          cd ../logos-calc-module/lib
-          gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
-          # gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS
-          cd ../../logos-calc-ui
-          ```
-
-          Also make sure the module itself builds successfully:
-
-          ```bash
+      - run: "cd ../logos-calc-module && git add -A && nix build && cd ../logos-calc-ui"
+        code_block: |
           cd ../logos-calc-module
           git add -A
           nix build
           cd ../logos-calc-ui
-          ```
-
+        post_text: |
           The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), which is the compiled Qt plugin. The `lib/libcalc.so` (or `.dylib`) inside the source tree is the underlying C library that gets linked in during the build.
 
-          #### Option A: Use `--override-input` (quick, no flake.nix edits)
-
+      - title: "Option A: Use `--override-input` (quick, no flake.nix edits)"
+        text: |
           If your `flake.nix` points to a `github:` URL, you can override it at build time to use your local checkout:
-
-          ```bash
-          nix run . --override-input calc_module path:../logos-calc-module
-          ```
-
+        ui_test:
+          launch: "nix run . --override-input calc_module path:../logos-calc-module"
+          setup:
+            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
+          qt_mcp: "result-mcp"
+          tests:
+            - name: "App title visible"
+              action: wait_for
+              texts: ["Logos Calculator"]
+              timeout: 15000
+            - name: "All operation buttons visible"
+              action: wait_for
+              texts: ["Add", "Multiply", "Factorial", "Fibonacci"]
+              timeout: 5000
+        post_text: |
           This tells nix to resolve the `calc_module` flake input from your local directory instead of from the remote URL. Any changes you've made to `calc_module` locally (including the built `.so`/`.dylib` in `lib/`) are picked up immediately — no need to push to GitHub first.
 
-          #### Option B: Set `path:` in `flake.nix` (persistent local development)
-
+      - title: "Option B: Set `path:` in `flake.nix` (persistent local development)"
+        text: |
           If you're iterating on both repos side by side, you can point the flake input directly to your local `calc_module` checkout. In `flake.nix`, change:
 
           ```nix
@@ -462,8 +477,8 @@ sections:
 
           This is convenient when you always want to build against the local copy. Switch back to `github:` when you're ready to pin to a published version.
 
-          #### Option C: Pin to the remote repo
-
+      - title: "Option C: Pin to the remote repo"
+        text: |
           If `calc_module` has been pushed to the remote repository (with the `.so`/`.dylib` committed in `lib/`), the `github:` URL in `flake.nix` already points to it. A plain `nix run .` fetches and builds `calc_module` from the remote:
 
           ```bash
@@ -476,7 +491,7 @@ sections:
 
   # ── Step 6: Using the Logos Design System ──────────────────────────────────
   - title: "Using the Logos Design System"
-    phase: run
+    step: true
     text: |
       `logos-basecamp` (and `logos-standalone-app`) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
 
@@ -558,13 +573,13 @@ sections:
 
   # ── Step 7: Load in logos-basecamp ─────────────────────────────────────────
   - title: "Load in `logos-basecamp`"
-    phase: basecamp
+    step: true
     steps:
       - title: "Bundle as LGX packages"
         text: |
           Create `.lgx` packages for both dev and portable variants. Use `--out-link` to avoid overwriting the `result` symlink:
-
-          ```bash
+        run: "cd ../logos-calc-module && nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable && cd ../logos-calc-ui"
+        code_block: |
           # Package calc_module (from Part 1)
           cd ../logos-calc-module
           nix build '.#lgx' --out-link result-lgx
@@ -574,8 +589,9 @@ sections:
           cd ../logos-calc-ui
           nix build '.#lgx' --out-link result-lgx
           nix build '.#lgx-portable' --out-link result-lgx-portable
-          ```
-
+        extra_run:
+          run: "nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable"
+        post_text: |
           > For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
       - title: "Build and run logos-basecamp"
@@ -583,11 +599,9 @@ sections:
           Build logos-basecamp, launch it once to preinstall its bundled modules, then install your modules.
 
           > **Note:** `logos-basecamp` does not accept `--modules-dir` or `--ui-plugins-dir` CLI flags. It manages its own data directory and preinstalls bundled modules (main_ui, package_manager, etc.) on first launch.
-
+        run: "nix build 'github:logos-co/logos-basecamp{release}' -o basecamp-result"
+        post_text: |
           ```bash
-          # Build logos-basecamp
-          nix build 'github:logos-co/logos-basecamp{release}' -o basecamp-result
-
           # Launch once to preinstall bundled modules, then close it
           ./basecamp-result/bin/logos-basecamp
           ```
@@ -604,6 +618,8 @@ sections:
 
           The dev build directory is named `LogosBasecampDev` (portable builds use `LogosBasecamp`).
 
+      - title: "Install modules with lgpm"
+        text: |
           Install your modules using `lgpm`. First, set `BASECAMP_DIR` to your platform's path:
 
           ```bash
@@ -613,11 +629,9 @@ sections:
           # Linux:
           BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
           ```
-
+        run: "nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm"
+        post_text: |
           ```bash
-          # Build lgpm CLI
-          nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm
-
           # Install core module
           ./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
             install --file ../logos-calc-module/result-lgx/*.lgx
@@ -633,11 +647,9 @@ sections:
       - title: "Portable basecamp build (optional)"
         text: |
           The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
-
+        run: "nix build 'github:logos-co/logos-basecamp{release}#bin-bundle-dir' -o basecamp-portable"
+        post_text: |
           ```bash
-          # Build portable basecamp (bundles all Qt frameworks/libraries)
-          nix build 'github:logos-co/logos-basecamp{release}#bin-bundle-dir' -o basecamp-portable
-
           # Launch once to preinstall bundled modules
           ./basecamp-portable/bin/logos-basecamp
           ```
@@ -743,7 +755,7 @@ sections:
 
   # ── Step 8: UI Integration Tests ─────────────────────────────────────────
   - title: "UI Integration Tests"
-    phase: test
+    step: true
     text: |
       You can add automated UI tests that verify your QML plugin renders correctly. The test infrastructure is built into `logos-module-builder` — just add `.mjs` test files to a `tests/` directory and you get `nix build .#integration-test` for free.
 
@@ -752,80 +764,62 @@ sections:
       - title: "Create a test file"
         text: |
           Create `tests/ui-tests.mjs`:
+        file:
+          path: tests/ui-tests.mjs
+          language: javascript
+          content: |
+            import { resolve } from "node:path";
 
-          ```javascript
-          import { resolve } from "node:path";
-
-          // CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
-          const root =
-            process.env.LOGOS_QT_MCP ||
-            new URL("../result-mcp", import.meta.url).pathname;
-          const { test, run } = await import(
-            resolve(root, "test-framework/framework.mjs")
-          );
-
-          test("calc_ui: loads and shows title", async (app) => {
-            await app.waitFor(
-              async () => {
-                await app.expectTexts(["Calculator"]);
-              },
-              { timeout: 15000, interval: 500, description: "calc_ui to load" },
+            // CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
+            const root =
+              process.env.LOGOS_QT_MCP ||
+              new URL("../result-mcp", import.meta.url).pathname;
+            const { test, run } = await import(
+              resolve(root, "test-framework/framework.mjs")
             );
-          });
 
-          test("calc_ui: add button visible", async (app) => {
-            await app.expectTexts(["Add"]);
-          });
+            test("calc_ui: loads and shows title", async (app) => {
+              await app.waitFor(
+                async () => {
+                  await app.expectTexts(["Calculator"]);
+                },
+                { timeout: 15000, interval: 500, description: "calc_ui to load" },
+              );
+            });
 
-          test("calc_ui: click add and check result", async (app) => {
-            await app.click("Add");
-            // Verify the result appears (depends on your UI)
-            await app.waitFor(
-              async () => {
-                await app.expectTexts(["Result:"]);
-              },
-              { timeout: 5000, interval: 500, description: "result to appear" },
-            );
-          });
+            test("calc_ui: add button visible", async (app) => {
+              await app.expectTexts(["Add"]);
+            });
 
-          run();
-          ```
+            test("calc_ui: click add shows validation", async (app) => {
+              await app.click("Add");
+              await app.waitFor(
+                async () => {
+                  await app.expectTexts(["Enter values for a and b"]);
+                },
+                { timeout: 5000, interval: 500, description: "validation message to appear" },
+              );
+            });
+
+            run();
 
       - title: "Run the tests"
-        text: |
-          ```bash
-          git add tests/
-
-          # Hermetic CI test (builds everything, runs headless)
+        run: "git add tests/"
+      - run: "nix build .#integration-test -L --override-input calc_module path:../logos-calc-module"
+        code_block: |
           nix build .#integration-test -L
-
-          # Interactive: build test framework, run against a running app
-          nix build .#test-framework -o result-mcp
-          nix run .          # start the app with inspector on :3768
-          node tests/ui-tests.mjs  # in another terminal
-          ```
-
+        post_text: |
           The `integration-test` output launches `logos-standalone-app` with `QT_QPA_PLATFORM=offscreen` (no display needed), connects to the QML inspector, and runs all `.mjs` files in `tests/`.
 
           You can have multiple test files (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`) — they are all discovered and run automatically.
 
-      # Full interaction tests require calc_module from Part 1.
-      # When running both tutorials together, pass --build-overrides or ensure
-      # calc_module is available. The layout checks below work without it.
-      - ui_test:
-          launch: "nix run ."
-          setup:
-            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
-          qt_mcp: "result-mcp"
-          tests:
-            - name: "UI title visible"
-              action: wait_for
-              texts: ["Logos Calculator"]
-              timeout: 15000
-            - name: "All buttons visible"
-              action: wait_for
-              texts: ["Add", "Multiply", "Factorial", "Fibonacci"]
-              timeout: 5000
+          To run tests interactively (against an already-running app):
+
+          ```bash
+          nix build .#test-framework -o result-mcp
+          nix run .          # start the app with inspector on :3768
+          node tests/ui-tests.mjs  # in another terminal
+          ```
 
   # ── Known Limitations (prose only) ─────────────────────────────────────────
   - title: "Known Limitations"

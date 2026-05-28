@@ -53,6 +53,8 @@ sections:
 |-------|----------|------|-------------|
 | `name` | yes | string | Tutorial title. Used as the `# heading` in generated markdown and in runner output. |
 | `output` | no | string | Default output filename for `generate` (relative to the tutorial directory, e.g., `tutorial-wrapping-c-library.md`). Can be overridden with `-o`. |
+| `project_name` | no | string | Directory name for this tutorial's project (e.g., `logos-calc-module`). Used when chaining tutorials via `requires:` — each tutorial runs in a subdirectory of a shared parent. Ignored when running standalone. |
+| `requires` | no | list of strings | Paths to prerequisite `.test.yaml` specs (relative to the current spec). The runner executes each prerequisite first in a sibling subdirectory (named by its `project_name`), then runs the current tutorial. This enables cross-tutorial references like `../logos-calc-module`. Requires `project_name` on both the current and prerequisite specs. |
 | `intro` | no | string | Introductory paragraph(s). Rendered after the title in the markdown. Supports full markdown. |
 | `what_you_build` | no | string | One-line summary prefixed with "**What you'll build:**" in the markdown. |
 | `what_you_learn` | no | list of strings | Bullet list prefixed with "**What you'll learn:**". |
@@ -64,12 +66,12 @@ sections:
 
 ## Sections
 
-Each section becomes a `## heading` in the markdown. Sections with a `phase` get auto-numbered as "Step N: Title".
+Each section becomes a `## heading` in the markdown. Sections with `step: true` get auto-numbered as "Step N: Title".
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `title` | yes | string | Section heading. |
-| `phase` | no | string | Groups the section for selective execution. Common phases: `scaffold`, `files`, `build`, `inspect`, `logoscore`, `basecamp`, `run`, `test`. Sections with a phase are numbered as "Step N" in markdown. Sections without a phase render as plain `## Title`. |
+| `step` | no | boolean | If `true`, this section is numbered as "Step N: Title" in markdown and gets a `---` separator after it (except the last section). Sections without `step` render as plain `## Title`. |
 | `text` | no | string | Introductory prose rendered before the steps. Supports full markdown (tables, blockquotes, code blocks, etc.). |
 | `steps` | no | list | Ordered list of steps. See below. |
 
@@ -344,29 +346,6 @@ python3 tools/tutorial_runner.py generate spec.yaml --release tutorial-v2
 python3 tools/tutorial_runner.py run spec.yaml --release ""
 ```
 
-## Phases
-
-Phases let you run parts of a tutorial selectively:
-
-```bash
-# Run only the scaffold and files phases
-python3 tools/tutorial_runner.py run spec.yaml --phase scaffold,files
-
-# Run everything
-python3 tools/tutorial_runner.py run spec.yaml
-```
-
-| Phase | Typical content |
-|-------|----------------|
-| `scaffold` | Project setup (template init, git init) |
-| `files` | Writing source files |
-| `build` | Git init, nix build |
-| `inspect` | Using `lm` to inspect the module |
-| `logoscore` | Testing with the logoscore CLI |
-| `basecamp` | UI testing with logos-basecamp (reserved for future use) |
-
-Sections without a `phase` always run.
-
 ## Runner behavior
 
 - Creates a fresh temp directory (or uses `--workdir`) — all files, builds, and commands happen there
@@ -390,6 +369,31 @@ The workdir path is printed at the top of every run:
 ```
   workdir  : /tmp/tutorial-test-abc123
 ```
+
+### Tutorial chaining (`requires`)
+
+When a spec has `requires:`, the runner creates a shared parent directory and runs each prerequisite before the main tutorial. Each tutorial gets its own subdirectory named by `project_name`:
+
+```
+# Part 2 requires Part 1:
+requires:
+  - tutorial-wrapping-c-library.test.yaml
+project_name: logos-calc-ui
+```
+
+```
+# Running Part 2 automatically runs Part 1 first:
+python3 tools/tutorial_runner.py run tests/tutorial-qml-ui-app.test.yaml
+
+# Resulting directory structure:
+/tmp/tutorial-chain-XXXXX/
+├── logos-calc-module/    # Part 1 (prerequisite)
+└── logos-calc-ui/        # Part 2 (main)
+```
+
+Commands like `../logos-calc-module` in Part 2 resolve to Part 1's output. Results are cumulative — a failure in any tutorial stops the chain (unless `--continue-on-fail`).
+
+When running standalone (no `requires:`), `project_name` is ignored and the runner behaves as before.
 
 ## Generator behavior
 

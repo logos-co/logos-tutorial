@@ -10,13 +10,11 @@ Usage:
     tutorial_runner.py generate <spec.yaml> [-o output.md]
 
 Run options:
-    --phase <phases>      Comma-separated phases (default: all)
-                          Available: scaffold,files,build,inspect,logoscore,basecamp
     --keep-workdir        Don't delete the temp working directory on exit
     --workdir <path>      Use existing directory instead of creating a fresh one
     --verbose             Print commands as they execute
-    --basecamp-bin <path> Path to LogosBasecamp binary (for basecamp phase)
-    --qt-mcp <path>       Path to logos-qt-mcp package (for basecamp phase)
+    --basecamp-bin <path> Path to LogosBasecamp binary (for basecamp sections)
+    --qt-mcp <path>       Path to logos-qt-mcp package (for basecamp/ui_test sections)
     --call-timeout <sec>  Timeout for logoscore calls (default: 60)
 
 Generate options:
@@ -42,7 +40,6 @@ IS_MACOS = platform.system() == "Darwin"
 LIB_EXT = "dylib" if IS_MACOS else "so"
 SHARED_FLAGS = "-dynamiclib" if IS_MACOS else "-shared -fPIC"
 
-ALL_PHASES = ["scaffold", "files", "build", "inspect", "logoscore", "basecamp", "test", "run"]
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -232,15 +229,20 @@ def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_cont
     cmd = inject_nix_overrides(cmd, override_flags)
     expect_contains = expect_contains or []
 
-    if expect_contains:
-        rc, output = run_cmd(cmd, workdir, verbose, capture=True)
-        if rc != 0:
-            if output:
-                for line in output.strip().split("\n")[-5:]:
-                    print(f"        {dim(line)}")
-            results.fail(title, f"command failed with exit code {rc}")
-            return
+    rc, output = run_cmd(cmd, workdir, verbose, capture=True)
 
+    if rc != 0:
+        results.fail(title, f"command failed with exit code {rc}")
+        if output:
+            lines = output.strip().split("\n")
+            tail = lines[-20:]
+            if len(lines) > 20:
+                print(f"        {dim(f'... ({len(lines) - 20} lines omitted)')}")
+            for line in tail:
+                print(f"        {dim(line)}")
+        return
+
+    if expect_contains:
         all_found = True
         for expected in expect_contains:
             if expected not in output:
@@ -252,14 +254,7 @@ def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_cont
         if all_found:
             results.pass_(title)
     else:
-        rc, output = run_cmd(cmd, workdir, verbose, capture=verbose)
-        if rc == 0:
-            results.pass_(title)
-        else:
-            results.fail(title, f"command failed with exit code {rc}")
-            if verbose and output:
-                for line in output.strip().split("\n")[-5:]:
-                    print(f"        {dim(line)}")
+        results.pass_(title)
 
 
 def handle_run(step, workdir, results, verbose, override_flags):
@@ -707,35 +702,15 @@ def find_module_name(spec):
 # RUN COMMAND
 # ══════════════════════════════════════════════════════════════════════════════
 
-def cmd_run(args):
-    spec_path = os.path.abspath(args.spec)
+def run_single_spec(spec, spec_path, workdir, args, results):
+    """Run a single tutorial spec in the given workdir. May raise StopEarly."""
     spec_dir = os.path.dirname(spec_path)
-
-    with open(spec_path) as f:
-        spec = yaml.safe_load(f)
 
     release = args.release if args.release is not None else spec.get("release", "")
     set_release(release)
 
-    phases = set(args.phase.split(",")) if args.phase else set(ALL_PHASES)
-    fail_fast = not args.continue_on_fail
-    results = Results(fail_fast=fail_fast)
     override_flags = parse_build_overrides(spec, spec_dir)
     module_name = find_module_name(spec)
-
-    if args.workdir:
-        workdir = os.path.abspath(args.workdir)
-        if not os.path.isdir(workdir):
-            print(f"ERROR: --workdir path does not exist: {workdir}", file=sys.stderr)
-            sys.exit(2)
-        created_workdir = False
-    else:
-        workdir = tempfile.mkdtemp(prefix="tutorial-test-")
-        created_workdir = True
-
-    def cleanup():
-        if created_workdir and not args.keep_workdir:
-            shutil.rmtree(workdir, ignore_errors=True)
 
     tutorial_name = spec.get("name", "tutorial")
     print("=" * 65)
@@ -746,89 +721,142 @@ def cmd_run(args):
     print(f"  workdir  : {workdir}")
     print(f"  platform : {platform.system()} (ext={LIB_EXT})")
     print(f"  release  : {release or '(none)'}")
-    print(f"  phases   : {','.join(sorted(phases))}")
     if override_flags:
         print(f"  overrides: {override_flags}")
     print()
 
+    sections = spec.get("sections", [])
+
+    for si, section in enumerate(sections):
+        sec_title = section.get("title", f"Section {si + 1}")
+
+        print("-" * 65)
+        print(f" Section: {bold(sec_title)}")
+        print("-" * 65)
+
+        # Handle logoscore sections
+        if section.get("logoscore"):
+            handle_logoscore(
+                section, workdir, results, args.verbose,
+                override_flags, args.call_timeout, module_name
+            )
+            print()
+            continue
+
+        # Handle basecamp sections
+        if section.get("basecamp"):
+            handle_basecamp(
+                section, workdir, results, args.verbose,
+                override_flags, args.basecamp_bin, args.qt_mcp,
+                spec_dir, len(sections), spec
+            )
+            print()
+            continue
+
+        steps = section.get("steps", [])
+        if not steps:
+            if args.verbose:
+                print(f"  {dim('(prose-only section, skipping)')}")
+            print()
+            continue
+
+        for step in steps:
+            if step.get("file"):
+                handle_file(step, workdir, results, args.verbose)
+            elif step.get("run"):
+                handle_run(step, workdir, results, args.verbose, override_flags)
+            elif step.get("ui_test"):
+                handle_ui_test(step, workdir, results, args.verbose,
+                               override_flags, args.qt_mcp, spec)
+            elif step.get("check_file"):
+                handle_check_file(step, workdir, results, args.verbose)
+            elif args.verbose:
+                title = step.get("title", "untitled")
+                print(f"  {dim(f'(prose-only step: {title})')}")
+
+        print()
+
+
+def cmd_run(args):
+    spec_path = os.path.abspath(args.spec)
+    spec_dir = os.path.dirname(spec_path)
+
+    with open(spec_path) as f:
+        spec = yaml.safe_load(f)
+
+    requires = spec.get("requires", [])
+    fail_fast = not args.continue_on_fail
+    results = Results(fail_fast=fail_fast)
+
+    if args.workdir:
+        workdir = os.path.abspath(args.workdir)
+        if not os.path.isdir(workdir):
+            print(f"ERROR: --workdir path does not exist: {workdir}", file=sys.stderr)
+            sys.exit(2)
+        root_dir = None
+        created_root = False
+    elif requires:
+        root_dir = tempfile.mkdtemp(prefix="tutorial-chain-")
+        created_root = True
+
+        project_name = spec.get("project_name")
+        if not project_name:
+            print(f"ERROR: spec with requires: must also have project_name", file=sys.stderr)
+            sys.exit(2)
+
+        workdir = os.path.join(root_dir, project_name)
+        os.makedirs(workdir, exist_ok=True)
+    else:
+        workdir = tempfile.mkdtemp(prefix="tutorial-test-")
+        root_dir = None
+        created_root = False
+
+    def cleanup():
+        if not args.keep_workdir:
+            target = root_dir if created_root else workdir
+            if target:
+                shutil.rmtree(target, ignore_errors=True)
+
     try:
-        sections = spec.get("sections", [])
+        # Run prerequisite tutorials first
+        if requires and created_root:
+            for req_rel in requires:
+                req_path = os.path.abspath(os.path.join(spec_dir, req_rel))
+                if not os.path.isfile(req_path):
+                    print(f"ERROR: required spec not found: {req_path}", file=sys.stderr)
+                    sys.exit(2)
 
-        try:
-            for si, section in enumerate(sections):
-                sec_title = section.get("title", f"Section {si + 1}")
-                sec_phase = section.get("phase")
+                with open(req_path) as f:
+                    req_spec = yaml.safe_load(f)
 
-                if sec_phase and sec_phase not in phases:
-                    if args.verbose:
-                        print(f"  {dim(f'(skipping section: {sec_title} — phase {sec_phase} not selected)')}")
-                    continue
+                req_project = req_spec.get("project_name")
+                if not req_project:
+                    print(f"ERROR: required spec {req_rel} has no project_name field",
+                          file=sys.stderr)
+                    sys.exit(2)
 
-                print("-" * 65)
-                print(f" Section: {bold(sec_title)}")
-                print("-" * 65)
+                req_workdir = os.path.join(root_dir, req_project)
+                os.makedirs(req_workdir, exist_ok=True)
 
-                # Handle logoscore sections
-                if section.get("logoscore"):
-                    if "logoscore" not in phases:
-                        if args.verbose:
-                            print(f"  {dim('(skipping — logoscore phase not selected)')}")
-                        continue
-                    handle_logoscore(
-                        section, workdir, results, args.verbose,
-                        override_flags, args.call_timeout, module_name
-                    )
-                    print()
-                    continue
+                run_single_spec(req_spec, req_path, req_workdir, args, results)
 
-                # Handle basecamp sections
-                if section.get("basecamp"):
-                    if "basecamp" not in phases:
-                        if args.verbose:
-                            print(f"  {dim('(skipping — basecamp phase not selected)')}")
-                        continue
-                    handle_basecamp(
-                        section, workdir, results, args.verbose,
-                        override_flags, args.basecamp_bin, args.qt_mcp,
-                        spec_dir, len(sections), spec
-                    )
-                    print()
-                    continue
+        # Run the main tutorial
+        run_single_spec(spec, spec_path, workdir, args, results)
 
-                steps = section.get("steps", [])
-                if not steps:
-                    if args.verbose:
-                        print(f"  {dim('(prose-only section, skipping)')}")
-                    print()
-                    continue
+    except StopEarly:
+        pass
 
-                for step in steps:
-                    if step.get("file"):
-                        handle_file(step, workdir, results, args.verbose)
-                    elif step.get("run"):
-                        handle_run(step, workdir, results, args.verbose, override_flags)
-                    elif step.get("ui_test"):
-                        handle_ui_test(step, workdir, results, args.verbose,
-                                       override_flags, args.qt_mcp, spec)
-                    elif step.get("check_file"):
-                        handle_check_file(step, workdir, results, args.verbose)
-                    elif args.verbose:
-                        title = step.get("title", "untitled")
-                        print(f"  {dim(f'(prose-only step: {title})')}")
+    if args.keep_workdir or args.workdir:
+        print(f"  workdir: {root_dir or workdir}")
 
-                print()
+    ok = results.summary()
 
-        except StopEarly:
-            pass
-
-        if args.keep_workdir or not created_workdir:
-            print(f"  workdir: {workdir}")
-
-        ok = results.summary()
-        sys.exit(0 if ok else 1)
-
-    finally:
+    try:
         cleanup()
+    except Exception:
+        pass
+
+    sys.exit(0 if ok else 1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -935,11 +963,11 @@ def cmd_generate(args):
     all_sections = spec.get("sections", [])
     for si, section in enumerate(all_sections):
         sec_title = section.get("title", "")
-        sec_phase = section.get("phase")
+        is_step = section.get("step", False)
         is_last = (si == len(all_sections) - 1)
-        show_sep = bool(sec_phase) and not is_last
+        show_sep = is_step and not is_last
 
-        if sec_phase:
+        if is_step:
             emit(f"## Step {step_number}: {sec_title}")
             step_number += 1
         else:
@@ -1014,7 +1042,7 @@ def cmd_generate(args):
             continue
 
         sub_step = 1
-        sec_num = step_number - 1 if sec_phase else None
+        sec_num = step_number - 1 if is_step else None
 
         for step in steps:
             title = step.get("title", "")
@@ -1123,8 +1151,6 @@ def main():
     # ── run ───────────────────────────────────────────────────────────────
     run_parser = subparsers.add_parser("run", help="Execute a tutorial spec")
     run_parser.add_argument("spec", help="Path to the YAML spec file")
-    run_parser.add_argument("--phase", default=None,
-                            help="Comma-separated phases to run (default: all)")
     run_parser.add_argument("--keep-workdir", action="store_true",
                             help="Don't delete the temp working directory on exit")
     run_parser.add_argument("--workdir", default=None,
