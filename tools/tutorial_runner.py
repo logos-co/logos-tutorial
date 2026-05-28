@@ -1,0 +1,956 @@
+#!/usr/bin/env python3
+"""
+Tutorial Runner & Markdown Generator
+
+Executes YAML tutorial specs (scaffold, write files, build, inspect, test)
+and generates .md documentation from them.
+
+Usage:
+    tutorial_runner.py run <spec.yaml> [OPTIONS]
+    tutorial_runner.py generate <spec.yaml> [-o output.md]
+
+Run options:
+    --phase <phases>      Comma-separated phases (default: all)
+                          Available: scaffold,files,build,inspect,logoscore,basecamp
+    --keep-workdir        Don't delete the temp working directory on exit
+    --workdir <path>      Use existing directory instead of creating a fresh one
+    --verbose             Print commands as they execute
+    --basecamp-bin <path> Path to LogosBasecamp binary (for basecamp phase)
+    --qt-mcp <path>       Path to logos-qt-mcp package (for basecamp phase)
+    --call-timeout <sec>  Timeout for logoscore calls (default: 60)
+
+Generate options:
+    -o <path>             Output file (default: uses spec's 'output' field)
+"""
+
+import argparse
+import base64
+import glob
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+
+import yaml
+
+# ── Platform Detection ────────────────────────────────────────────────────────
+
+IS_MACOS = platform.system() == "Darwin"
+LIB_EXT = "dylib" if IS_MACOS else "so"
+SHARED_FLAGS = "-dynamiclib" if IS_MACOS else "-shared -fPIC"
+
+ALL_PHASES = ["scaffold", "files", "build", "inspect", "logoscore", "basecamp"]
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+
+USE_COLOR = sys.stdout.isatty()
+
+
+def _c(code, text):
+    if USE_COLOR:
+        return f"\033[{code}m{text}\033[0m"
+    return text
+
+
+def green(t):
+    return _c("32", t)
+
+
+def red(t):
+    return _c("31", t)
+
+
+def yellow(t):
+    return _c("33", t)
+
+
+def bold(t):
+    return _c("1", t)
+
+
+def dim(t):
+    return _c("2", t)
+
+
+# ── Result Tracking ──────────────────────────────────────────────────────────
+
+class StopEarly(Exception):
+    """Raised when fail-fast is enabled and a test fails."""
+
+
+class Results:
+    def __init__(self, fail_fast=True):
+        self.passed = 0
+        self.failed = 0
+        self.skipped = 0
+        self.failures = []
+        self.fail_fast = fail_fast
+
+    @property
+    def total(self):
+        return self.passed + self.failed + self.skipped
+
+    def pass_(self, name):
+        self.passed += 1
+        print(f"  {green('PASS')}  {name}")
+
+    def fail(self, name, reason=""):
+        self.failed += 1
+        self.failures.append((name, reason))
+        print(f"  {red('FAIL')}  {name}")
+        if reason:
+            print(f"        {dim(reason)}")
+        if self.fail_fast:
+            raise StopEarly()
+
+    def skip(self, name, reason=""):
+        self.skipped += 1
+        print(f"  {yellow('SKIP')}  {name}  ({reason})")
+
+    def summary(self):
+        print()
+        print("=" * 65)
+        print(f" Results: {self.passed} passed, {self.failed} failed, "
+              f"{self.skipped} skipped (of {self.total} run)")
+        print("=" * 65)
+
+        if self.failures:
+            print()
+            print("Failures:")
+            for name, reason in self.failures:
+                print(f"  {red('FAIL')}  {name}")
+                if reason:
+                    print(f"        {reason}")
+        print()
+        return self.failed == 0
+
+
+# ── Platform Expansion ────────────────────────────────────────────────────────
+
+def expand_platform(s):
+    """Replace {ext} and {shared_flags} with platform-appropriate values."""
+    s = s.replace("{ext}", LIB_EXT)
+    s = s.replace("{shared_flags}", SHARED_FLAGS)
+    return s
+
+
+# ── Nix Override Injection ────────────────────────────────────────────────────
+
+def parse_build_overrides(spec, spec_dir):
+    """Parse build_overrides from spec into --override-input flags string."""
+    overrides = spec.get("build_overrides", {})
+    if not overrides:
+        return ""
+    flags = []
+    for key, rel_path in overrides.items():
+        abs_path = os.path.normpath(os.path.join(spec_dir, rel_path))
+        if os.path.isdir(abs_path):
+            flags.append(f"--override-input {key} path:{abs_path}")
+        else:
+            print(f"  WARNING: build_overrides.{key} path not found: {abs_path}")
+    return " ".join(flags)
+
+
+def inject_nix_overrides(cmd, override_flags):
+    """Append nix override flags to nix build commands."""
+    if override_flags and "nix build" in cmd:
+        return f"{cmd} {override_flags}"
+    return cmd
+
+
+# ── Command Execution ─────────────────────────────────────────────────────────
+
+def run_cmd(cmd, workdir, verbose=False, capture=False, timeout=None):
+    """Run a shell command. Returns (exit_code, stdout) if capture=True."""
+    if verbose:
+        print(f"        cmd: {dim(cmd)}")
+
+    actual_cmd = cmd
+    if cmd.rstrip().endswith("&"):
+        actual_cmd = cmd.rstrip().rstrip("&") + " >/dev/null 2>&1 &"
+
+    try:
+        result = subprocess.run(
+            actual_cmd,
+            shell=True,
+            cwd=workdir,
+            capture_output=capture,
+            text=True if capture else None,
+            timeout=timeout,
+        )
+        if capture:
+            return result.returncode, (result.stdout or "") + (result.stderr or "")
+        return result.returncode, ""
+    except subprocess.TimeoutExpired:
+        return 124, "command timed out"
+    except Exception as e:
+        return 1, str(e)
+
+
+# ── Step Handlers ─────────────────────────────────────────────────────────────
+
+def handle_scaffold(step, workdir, results, verbose):
+    scaffold = step.get("scaffold", {})
+    template = scaffold.get("template", "")
+    if not template:
+        return
+    title = step.get("title", "scaffold from template")
+    print(f"  Running: nix flake init -t {template}")
+    rc, _ = run_cmd(f"nix flake init -t {template}", workdir, verbose)
+    if rc == 0:
+        results.pass_(title)
+    else:
+        results.fail(title, "nix flake init failed")
+
+
+def handle_file(step, workdir, results, verbose):
+    file_spec = step.get("file", {})
+    path = file_spec.get("path", "")
+    if not path:
+        return
+    path = expand_platform(path)
+    content = file_spec.get("content", "")
+    encoding = file_spec.get("encoding", "")
+
+    full_path = os.path.join(workdir, path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+    if encoding == "base64":
+        with open(full_path, "wb") as f:
+            f.write(base64.b64decode(content))
+    else:
+        with open(full_path, "w") as f:
+            f.write(content)
+
+    if os.path.isfile(full_path):
+        print(f"  wrote   {path}")
+    else:
+        results.fail(f"write {path}", "file was not created")
+
+
+def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_contains=None):
+    """Execute a single run command with optional output assertions."""
+    cmd = expand_platform(cmd)
+    cmd = inject_nix_overrides(cmd, override_flags)
+    expect_contains = expect_contains or []
+
+    if expect_contains:
+        rc, output = run_cmd(cmd, workdir, verbose, capture=True)
+        if rc != 0:
+            if output:
+                for line in output.strip().split("\n")[-5:]:
+                    print(f"        {dim(line)}")
+            results.fail(title, f"command failed with exit code {rc}")
+            return
+
+        all_found = True
+        for expected in expect_contains:
+            if expected not in output:
+                trimmed = output.strip()
+                out_msg = trimmed[:500] if trimmed else "(empty)"
+                results.fail(title, f"expected '{expected}' not found in output\n        actual:   {out_msg}")
+                all_found = False
+                break
+        if all_found:
+            results.pass_(title)
+    else:
+        rc, output = run_cmd(cmd, workdir, verbose, capture=verbose)
+        if rc == 0:
+            results.pass_(title)
+        else:
+            results.fail(title, f"command failed with exit code {rc}")
+            if verbose and output:
+                for line in output.strip().split("\n")[-5:]:
+                    print(f"        {dim(line)}")
+
+
+def handle_run(step, workdir, results, verbose, override_flags):
+    cmd = step.get("run", "")
+    if not cmd:
+        return
+    title = step.get("title", cmd)
+    _exec_run(cmd, title, workdir, results, verbose, override_flags,
+              step.get("expect_contains", []))
+
+    extra = step.get("extra_run", {})
+    if extra:
+        extra_cmd = extra.get("run", "")
+        if extra_cmd:
+            _exec_run(extra_cmd, f"{title} (verify)", workdir, results, verbose,
+                      override_flags, extra.get("expect_contains", []))
+
+
+def handle_check_file(step, workdir, results, verbose):
+    pattern = step.get("check_file", "")
+    if not pattern:
+        return
+    title = step.get("title", f"check {pattern}")
+    pattern = expand_platform(pattern)
+    full_pattern = os.path.join(workdir, pattern)
+    matches = glob.glob(full_pattern)
+    if matches:
+        results.pass_(title)
+    else:
+        results.fail(title, f"file not found: {pattern}")
+
+
+def handle_logoscore(section, workdir, results, verbose, override_flags,
+                     call_timeout, module_name):
+    logoscore_spec = section.get("logoscore", {})
+    if not logoscore_spec:
+        return
+
+    setup_cmds = logoscore_spec.get("setup", [])
+    tests = logoscore_spec.get("tests", [])
+
+    setup_ok = True
+    if setup_cmds:
+        print("  -- Setup --")
+        for cmd in setup_cmds:
+            cmd = expand_platform(cmd)
+            cmd = inject_nix_overrides(cmd, override_flags)
+            rc, output = run_cmd(cmd, workdir, verbose, capture=verbose)
+            if rc != 0:
+                results.fail(f"logoscore setup: {cmd}", "setup command failed")
+                setup_ok = False
+                break
+        if setup_ok:
+            print("  setup completed")
+
+    logoscore_bin = ""
+    candidate = os.path.join(workdir, "logos", "bin", "logoscore")
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        logoscore_bin = candidate
+    elif shutil.which("logoscore"):
+        logoscore_bin = "logoscore"
+
+    if not logoscore_bin:
+        results.skip("logoscore", "logoscore not found (build it in setup or add to PATH)")
+        return
+
+    if not setup_ok:
+        return
+
+    print("  -- Tests --")
+    for test in tests:
+        name = test.get("name", "")
+        call = test.get("call", "")
+        expect = test.get("expect", "")
+
+        cmd = f"timeout {call_timeout} {logoscore_bin} -m ./modules -l {module_name} -c \"{call}\""
+        rc, output = run_cmd(cmd, workdir, verbose, capture=True)
+
+        if rc != 0:
+            results.fail(name, f"logoscore exit code {rc}")
+            if verbose:
+                print(f"        output: {dim(output[:300])}")
+        elif expect in output:
+            results.pass_(name)
+        else:
+            results.fail(name, f"expected '{expect}' in output")
+            if verbose:
+                print(f"        output: {dim(output[:300])}")
+
+
+def handle_basecamp(section, workdir, results, verbose, override_flags,
+                    basecamp_bin, qt_mcp_path, spec_dir, section_count, spec):
+    basecamp_spec = section.get("basecamp", {})
+    if not basecamp_spec:
+        return
+
+    if not basecamp_bin:
+        results.skip("basecamp", "no --basecamp-bin provided")
+        return
+    if not os.path.isfile(basecamp_bin) or not os.access(basecamp_bin, os.X_OK):
+        results.skip("basecamp", f"basecamp binary not found: {basecamp_bin}")
+        return
+
+    qt_mcp = qt_mcp_path or os.environ.get("LOGOS_QT_MCP", "")
+    if not qt_mcp:
+        results.skip("basecamp", "no --qt-mcp or LOGOS_QT_MCP provided")
+        return
+
+    install_as = basecamp_spec.get("install_as", "")
+    tests = basecamp_spec.get("tests", [])
+
+    user_dir = tempfile.mkdtemp(dir=workdir, prefix="basecamp-data-")
+    env = {
+        **os.environ,
+        "LOGOS_USER_DIR": user_dir,
+        "QT_QPA_PLATFORM": "offscreen",
+        "QT_FORCE_STDERR_LOGGING": "1",
+        "QT_LOGGING_RULES": "qt.*.debug=false;default.debug=true",
+        "LOGOS_QT_MCP": qt_mcp,
+    }
+
+    # Install core deps if specified
+    core_deps = basecamp_spec.get("core_deps", [])
+    if core_deps:
+        os.makedirs(os.path.join(user_dir, "modules"), exist_ok=True)
+        for dep_path in core_deps:
+            full_dep = os.path.join(spec_dir, dep_path)
+            if os.path.isdir(full_dep):
+                print(f"  Installing core dependency: {dep_path}")
+                install_dir = tempfile.mkdtemp()
+                cmd = f"nix build '.#install' -o {install_dir}/result"
+                rc, _ = run_cmd(cmd, full_dep, verbose)
+                if rc == 0:
+                    src = os.path.join(install_dir, "result", "modules")
+                    if os.path.isdir(src):
+                        for item in os.listdir(src):
+                            shutil.copytree(
+                                os.path.join(src, item),
+                                os.path.join(user_dir, "modules", item),
+                                dirs_exist_ok=True
+                            )
+
+    if install_as:
+        print("  Building install package...")
+        cmd = f"nix build '.#install' -o result-install"
+        cmd = inject_nix_overrides(cmd, override_flags)
+        rc, _ = run_cmd(cmd, workdir, verbose)
+        if rc == 0:
+            if install_as == "core":
+                src = os.path.join(workdir, "result-install", "modules")
+                dst = os.path.join(user_dir, "modules")
+                os.makedirs(dst, exist_ok=True)
+                if os.path.isdir(src):
+                    for item in os.listdir(src):
+                        shutil.copytree(
+                            os.path.join(src, item),
+                            os.path.join(dst, item),
+                            dirs_exist_ok=True
+                        )
+            elif install_as == "ui":
+                for subdir in ["plugins", "modules"]:
+                    src = os.path.join(workdir, "result-install", subdir)
+                    dst = os.path.join(user_dir, "plugins")
+                    os.makedirs(dst, exist_ok=True)
+                    if os.path.isdir(src):
+                        for item in os.listdir(src):
+                            shutil.copytree(
+                                os.path.join(src, item),
+                                os.path.join(dst, item),
+                                dirs_exist_ok=True
+                            )
+                        break
+        else:
+            results.fail("basecamp install", "nix build '.#install' failed")
+            return
+
+    # Generate .mjs test file
+    mjs_path = os.path.join(workdir, "basecamp-test.mjs")
+    tutorial_name = spec.get("name", "tutorial")
+    with open(mjs_path, "w") as f:
+        f.write('import { resolve } from "node:path";\n')
+        f.write(f'const qtMcpRoot = "{qt_mcp}";\n')
+        f.write('const { test, run } = await import(resolve(qtMcpRoot, "test-framework/framework.mjs"));\n\n')
+        f.write(f'test("{tutorial_name}: basecamp UI verification", async (app) => {{\n')
+
+        for t in tests:
+            action = t.get("action", "")
+            if action == "click":
+                target = t.get("target", "")
+                f.write(f'  await app.click("{target}", {{ exact: true }});\n')
+            elif action == "expect_texts":
+                texts = t.get("texts", [])
+                f.write(f'  await app.expectTexts({texts});\n')
+            elif action == "wait_for":
+                texts = t.get("texts", [])
+                timeout = t.get("timeout", 10000)
+                name = t.get("name", "")
+                f.write(f'  await app.waitFor(\n')
+                f.write(f'    async () => {{ await app.expectTexts({texts}); }},\n')
+                f.write(f'    {{ timeout: {timeout}, interval: 500, description: "{name}" }}\n')
+                f.write(f'  );\n')
+            elif action == "set_text":
+                prop = t.get("find_by", "")
+                val = t.get("find_value", "")
+                set_val = t.get("value", "")
+                f.write(f'  {{\n')
+                f.write(f'    const found = await app.inspector.send("findByProperty", {{ property: "{prop}", value: "{val}" }});\n')
+                f.write(f'    if (!found.matches || found.matches.length === 0) throw new Error("set_text: element not found");\n')
+                f.write(f'    await app.inspector.send("setProperty", {{ objectId: found.matches[0].id, property: "text", value: "{set_val}" }});\n')
+                f.write(f'  }}\n')
+            elif action == "sleep":
+                ms = t.get("ms", 1000)
+                f.write(f'  await new Promise(r => setTimeout(r, {ms}));\n')
+
+        f.write('});\n\nrun();\n')
+
+    cmd = f'node "{mjs_path}" --ci "{basecamp_bin}" --verbose'
+    rc, output = run_cmd(cmd, workdir, verbose, capture=True)
+    if rc == 0:
+        results.pass_("basecamp UI tests")
+    else:
+        results.fail("basecamp UI tests", "test runner exited with non-zero")
+        if verbose:
+            print(f"        {dim(output[:500])}")
+
+
+# ── Find module name from spec ────────────────────────────────────────────────
+
+def find_module_name(spec):
+    """Extract module name from the metadata.json file step in the spec."""
+    for section in spec.get("sections", []):
+        for step in section.get("steps", []):
+            file_spec = step.get("file", {})
+            if file_spec.get("path") == "metadata.json":
+                content = file_spec.get("content", "")
+                try:
+                    import json
+                    meta = json.loads(content)
+                    return meta.get("name", "")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+    return ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RUN COMMAND
+# ══════════════════════════════════════════════════════════════════════════════
+
+def cmd_run(args):
+    spec_path = os.path.abspath(args.spec)
+    spec_dir = os.path.dirname(spec_path)
+
+    with open(spec_path) as f:
+        spec = yaml.safe_load(f)
+
+    phases = set(args.phase.split(",")) if args.phase else set(ALL_PHASES)
+    fail_fast = not args.continue_on_fail
+    results = Results(fail_fast=fail_fast)
+    override_flags = parse_build_overrides(spec, spec_dir)
+    module_name = find_module_name(spec)
+
+    if args.workdir:
+        workdir = os.path.abspath(args.workdir)
+        if not os.path.isdir(workdir):
+            print(f"ERROR: --workdir path does not exist: {workdir}", file=sys.stderr)
+            sys.exit(2)
+        created_workdir = False
+    else:
+        workdir = tempfile.mkdtemp(prefix="tutorial-test-")
+        created_workdir = True
+
+    def cleanup():
+        if created_workdir and not args.keep_workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    tutorial_name = spec.get("name", "tutorial")
+    print("=" * 65)
+    print(f" Tutorial Test: {bold(tutorial_name)}")
+    print("=" * 65)
+    print()
+    print(f"  spec     : {spec_path}")
+    print(f"  workdir  : {workdir}")
+    print(f"  platform : {platform.system()} (ext={LIB_EXT})")
+    print(f"  phases   : {','.join(sorted(phases))}")
+    if override_flags:
+        print(f"  overrides: {override_flags}")
+    print()
+
+    try:
+        sections = spec.get("sections", [])
+
+        try:
+            for si, section in enumerate(sections):
+                sec_title = section.get("title", f"Section {si + 1}")
+                sec_phase = section.get("phase")
+
+                if sec_phase and sec_phase not in phases:
+                    if args.verbose:
+                        print(f"  {dim(f'(skipping section: {sec_title} — phase {sec_phase} not selected)')}")
+                    continue
+
+                print("-" * 65)
+                print(f" Section: {bold(sec_title)}")
+                print("-" * 65)
+
+                # Handle logoscore sections
+                if section.get("logoscore"):
+                    if "logoscore" not in phases:
+                        if args.verbose:
+                            print(f"  {dim('(skipping — logoscore phase not selected)')}")
+                        continue
+                    handle_logoscore(
+                        section, workdir, results, args.verbose,
+                        override_flags, args.call_timeout, module_name
+                    )
+                    print()
+                    continue
+
+                # Handle basecamp sections
+                if section.get("basecamp"):
+                    if "basecamp" not in phases:
+                        if args.verbose:
+                            print(f"  {dim('(skipping — basecamp phase not selected)')}")
+                        continue
+                    handle_basecamp(
+                        section, workdir, results, args.verbose,
+                        override_flags, args.basecamp_bin, args.qt_mcp,
+                        spec_dir, len(sections), spec
+                    )
+                    print()
+                    continue
+
+                steps = section.get("steps", [])
+                if not steps:
+                    if args.verbose:
+                        print(f"  {dim('(prose-only section, skipping)')}")
+                    print()
+                    continue
+
+                for step in steps:
+                    if step.get("scaffold"):
+                        handle_scaffold(step, workdir, results, args.verbose)
+                    elif step.get("file"):
+                        handle_file(step, workdir, results, args.verbose)
+                    elif step.get("run"):
+                        handle_run(step, workdir, results, args.verbose, override_flags)
+                    elif step.get("check_file"):
+                        handle_check_file(step, workdir, results, args.verbose)
+                    elif args.verbose:
+                        title = step.get("title", "untitled")
+                        print(f"  {dim(f'(prose-only step: {title})')}")
+
+                print()
+
+        except StopEarly:
+            pass
+
+        if args.keep_workdir or not created_workdir:
+            print(f"  workdir: {workdir}")
+
+        ok = results.summary()
+        sys.exit(0 if ok else 1)
+
+    finally:
+        cleanup()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GENERATE COMMAND
+# ══════════════════════════════════════════════════════════════════════════════
+
+LANG_MAP = {
+    ".c": "c",
+    ".h": "cpp",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".json": "json",
+    ".nix": "nix",
+    ".qml": "qml",
+    ".rep": "rep",
+    ".mjs": "javascript",
+    ".js": "javascript",
+    ".cmake": "cmake",
+}
+
+
+def lang_for_path(path, explicit=None):
+    if explicit:
+        return explicit
+    _, ext = os.path.splitext(path)
+    if not ext and os.path.basename(path) == "CMakeLists.txt":
+        return "cmake"
+    return LANG_MAP.get(ext, "")
+
+
+def cmd_generate(args):
+    spec_path = os.path.abspath(args.spec)
+    spec_dir = os.path.dirname(spec_path)
+
+    with open(spec_path) as f:
+        spec = yaml.safe_load(f)
+
+    if args.output:
+        output_path = os.path.abspath(args.output)
+    else:
+        output_name = spec.get("output", "")
+        if not output_name:
+            print("ERROR: No output file specified (use -o or set 'output:' in YAML)",
+                  file=sys.stderr)
+            sys.exit(2)
+        output_path = os.path.normpath(os.path.join(spec_dir, "..", output_name))
+
+    lines = []
+
+    def emit(text=""):
+        lines.append(text)
+
+    def emit_block(text):
+        for line in text.rstrip("\n").split("\n"):
+            lines.append(line)
+
+    # ── Title ─────────────────────────────────────────────────────────────
+    emit(f"# {spec.get('name', 'Tutorial')}")
+    emit()
+
+    # ── Intro ─────────────────────────────────────────────────────────────
+    intro = spec.get("intro", "")
+    if intro:
+        emit_block(intro)
+        emit()
+
+    # ── What you'll build ─────────────────────────────────────────────────
+    what_build = spec.get("what_you_build", "")
+    if what_build:
+        emit(f"**What you'll build:** {what_build}")
+        emit()
+
+    # ── What you'll learn ─────────────────────────────────────────────────
+    items = spec.get("what_you_learn", [])
+    if items:
+        emit("**What you'll learn:**")
+        emit()
+        for item in items:
+            emit(f"- {item}")
+        emit()
+
+    # ── Comparison table ──────────────────────────────────────────────────
+    comparison = spec.get("comparison", "")
+    if comparison:
+        emit_block(comparison)
+
+    # ── Prerequisites ─────────────────────────────────────────────────────
+    prereqs = spec.get("prerequisites", [])
+    if prereqs:
+        emit("## Prerequisites")
+        emit()
+        for p in prereqs:
+            emit(f"- {p}")
+        emit()
+        emit("---")
+        emit()
+
+    # ── Sections ──────────────────────────────────────────────────────────
+    step_number = 1
+
+    for section in spec.get("sections", []):
+        sec_title = section.get("title", "")
+        sec_phase = section.get("phase")
+
+        if sec_phase and sec_phase != "basecamp":
+            emit(f"## Step {step_number}: {sec_title}")
+            step_number += 1
+        else:
+            emit(f"## {sec_title}")
+        emit()
+
+        sec_text = section.get("text", "")
+        if sec_text:
+            emit_block(sec_text)
+            emit()
+
+        # ── Logoscore section ─────────────────────────────────────────
+        logoscore_spec = section.get("logoscore")
+        if logoscore_spec:
+            setup_cmds = logoscore_spec.get("setup", [])
+            tests = logoscore_spec.get("tests", [])
+
+            if setup_cmds:
+                emit("First, prepare the module for loading:")
+                emit()
+                emit("```bash")
+                for cmd in setup_cmds:
+                    emit(cmd)
+                emit("```")
+                emit()
+
+            if tests:
+                emit("Call methods and verify results:")
+                emit()
+                emit("```bash")
+                for i, t in enumerate(tests):
+                    call = t.get("call", "")
+                    expect = t.get("expect", "")
+                    emit(f'logoscore -m ./modules -l calc_module -c "{call}"')
+                    emit(f"# Expected: {expect}")
+                    if i < len(tests) - 1:
+                        emit()
+                emit("```")
+                emit()
+
+            emit("---")
+            emit()
+            continue
+
+        # ── Basecamp section ──────────────────────────────────────────
+        basecamp_spec = section.get("basecamp")
+        if basecamp_spec:
+            install_as = basecamp_spec.get("install_as", "")
+            tests = basecamp_spec.get("tests", [])
+
+            if install_as:
+                emit(f"Install the module as a **{install_as}** module, then verify:")
+                emit()
+
+            if tests:
+                for t in tests:
+                    emit(f"- {t.get('name', '')}")
+                emit()
+
+            emit("---")
+            emit()
+            continue
+
+        # ── Steps ─────────────────────────────────────────────────────
+        steps = section.get("steps", [])
+        if not steps:
+            if not sec_text:
+                emit("---")
+                emit()
+            continue
+
+        sub_step = 1
+        sec_num = step_number - 1 if sec_phase else None
+
+        for step in steps:
+            title = step.get("title", "")
+            if title:
+                if sec_num is not None:
+                    emit(f"### {sec_num}.{sub_step} {title}")
+                    sub_step += 1
+                else:
+                    emit(f"### {title}")
+                emit()
+
+            text = step.get("text", "")
+            if text:
+                emit_block(text)
+                emit()
+
+            # scaffold action
+            scaffold = step.get("scaffold", {})
+            if scaffold:
+                code_block = scaffold.get("code_block", "")
+                if code_block:
+                    emit("```bash")
+                    emit_block(code_block)
+                    emit("```")
+                    emit()
+                else:
+                    template = scaffold.get("template", "")
+                    emit("```bash")
+                    emit(f"nix flake init -t {template}")
+                    emit("```")
+                    emit()
+
+            # file action
+            file_spec = step.get("file", {})
+            if file_spec:
+                path = file_spec.get("path", "")
+                encoding = file_spec.get("encoding", "")
+                lang = lang_for_path(path, file_spec.get("language"))
+
+                if encoding == "base64":
+                    emit(f"*Binary file: `{path}`*")
+                else:
+                    emit(f"```{lang}")
+                    content = file_spec.get("content", "")
+                    emit_block(content)
+                    emit("```")
+                emit()
+
+            # run action
+            run_cmd_str = step.get("run", "")
+            if run_cmd_str:
+                code_block = step.get("code_block", "")
+                emit("```bash")
+                if code_block:
+                    emit_block(code_block)
+                else:
+                    emit(run_cmd_str)
+                emit("```")
+                emit()
+
+            # check_file is runner-only verification, not rendered in markdown
+
+            # post_text
+            post_text = step.get("post_text", "")
+            if post_text:
+                emit_block(post_text)
+                emit()
+
+            # extra_run (continuation command under the same heading)
+            extra = step.get("extra_run", {})
+            if extra:
+                extra_code = extra.get("code_block", "")
+                extra_cmd = extra.get("run", "")
+                emit("```bash")
+                if extra_code:
+                    emit_block(extra_code)
+                elif extra_cmd:
+                    emit(extra_cmd)
+                emit("```")
+                emit()
+                extra_post = extra.get("post_text", "")
+                if extra_post:
+                    emit_block(extra_post)
+                    emit()
+
+        emit("---")
+        emit()
+
+    # Clean up triple+ blank lines to double
+    output_text = "\n".join(lines).rstrip() + "\n"
+    while "\n\n\n" in output_text:
+        output_text = output_text.replace("\n\n\n", "\n\n")
+
+    with open(output_path, "w") as f:
+        f.write(output_text)
+
+    print(f"Generated: {output_path}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLI
+# ══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="tutorial_runner",
+        description="Tutorial Runner & Markdown Generator"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # ── run ───────────────────────────────────────────────────────────────
+    run_parser = subparsers.add_parser("run", help="Execute a tutorial spec")
+    run_parser.add_argument("spec", help="Path to the YAML spec file")
+    run_parser.add_argument("--phase", default=None,
+                            help="Comma-separated phases to run (default: all)")
+    run_parser.add_argument("--keep-workdir", action="store_true",
+                            help="Don't delete the temp working directory on exit")
+    run_parser.add_argument("--workdir", default=None,
+                            help="Use existing directory instead of creating a fresh one")
+    run_parser.add_argument("--verbose", action="store_true",
+                            help="Print commands as they execute")
+    run_parser.add_argument("--basecamp-bin", default="",
+                            help="Path to LogosBasecamp binary")
+    run_parser.add_argument("--qt-mcp", default="",
+                            help="Path to logos-qt-mcp package")
+    run_parser.add_argument("--call-timeout", type=int, default=60,
+                            help="Timeout for logoscore calls (default: 60)")
+    run_parser.add_argument("--continue-on-fail", action="store_true",
+                            help="Don't stop at the first failure (default: stop)")
+
+    # ── generate ──────────────────────────────────────────────────────────
+    gen_parser = subparsers.add_parser("generate", help="Generate markdown from a spec")
+    gen_parser.add_argument("spec", help="Path to the YAML spec file")
+    gen_parser.add_argument("-o", "--output", default=None,
+                            help="Output file path (default: uses spec's 'output' field)")
+
+    args = parser.parse_args()
+
+    if args.command == "run":
+        cmd_run(args)
+    elif args.command == "generate":
+        cmd_generate(args)
+
+
+if __name__ == "__main__":
+    main()

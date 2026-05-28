@@ -1,0 +1,60 @@
+name: Tutorial Tests
+
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tutorial-tests:
+    name: Tutorial Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: logos-co
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Install PyYAML
+        run: pip3 install --break-system-packages pyyaml
+
+      - name: Test - Wrapping a C Library (scaffold + files + build + inspect)
+        run: |
+          python3 tools/tutorial_runner.py run \
+            tests/tutorial-wrapping-c-library.test.yaml \
+            --phase scaffold,files,build,inspect \
+            --verbose
+
+      - name: Test - Wrapping a C Library (logoscore)
+        run: |
+          python3 tools/tutorial_runner.py run \
+            tests/tutorial-wrapping-c-library.test.yaml \
+            --phase logoscore \
+            --verbose
+        continue-on-error: true
+
+      - name: Verify markdown generation
+        run: |
+          python3 tools/tutorial_runner.py generate \
+            tests/tutorial-wrapping-c-library.test.yaml \
+            -o /tmp/generated.md
+          echo "Generated markdown successfully"

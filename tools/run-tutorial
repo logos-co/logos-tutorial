@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Wrapper that ensures python3 + pyyaml are available via nix-shell.
+# Usage: run-tutorial run <spec.yaml> [OPTIONS]
+#        run-tutorial generate <spec.yaml> [-o output.md]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# If python3 + yaml are already available, run directly
+if python3 -c "import yaml" 2>/dev/null; then
+    exec python3 "$SCRIPT_DIR/tutorial_runner.py" "$@"
+fi
+
+# Otherwise, use nix-shell to provide them
+exec nix-shell -p python3 python3Packages.pyyaml --run \
+    "python3 \"$SCRIPT_DIR/tutorial_runner.py\" $*"
