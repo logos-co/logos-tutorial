@@ -781,7 +781,7 @@ sections:
             test("calc_ui: loads and shows title", async (app) => {
               await app.waitFor(
                 async () => {
-                  await app.expectTexts(["Calculator"]);
+                  await app.expectTexts(["Logos Calculator"]);
                 },
                 { timeout: 15000, interval: 500, description: "calc_ui to load" },
               );

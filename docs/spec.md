@@ -54,7 +54,7 @@ sections:
 | `name` | yes | string | Tutorial title. Used as the `# heading` in generated markdown and in runner output. |
 | `output` | no | string | Default output filename for `generate` (relative to the tutorial directory, e.g., `tutorial-wrapping-c-library.md`). Can be overridden with `-o`. |
 | `project_name` | no | string | Directory name for this tutorial's project (e.g., `logos-calc-module`). Used when chaining tutorials via `requires:` — each tutorial runs in a subdirectory of a shared parent. Ignored when running standalone. |
-| `requires` | no | list of strings | Paths to prerequisite `.test.yaml` specs (relative to the current spec). The runner executes each prerequisite first in a sibling subdirectory (named by its `project_name`), then runs the current tutorial. This enables cross-tutorial references like `../logos-calc-module`. Requires `project_name` on both the current and prerequisite specs. |
+| `requires` | no | list of strings | Paths to prerequisite `.test.yaml` specs (relative to the current spec). The runner executes each prerequisite first in a sibling subdirectory (named by its `project_name`), then runs the current tutorial. Prerequisites are resolved **transitively** — if A requires B and B requires C, the run order is C, B, A. Shared prerequisites run once (deduped), and circular `requires:` are reported as an error. This enables cross-tutorial references like `../logos-calc-module`. Requires `project_name` on both the current and prerequisite specs. |
 | `intro` | no | string | Introductory paragraph(s). Rendered after the title in the markdown. Supports full markdown. |
 | `what_you_build` | no | string | One-line summary prefixed with "**What you'll build:**" in the markdown. |
 | `what_you_learn` | no | list of strings | Bullet list prefixed with "**What you'll learn:**". |
@@ -392,6 +392,28 @@ python3 tools/tutorial_runner.py run tests/tutorial-qml-ui-app.test.yaml
 ```
 
 Commands like `../logos-calc-module` in Part 2 resolve to Part 1's output. Results are cumulative — a failure in any tutorial stops the chain (unless `--continue-on-fail`).
+
+`requires:` is resolved **transitively**. A spec only needs to declare its *direct* prerequisites; their prerequisites are pulled in automatically. For the three-part series, Part 3 can simply declare Part 2:
+
+```
+# Part 3 requires Part 2, which itself requires Part 1:
+requires:
+  - tutorial-qml-ui-app.test.yaml
+project_name: logos-calc-ui-cpp
+```
+
+```
+# Running Part 3 resolves the whole graph and runs in dependency order:
+python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml
+
+# Resulting directory structure (Part 1 → Part 2 → Part 3):
+/tmp/tutorial-chain-XXXXX/
+├── logos-calc-module/    # Part 1 (transitive prerequisite, runs first)
+├── logos-calc-ui/        # Part 2 (direct prerequisite, runs second)
+└── logos-calc-ui-cpp/    # Part 3 (main, runs last)
+```
+
+The graph is walked depth-first in post-order, so a prerequisite always runs before the spec that needs it. A prerequisite shared by multiple specs runs only once, and a circular `requires:` chain is reported as an error rather than looping forever.
 
 When running standalone (no `requires:`), `project_name` is ignored and the runner behaves as before.
 

@@ -179,17 +179,25 @@ def run_cmd(cmd, workdir, verbose=False, capture=False, timeout=None):
         actual_cmd = cmd.rstrip().rstrip("&") + " >/dev/null 2>&1 &"
 
     try:
-        result = subprocess.run(
-            actual_cmd,
-            shell=True,
-            cwd=workdir,
-            capture_output=capture,
-            text=True if capture else None,
-            timeout=timeout,
-        )
         if capture:
-            return result.returncode, (result.stdout or "") + (result.stderr or "")
-        return result.returncode, ""
+            result = subprocess.run(
+                actual_cmd,
+                shell=True,
+                cwd=workdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=timeout,
+            )
+            return result.returncode, result.stdout or ""
+        else:
+            result = subprocess.run(
+                actual_cmd,
+                shell=True,
+                cwd=workdir,
+                timeout=timeout,
+            )
+            return result.returncode, ""
     except subprocess.TimeoutExpired:
         return 124, "command timed out"
     except Exception as e:
@@ -232,14 +240,14 @@ def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_cont
     rc, output = run_cmd(cmd, workdir, verbose, capture=True)
 
     if rc != 0:
-        results.fail(title, f"command failed with exit code {rc}")
-        if output:
+        if output and output.strip():
             lines = output.strip().split("\n")
             tail = lines[-20:]
             if len(lines) > 20:
                 print(f"        {dim(f'... ({len(lines) - 20} lines omitted)')}")
             for line in tail:
                 print(f"        {dim(line)}")
+        results.fail(title, f"command failed with exit code {rc}")
         return
 
     if expect_contains:
@@ -818,26 +826,51 @@ def cmd_run(args):
                 shutil.rmtree(target, ignore_errors=True)
 
     try:
-        # Run prerequisite tutorials first
+        # Run prerequisite tutorials first, resolved transitively. requires: is
+        # walked depth-first in post-order, so if A requires B and B requires C,
+        # the run order is C, then B, then A. Shared prerequisites run once
+        # (deduped by spec path) and cycles are reported rather than looping.
         if requires and created_root:
-            for req_rel in requires:
-                req_path = os.path.abspath(os.path.join(spec_dir, req_rel))
+            ordered = []          # spec paths in dependency order (deepest first)
+            ran = set()           # spec paths already added to `ordered`
+            in_progress = set()   # spec paths on the current DFS stack (cycle guard)
+
+            def resolve(req_path, referenced_by):
+                req_path = os.path.abspath(req_path)
+                if req_path in ran:
+                    return
+                if req_path in in_progress:
+                    print(f"ERROR: circular requires: detected at {req_path} "
+                          f"(referenced by {referenced_by})", file=sys.stderr)
+                    sys.exit(2)
                 if not os.path.isfile(req_path):
-                    print(f"ERROR: required spec not found: {req_path}", file=sys.stderr)
+                    print(f"ERROR: required spec not found: {req_path} "
+                          f"(referenced by {referenced_by})", file=sys.stderr)
                     sys.exit(2)
 
                 with open(req_path) as f:
                     req_spec = yaml.safe_load(f)
 
-                req_project = req_spec.get("project_name")
-                if not req_project:
-                    print(f"ERROR: required spec {req_rel} has no project_name field",
+                if not req_spec.get("project_name"):
+                    print(f"ERROR: required spec {req_path} has no project_name field",
                           file=sys.stderr)
                     sys.exit(2)
 
-                req_workdir = os.path.join(root_dir, req_project)
-                os.makedirs(req_workdir, exist_ok=True)
+                in_progress.add(req_path)
+                req_dir = os.path.dirname(req_path)
+                for nested_rel in req_spec.get("requires", []):
+                    resolve(os.path.join(req_dir, nested_rel), req_path)
+                in_progress.discard(req_path)
 
+                ran.add(req_path)
+                ordered.append((req_path, req_spec))
+
+            for req_rel in requires:
+                resolve(os.path.join(spec_dir, req_rel), spec_path)
+
+            for req_path, req_spec in ordered:
+                req_workdir = os.path.join(root_dir, req_spec["project_name"])
+                os.makedirs(req_workdir, exist_ok=True)
                 run_single_spec(req_spec, req_path, req_workdir, args, results)
 
         # Run the main tutorial
@@ -945,6 +978,7 @@ def cmd_generate(args):
     comparison = spec.get("comparison", "")
     if comparison:
         emit_block(comparison)
+        emit()
 
     # ── Prerequisites ─────────────────────────────────────────────────────
     prereqs = spec.get("prerequisites", [])
