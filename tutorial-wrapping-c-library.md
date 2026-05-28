@@ -13,16 +13,15 @@ This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.d
 
 ## Prerequisites
 
-- **Nix** with flakes enabled. Install from [nixos.org](https://nixos.org/download.html), then enable flakes globally:
-  ```bash
-  # Add to ~/.config/nix/nix.conf (create the file if it doesn't exist):
-  mkdir -p ~/.config/nix
-  echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
-  ```
-  Verify it works:
-  ```bash
-  nix flake --help >/dev/null 2>&1 && echo "Flakes enabled" || echo "Flakes NOT enabled — check nix.conf"
-  ```
+- **Nix** with flakes enabled. Install from [nixos.org](https://nixos.org/download.html), then enable flakes:
+
+```bash
+mkdir -p ~/.config/nix
+echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
+```
+
+Verify: `nix flake --help >/dev/null 2>&1 && echo "Flakes enabled"`
+
 - **A C compiler** (gcc or clang) for building the C library. Only needed if you're building the `.so`/`.dylib` yourself rather than using a pre-built library.
 - Basic familiarity with C and C++.
 
@@ -43,19 +42,25 @@ nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 # nix flake init -t github:logos-co/logos-module-builder
 ```
 
-> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 2.3](#23-flakenix--nix-build-config) to ensure reproducible builds.
-
 This generates the skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, etc.) pre-configured for the logos-module-builder. You then customize them for your specific library.
+
+> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in the flake.nix step below to ensure reproducible builds.
 
 > **Alternative approach:** You can also create the C library as a separate project, build it there, then copy the resulting `.so`/`.dylib` and header files into the module's `lib/` directory. This can be cleaner for larger libraries with their own build systems.
 
-### 1.2 Create the lib directory
+---
+
+## Step 2: Write the C Library
+
+Create the C library that your module will wrap. Place the header and implementation in the `lib/` directory.
+
+### 2.1 Create the lib directory
 
 ```bash
 mkdir -p lib
 ```
 
-### 1.3 Write the C header
+### 2.2 Write the C header
 
 Create `lib/libcalc.h`:
 
@@ -91,7 +96,7 @@ const char* calc_version(void);
 
 The `extern "C"` block is essential — it prevents C++ name mangling so the Logos module can find the symbols.
 
-### 1.4 Write the C implementation
+### 2.3 Write the C implementation
 
 Create `lib/libcalc.c`:
 
@@ -139,7 +144,7 @@ const char* calc_version(void)
 }
 ```
 
-### 1.5 Build the shared library
+### 2.4 Build the shared library
 
 ```bash
 cd lib
@@ -177,9 +182,11 @@ You should see each symbol marked with `T` (text/code section). Addresses will v
 
 ---
 
-## Step 2: Configure the Logos Module
+## Step 3: Configure the Logos Module
 
-The template from Step 1.1 generated skeleton files with placeholder names (`external_lib`, `example_lib`). Now rename and customize them for your library. You need to edit **every generated file**:
+The template generated skeleton files with placeholder names (`external_lib`, `example_lib`). Now rename and customize them for your library. You need to edit **every generated file**.
+
+After editing, your project should look like this:
 
 | File                   | What to change                                                    |
 | ---------------------- | ----------------------------------------------------------------- |
@@ -188,24 +195,21 @@ The template from Step 1.1 generated skeleton files with placeholder names (`ext
 | `flake.nix`            | Description (and dependency inputs if needed)                     |
 | `src/*.h`, `src/*.cpp` | Rename files, replace class/method names, add your wrapping logic |
 
-After renaming and editing, your project should look like this:
-
 ```
 logos-calc-module/
 ├── flake.nix          # Nix build configuration (~10 lines)
-├── metadata.json      # Module metadata, build settings, and runtime config (~25 lines)
-├── CMakeLists.txt     # CMake build file (~20 lines)
+├── metadata.json      # Module metadata, build settings, and runtime config
+├── CMakeLists.txt     # CMake build file
 ├── lib/
 │   ├── libcalc.h      # C library header
-│   ├── libcalc.c      # C library source
-│   └── libcalc.so     # Pre-built shared library
+│   └── libcalc.c      # C library source (compiled by CMake)
 └── src/
     ├── calc_module_interface.h   # Interface declaration
     ├── calc_module_plugin.h      # Plugin header
     └── calc_module_plugin.cpp    # Plugin implementation (wrapping logic)
 ```
 
-### 2.1 `metadata.json` — Module Configuration
+### 3.1 `metadata.json` — Module Configuration
 
 > **Edit:** Change `name`, `description`, `main`, `nix.external_libraries[].name`, and `nix.cmake.extra_include_dirs` to match your module and library.
 
@@ -247,11 +251,10 @@ This is the single source of truth for your module. It is embedded into the plug
 | Field                                  | What it does                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                                 | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                                                                                                                        |
-| `nix.external_libraries[].name`        | Library name **without the `lib` prefix** — the builder looks for `lib<name>.so` / `lib<name>.dylib` in the directory specified by `vendor_path`. So `name: calc` matches the file `libcalc.so` / `libcalc.dylib`. This follows the standard Unix library naming convention where `-lcalc` links against `libcalc`. |
-| `nix.external_libraries[].vendor_path` | Where to find the pre-built library. `"lib"` means the `lib/` directory in your project root                                                                                                                                                                                                                        |
-| `nix.cmake.extra_include_dirs`         | Added to the CMake include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                                                                                                                     |
+| `nix.external_libraries`               | Declares C/C++ libraries vendored in the repo. Each entry has a `name` (used for the Nix derivation and CMake target) and `vendor_path` (directory containing the source). The build system compiles the library and makes it available as a CMake target                                                            |
+| `nix.cmake.extra_include_dirs`         | Added to the CMake include path so your C++ code can `#include "libcalc.h"`                                                                                                                                                                                                                                         |
 
-### 2.2 `CMakeLists.txt` — Build File
+### 3.2 `CMakeLists.txt` — Build File
 
 > **Edit:** Change `project()` name, `NAME`, `SOURCES` filenames, and `EXTERNAL_LIBS` to match your module and library.
 
@@ -293,9 +296,9 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
 
 **How `EXTERNAL_LIBS calc` works:** The `logos_module()` CMake function searches `lib/` for `libcalc.so` (Linux) or `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
 
-### 2.3 `flake.nix` — Nix Build Config
+### 3.3 `flake.nix` — Nix Build Config
 
-> **Edit:** Change `description`. Add flake inputs here if your module depends on other modules or fetches a library from source (see [Advanced: Wrapping a Library from a Flake Input](#advanced-wrapping-a-library-from-a-flake-input)).
+Change `description`. Add flake inputs here if your module depends on other modules or fetches a library from source.
 
 ```nix
 {
@@ -316,13 +319,11 @@ The `if/elseif/else` block above it is boilerplate — don't change it.
 
 That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). Note that `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
 
-> **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
+> **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`.
 
-### 2.4 `src/calc_module_interface.h` — Interface Declaration
+### 3.4 `src/calc_module_interface.h` — Interface Declaration
 
-> **Edit:** Rename from `external_lib_interface.h`. Replace the class name, interface ID, include guard, and declare your module's methods as `Q_INVOKABLE virtual` pure-virtual functions.
-
-This declares the methods your module exposes. It inherits from `PluginInterface` (provided by the Logos C++ SDK).
+This declares the methods your module exposes. It inherits from `PluginInterface` (provided by the Logos C++ SDK). Every method you want callable by other modules must be `Q_INVOKABLE` and `virtual`.
 
 ```cpp
 #ifndef CALC_MODULE_INTERFACE_H
@@ -356,9 +357,7 @@ Q_DECLARE_INTERFACE(CalcModuleInterface, CalcModuleInterface_iid)
 - Supported parameter/return types: `int`, `bool`, `QString`, `QByteArray`, `QVariant`, `QJsonArray`, `QStringList`, `LogosResult`
 - The interface ID string (e.g., `"org.logos.CalcModuleInterface"`) must be unique across all modules
 
-### 2.5 `src/calc_module_plugin.h` — Plugin Header
-
-> **Edit:** Rename from `external_lib_plugin.h`. Replace class name, interface references, `name()`/`version()` return values, and declare your `Q_INVOKABLE` wrapper methods. Add `#include` for your C library header.
+### 3.5 `src/calc_module_plugin.h` — Plugin Header
 
 This is the actual plugin class. It inherits from both `QObject` (for Qt's meta-object system) and your interface.
 
@@ -385,15 +384,13 @@ public:
     explicit CalcModulePlugin(QObject* parent = nullptr);
     ~CalcModulePlugin() override;
 
-    // PluginInterface — required by every module
+    // PluginInterface
     QString name() const override { return "calc_module"; }
     QString version() const override { return "1.0.0"; }
 
-    // Called by the Logos host when the module is loaded.
-    // NOT marked override — it is invoked reflectively via QMetaObject.
     Q_INVOKABLE void initLogos(LogosAPI* api);
 
-    // CalcModuleInterface — each wraps a libcalc C function
+    // CalcModuleInterface
     Q_INVOKABLE int add(int a, int b) override;
     Q_INVOKABLE int multiply(int a, int b) override;
     Q_INVOKABLE int factorial(int n) override;
@@ -416,11 +413,9 @@ signals:
 - `initLogos` must be `Q_INVOKABLE` but **not** `override` — the base class `PluginInterface` does not declare it as virtual; the Logos host calls it reflectively via `QMetaObject::invokeMethod`
 - `eventResponse` signal is required for event forwarding between modules. Emit it to push data to subscribers (e.g., QML UIs listening via `logos.onModuleEvent()`)
 - `name()` must return the same string as the `name` field in `metadata.json`
-- **No `m_logosAPI` member variable** — the `LogosAPI`\* pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
+- **No `m_logosAPI` member variable** — the `LogosAPI*` pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
 
-### 2.6 `src/calc_module_plugin.cpp` — Plugin Implementation
-
-> **Edit:** Rename from `external_lib_plugin.cpp`. Replace the placeholder implementations with actual calls to your C library functions.
+### 3.6 `src/calc_module_plugin.cpp` — Plugin Implementation
 
 This is where the wrapping happens. Each method calls the corresponding C function.
 
@@ -442,16 +437,12 @@ CalcModulePlugin::~CalcModulePlugin()
 
 void CalcModulePlugin::initLogos(LogosAPI* api)
 {
-    // IMPORTANT: Use the global `logosAPI` variable from liblogos, NOT a class member.
-    // `logosAPI` is defined in the Logos SDK headers and is used by the API
-    // internally. Storing the pointer in a local `m_logosAPI` member will NOT work.
     logosAPI = api;
     qDebug() << "CalcModulePlugin: LogosAPI initialized";
 }
 
 int CalcModulePlugin::add(int a, int b)
 {
-    // Call the C library function
     int result = calc_add(a, b);
     qDebug() << "CalcModulePlugin::add" << a << "+" << b << "=" << result;
     return result;
@@ -498,20 +489,20 @@ void CalcModulePlugin::libVersionNotify()
 **The wrapping pattern** is always the same:
 
 1. Call the C function with the arguments
-2. Convert the C result to a Qt type if needed (e.g., `const char`\* → `QString`)
+2. Convert the C result to a Qt type if needed (e.g., `const char*` → `QString`)
 3. Return the Qt type
 
 ---
 
-## Step 3: Build the Module
+## Step 4: Build the Module
 
-### 3.1 Initialize the Git repo
+### 4.1 Initialize the Git repo
 
 Nix flakes require a git repository.
 
 Before staging files, create a `.gitignore` to exclude build artifacts:
 
-```
+```text
 # Nix build output
 result
 result-*
@@ -523,28 +514,42 @@ build/
 Then initialise the repo:
 
 ```bash
-cd logos-calc-module
 git init
+```
+
+```bash
 git add -A
+```
+
+```bash
 nix flake update
+```
+
+```bash
 git add flake.lock
 ```
 
-### 3.2 Build with Nix
+### 4.2 Build the plugin library
+
+Build just the plugin library (`.so` / `.dylib`):
 
 ```bash
-# Build just the plugin library (.so / .dylib)
 nix build '.#lib'
+```
 
-# Build everything (library + generated SDK headers)
+> **Quoting matters:** Use `'.#lib'` (with quotes) rather than bare `nix build .#lib`. Some shells (especially zsh) may interpret the `#` as a comment character.
+
+The first build takes a while (5–15 minutes) as Nix downloads Qt, the Logos SDK, and other dependencies. Subsequent builds are fast due to caching.
+
+### 4.3 Build the full package
+
+Build everything (library + generated SDK headers):
+
+```bash
 nix build
 ```
 
-> **Quoting matters:** Use `'.#lib'` (with quotes) rather than bare `nix build .#lib`. Some shells (especially zsh) may interpret the `#` as a comment character, causing the command to silently build the wrong thing or fail.
-
-The first build takes a while (5-15 minutes) as Nix downloads Qt, the Logos SDK, and other dependencies. Subsequent builds are fast due to caching.
-
-### 3.3 Inspect the output
+### 4.4 Inspect the output
 
 ```bash
 ls -la result/lib/
@@ -566,17 +571,19 @@ Both library files are placed together so the plugin can find the C library at r
 
 ---
 
-## Step 4: Inspect the Module
+## Step 5: Inspect the Module
 
-### 4.1 Build the `lm` tool
+Use the `lm` CLI tool (from `logos-module`) to inspect the compiled module binary.
 
-The `lm` CLI tool (from `logos-module`) inspects compiled module binaries:
+### 5.1 Build the `lm` tool
+
+The `lm` CLI inspects compiled module binaries. Build it from the `logos-module` repo:
 
 ```bash
 nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 ```
 
-### 4.2 View metadata
+### 5.2 View metadata
 
 ```bash
 # Linux
@@ -599,7 +606,7 @@ Type:         core
 Dependencies: (none)
 ```
 
-### 4.3 List methods
+### 5.3 List methods
 
 ```bash
 # Linux
@@ -646,7 +653,7 @@ QString libVersion()
 
 All five wrapping methods are visible and invokable. The `initLogos` method is automatically called by the Logos host when loading the module.
 
-### 4.4 JSON output
+### 5.4 JSON output
 
 For scripting and CI, use `--json`:
 
@@ -676,25 +683,31 @@ For scripting and CI, use `--json`:
 
 ---
 
-## Step 5: Test with `logoscore`
+## Step 6: Test with `logoscore`
 
-### 5.1 Build logoscore
+### 6.1 Build logoscore
 
 ```bash
 nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
-### 5.2 Set up the modules directory
+### 6.2 Set up the modules directory
 
 `logoscore` expects modules in subdirectories, each with a `manifest.json`. Rather than copying files and writing the manifest manually, use the Nix derivation to create an LGX package and install it with the package manager:
 
 ```bash
-# Bundle the module into an LGX package
 nix build '.#lgx'
+```
 
-# Install it into a modules directory using the Logos Package Manager
+```bash
 nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+```
+
+```bash
 mkdir -p modules
+```
+
+```bash
 ./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
 ```
 
@@ -708,24 +721,39 @@ modules/calc_module/
 └── variant                    # Platform variant identifier
 ```
 
-### 5.3 Call methods
+### 6.3 Call methods
 
 Start the daemon and call methods:
 
 ```bash
-# Start logoscore daemon with modules directory
 ./logos/bin/logoscore -D -m ./modules &
+```
 
-# Load the module
+```bash
+sleep 3
+```
+
+```bash
 ./logos/bin/logoscore load-module calc_module
+```
 
-# Call methods
+```bash
 ./logos/bin/logoscore call calc_module add 3 5
-./logos/bin/logoscore call calc_module factorial 5
-./logos/bin/logoscore call calc_module fibonacci 10
-./logos/bin/logoscore call calc_module libVersion
+```
 
-# Stop the daemon when done
+```bash
+./logos/bin/logoscore call calc_module factorial 5
+```
+
+```bash
+./logos/bin/logoscore call calc_module fibonacci 10
+```
+
+```bash
+./logos/bin/logoscore call calc_module libVersion
+```
+
+```bash
 ./logos/bin/logoscore stop
 ```
 
@@ -757,7 +785,7 @@ Method call successful. Result: ...
 
 ---
 
-## Step 6: Package for Distribution (Optional)
+## Package for Distribution (Optional)
 
 The LGX package created in Step 5.2 is a **local** package — its libraries still reference `/nix/store` paths, so it only works on the machine that built it. To create a **portable** package that can be distributed to other machines:
 
@@ -784,8 +812,6 @@ nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ```
 
 > **Note:** Local builds of `logoscore` / `logos-basecamp` (via `nix build`) expect **local** `.lgx` packages. Portable builds (via `nix build '.#bin-bundle-dir'`, `.#bin-appimage`, or `.#bin-macos-app`) expect **portable** `.lgx` packages. See the [logos-basecamp README](https://github.com/logos-co/logos-basecamp/blob/master/README.md) for details.
-
----
 
 ## Common Wrapping Patterns
 
@@ -881,8 +907,6 @@ Q_INVOKABLE QString getData() {
 | `bool` / `int`         | `bool`            | `result != 0`              | direct                     |
 | `void*`                | (store in member) | —                          | —                          |
 
----
-
 ## Advanced: Wrapping a Library from a Flake Input
 
 Instead of pre-building the library and placing it in `lib/`, you can have Nix fetch and build it from source. This is useful for libraries hosted on GitHub.
@@ -977,8 +1001,6 @@ If the external library is written in Go with C bindings (`cgo`), set `go_build:
 
 Setting `go_build: true` enables the Go toolchain and sets `CGO_ENABLED=1`.
 
----
-
 ## Real-World Example: logos-libp2p-module
 
 The [logos-libp2p-module](https://github.com/logos-co/logos-libp2p-module) is a production module that wraps the `nim-libp2p` library (compiled to a C shared library). Key files:
@@ -989,8 +1011,6 @@ The [logos-libp2p-module](https://github.com/logos-co/logos-libp2p-module) is a 
 - `**tests/**` — Qt test suite that exercises every wrapped function
 
 It follows the exact same pattern as this tutorial, just at a larger scale.
-
----
 
 ## Troubleshooting
 
