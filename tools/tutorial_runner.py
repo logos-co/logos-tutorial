@@ -499,21 +499,61 @@ def generate_mjs_tests(tests, qt_mcp_path, test_name, output_path):
 
 # ── UI Test Handler ──────────────────────────────────────────────────────────
 
+import signal
+import socket
+import time
+
+
+def _wait_for_inspector(host="localhost", port=3768, timeout=60):
+    """Poll until the QML inspector TCP port accepts connections."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return True
+        except (ConnectionRefusedError, OSError):
+            time.sleep(0.5)
+    return False
+
+
+def _kill_process_tree(pid):
+    """Kill a process and its children."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        pass
+
+
 def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, spec):
     """Run headless UI tests via logos-qt-mcp test framework.
 
-    YAML format:
+    Supports two modes:
+      - launch mode: runs the app as a background process, connects tests to it
+      - binary mode: uses --ci flag to let the test framework manage the app
+
+    YAML format (launch mode — preferred):
         ui_test:
-          build: "nix build"           # command to build the app (optional)
-          binary: "result/bin/app"     # path to app binary (relative to workdir)
-          qt_mcp: "result-mcp"         # path to logos-qt-mcp package
-          setup:                       # commands to run before testing
-            - "nix build .#test-framework -o result-mcp"
-          tests:                       # test actions
+          launch: "nix run ."
+          qt_mcp: "result-mcp"
+          setup:
+            - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
+          tests:
             - name: "Title visible"
               action: wait_for
               texts: ["My App"]
               timeout: 15000
+
+    YAML format (binary mode):
+        ui_test:
+          build: "nix build"
+          binary: "nix-app"
+          qt_mcp: "result-mcp"
+          setup: [...]
+          tests: [...]
     """
     ui_spec = step.get("ui_test", {})
     if not ui_spec:
@@ -537,44 +577,6 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
             results.fail(title, f"setup command failed: {cmd}")
             return
 
-    # Build the app
-    build_cmd = ui_spec.get("build", "")
-    if build_cmd:
-        build_cmd = expand_vars(build_cmd)
-        build_cmd = inject_nix_overrides(build_cmd, override_flags)
-        print(f"  Build: {build_cmd}")
-        rc, _ = run_cmd(build_cmd, workdir, verbose)
-        if rc != 0:
-            results.fail(title, "build failed")
-            return
-
-    # Resolve binary path
-    binary = ui_spec.get("binary", "")
-    if not binary:
-        results.fail(title, "no binary specified in ui_test")
-        return
-
-    if binary == "nix-app":
-        print(f"  Resolving app binary from flake...")
-        try:
-            proc = subprocess.run(
-                'nix eval .#apps."$(nix eval --impure --expr builtins.currentSystem --raw)".default.program --raw',
-                shell=True, cwd=workdir, capture_output=True, text=True, timeout=60
-            )
-            binary_path = (proc.stdout or "").strip()
-            if proc.returncode != 0 or not binary_path:
-                results.fail(title, f"failed to resolve nix app binary: {(proc.stderr or '').strip()}")
-                return
-        except Exception as e:
-            results.fail(title, f"nix eval failed: {e}")
-            return
-    else:
-        binary_path = os.path.join(workdir, binary)
-
-    if not os.path.isfile(binary_path):
-        results.fail(title, f"binary not found: {binary_path}")
-        return
-
     # Resolve qt_mcp path
     if qt_mcp and not os.path.isabs(qt_mcp):
         qt_mcp = os.path.join(workdir, qt_mcp)
@@ -589,17 +591,98 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
         os.path.join(workdir, "ui-test.mjs")
     )
 
-    # Run with offscreen Qt and the test framework's --ci mode
-    env_prefix = "QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1"
-    cmd = f'{env_prefix} node "{mjs_path}" --ci "{binary_path}" --verbose'
-    print(f"  Running UI tests ({len(tests)} actions)...")
-    rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
-    if rc == 0:
-        results.pass_(title)
+    launch_cmd = ui_spec.get("launch", "")
+
+    if launch_cmd:
+        # Launch mode: start app in background, run tests against it, kill it
+        launch_cmd = expand_vars(launch_cmd)
+        launch_cmd = inject_nix_overrides(launch_cmd, override_flags)
+
+        env = {
+            **os.environ,
+            "QT_QPA_PLATFORM": "offscreen",
+            "QT_FORCE_STDERR_LOGGING": "1",
+            "QT_LOGGING_RULES": "qt.*.debug=false;default.debug=true",
+        }
+
+        print(f"  Launching: {launch_cmd}")
+        app_proc = subprocess.Popen(
+            launch_cmd, shell=True, cwd=workdir, env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            preexec_fn=os.setsid,
+        )
+
+        try:
+            port = ui_spec.get("inspector_port", 3768)
+            print(f"  Waiting for inspector on port {port}...")
+            if not _wait_for_inspector(port=port, timeout=90):
+                results.fail(title, f"inspector not available on port {port} after 90s")
+                return
+
+            print(f"  Running UI tests ({len(tests)} actions)...")
+            cmd = f'node "{mjs_path}" --verbose'
+            rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
+            if rc == 0:
+                results.pass_(title)
+            else:
+                results.fail(title, "UI tests failed")
+                trimmed = output.strip()[-800:] if output else "(no output)"
+                print(f"        {dim(trimmed)}")
+        finally:
+            try:
+                os.killpg(os.getpgid(app_proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            app_proc.wait(timeout=10)
+
     else:
-        results.fail(title, "UI tests failed")
-        trimmed = output.strip()[-800:] if output else "(no output)"
-        print(f"        {dim(trimmed)}")
+        # Binary mode: use --ci flag (test framework manages the app)
+        build_cmd = ui_spec.get("build", "")
+        if build_cmd:
+            build_cmd = expand_vars(build_cmd)
+            build_cmd = inject_nix_overrides(build_cmd, override_flags)
+            print(f"  Build: {build_cmd}")
+            rc, _ = run_cmd(build_cmd, workdir, verbose)
+            if rc != 0:
+                results.fail(title, "build failed")
+                return
+
+        binary = ui_spec.get("binary", "")
+        if not binary:
+            results.fail(title, "no binary or launch command specified in ui_test")
+            return
+
+        if binary == "nix-app":
+            print(f"  Resolving app binary from flake...")
+            try:
+                proc = subprocess.run(
+                    'nix eval .#apps."$(nix eval --impure --expr builtins.currentSystem --raw)".default.program --raw',
+                    shell=True, cwd=workdir, capture_output=True, text=True, timeout=60
+                )
+                binary_path = (proc.stdout or "").strip()
+                if proc.returncode != 0 or not binary_path:
+                    results.fail(title, f"failed to resolve nix app binary: {(proc.stderr or '').strip()}")
+                    return
+            except Exception as e:
+                results.fail(title, f"nix eval failed: {e}")
+                return
+        else:
+            binary_path = os.path.join(workdir, binary)
+
+        if not os.path.isfile(binary_path):
+            results.fail(title, f"binary not found: {binary_path}")
+            return
+
+        env_prefix = "QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1"
+        cmd = f'{env_prefix} node "{mjs_path}" --ci "{binary_path}" --verbose'
+        print(f"  Running UI tests ({len(tests)} actions)...")
+        rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
+        if rc == 0:
+            results.pass_(title)
+        else:
+            results.fail(title, "UI tests failed")
+            trimmed = output.strip()[-800:] if output else "(no output)"
+            print(f"        {dim(trimmed)}")
 
 
 # ── Find module name from spec ────────────────────────────────────────────────
@@ -975,6 +1058,16 @@ def cmd_generate(args):
                     emit(expand_vars(run_cmd_str))
                 emit("```")
                 emit()
+
+            # ui_test: render launch command if present
+            ui_test_spec = step.get("ui_test", {})
+            if ui_test_spec:
+                launch = ui_test_spec.get("launch", "")
+                if launch:
+                    emit("```bash")
+                    emit(expand_vars(launch))
+                    emit("```")
+                    emit()
 
             # check_file is runner-only verification, not rendered in markdown
 

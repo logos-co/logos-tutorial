@@ -369,10 +369,8 @@ sections:
         run: "git add -A"
       - run: "nix flake update"
       - run: "git add flake.lock"
-      - run: "nix build"
       - ui_test:
-          build: ""
-          binary: "nix-app"
+          launch: "nix run ."
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
           qt_mcp: "result-mcp"
@@ -398,7 +396,7 @@ sections:
               texts: ["Fibonacci"]
               timeout: 5000
         post_text: |
-          Run `nix run .` to open the app. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
+          The app opens immediately. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
 
       - title: "Full functionality (with modules)"
         text: |
@@ -815,10 +813,9 @@ sections:
       # When running both tutorials together, pass --build-overrides or ensure
       # calc_module is available. The layout checks below work without it.
       - ui_test:
+          launch: "nix run ."
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
-          build: ""
-          binary: "nix-app"
           qt_mcp: "result-mcp"
           tests:
             - name: "UI title visible"

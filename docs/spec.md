@@ -181,12 +181,18 @@ Verifies a file exists. Runner-only, not rendered in the markdown.
 
 Runs headless UI tests against a Qt app using [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp). The app is launched with `QT_QPA_PLATFORM=offscreen` (no display needed) and tests connect to the QML inspector to verify elements, click buttons, and check results.
 
+Two modes:
+- **Launch mode** (preferred): `launch` runs the app as a background process, tests connect to its inspector, app is killed when done. The `launch` command is rendered in the generated markdown.
+- **Binary mode**: `build` + `binary` let the test framework manage the app via `--ci`. Not rendered in markdown.
+
 | Subfield | Type | Description |
 |----------|------|-------------|
-| `build` | string | Command to build the app binary (optional — skip if already built by a prior `run` step). |
-| `binary` | string | Path to the app binary, relative to workdir (e.g., `result/bin/run-logos-standalone-ui`). |
+| `launch` | string | Command to launch the app (e.g., `nix run .`). Launched as a background process with offscreen Qt. **Rendered** in generated markdown as a bash code block. |
+| `build` | string | Command to build the app binary (binary mode only, not rendered). |
+| `binary` | string | Path to the app binary or `nix-app` to auto-resolve from flake (binary mode only). |
 | `qt_mcp` | string | Path to the logos-qt-mcp package, relative to workdir (e.g., `result-mcp`). Falls back to `--qt-mcp` CLI flag or `LOGOS_QT_MCP` env var. |
 | `setup` | list of strings | Commands to run before testing (e.g., `nix build 'github:logos-co/logos-qt-mcp' -o result-mcp`). |
+| `inspector_port` | integer | TCP port for the QML inspector (default: 3768). |
 | `tests` | list of objects | Test actions to execute. See below. |
 
 **Test actions:**
@@ -199,16 +205,18 @@ Runs headless UI tests against a Qt app using [logos-qt-mcp](https://github.com/
 | `set_text` | `find_by`, `find_value`, `value` | Find element by property and set its `text` property |
 | `sleep` | `ms` | Wait a fixed duration |
 
-**Runner behavior:** Runs setup commands, builds the app, generates a `.mjs` test file from the actions, then runs it via `node test.mjs --ci <binary> --verbose`. Reports pass/fail.
+**Runner behavior (launch mode):** Runs setup commands, launches the app in the background with `QT_QPA_PLATFORM=offscreen`, waits for the QML inspector to be available, generates a `.mjs` test file, runs it, then kills the app. Reports pass/fail.
 
-**Generator behavior:** Ignored — not rendered. Use `text:` and `post_text:` for user-facing prose describing what to check visually.
+**Runner behavior (binary mode):** Runs setup + build, generates a `.mjs` test file, runs it via `node test.mjs --ci <binary> --verbose`. Reports pass/fail.
+
+**Generator behavior:** In launch mode, `launch` is rendered as a ` ```bash ` code block. In binary mode, nothing is rendered. Use `text:` and `post_text:` for additional user-facing prose.
 
 ```yaml
+# Launch mode (preferred) — what's shown is what's executed
 - ui_test:
+    launch: "nix run ."
     setup:
       - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
-    build: "nix build"
-    binary: "result/bin/run-logos-standalone-ui"
     qt_mcp: "result-mcp"
     tests:
       - name: "Title visible"
