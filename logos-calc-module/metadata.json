@@ -15,7 +15,8 @@
     "external_libraries": [
       {
         "name": "calc",
-        "vendor_path": "lib"
+        "build_command": "make shared",
+        "output_pattern": "build/libcalc.*"
       }
     ],
     "cmake": {

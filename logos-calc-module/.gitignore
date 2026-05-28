@@ -1,0 +1,10 @@
+# Nix build output
+result
+result-*
+
+# CMake build directory
+build/
+
+# Compiled C library (built from source by the Nix external-lib derivation,
+# or by `make shared` for a local sanity check)
+lib/build/
