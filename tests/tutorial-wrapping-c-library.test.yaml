@@ -34,15 +34,16 @@ sections:
       Before writing any C code, scaffold the Logos module project using the official template. This gives you the correct `flake.nix`, `metadata.json`, directory structure, and build configuration out of the box.
     steps:
       - title: "Create the project using the module builder template"
-        scaffold:
-          template: "github:logos-co/logos-module-builder{release}#with-external-lib"
-          code_block: |
-            # For a module that wraps an external C library:
-            mkdir logos-calc-module && cd logos-calc-module
-            nix flake init -t github:logos-co/logos-module-builder{release}#with-external-lib
+        text: |
+          For a module that wraps an external C library:
 
-            # Or for a plain module (no external library):
-            # nix flake init -t github:logos-co/logos-module-builder{release}
+          `mkdir logos-calc-module && cd logos-calc-module`
+        run: "nix flake init -t github:logos-co/logos-module-builder{release}#with-external-lib"
+        code_block: |
+          nix flake init -t github:logos-co/logos-module-builder{release}#with-external-lib
+
+          # Or for a plain module (no external library):
+          # nix flake init -t github:logos-co/logos-module-builder{release}
         post_text: |
           This generates the skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, etc.) pre-configured for the logos-module-builder. You then customize them for your specific library.
 

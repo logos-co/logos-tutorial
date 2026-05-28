@@ -57,7 +57,7 @@ sections:
 | `what_you_build` | no | string | One-line summary prefixed with "**What you'll build:**" in the markdown. |
 | `what_you_learn` | no | list of strings | Bullet list prefixed with "**What you'll learn:**". |
 | `comparison` | no | string | Free-form markdown block rendered after the learning objectives (useful for comparison tables). |
-| `prerequisites` | no | list of strings | Rendered as a bullet list under a `## Prerequisites` heading. Each item can contain markdown (code blocks, links, etc.). |
+| `prerequisites` | no | list of strings | Rendered as a bullet list under a prerequisites heading. Each item can contain markdown (code blocks, links, etc.). |
 | `release` | no | string | Git tag applied to all `{release}` placeholders in GitHub URLs (e.g., `tutorial-v2`). See [Release tags](#release-tags). |
 | `build_overrides` | no | map | Nix `--override-input` flags for the runner. Keys are input names, values are relative paths to local repos. Only affects execution, not generation. |
 | `sections` | yes | list | The tutorial content. See below. |
@@ -69,7 +69,7 @@ Each section becomes a `## heading` in the markdown. Sections with a `phase` get
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
 | `title` | yes | string | Section heading. |
-| `phase` | no | string | Groups the section for selective execution. One of: `scaffold`, `files`, `build`, `inspect`, `logoscore`, `basecamp`. Sections with a phase are numbered as "Step N" in markdown. Sections without a phase render as plain `## Title`. |
+| `phase` | no | string | Groups the section for selective execution. Common phases: `scaffold`, `files`, `build`, `inspect`, `logoscore`, `basecamp`, `run`, `test`. Sections with a phase are numbered as "Step N" in markdown. Sections without a phase render as plain `## Title`. |
 | `text` | no | string | Introductory prose rendered before the steps. Supports full markdown (tables, blockquotes, code blocks, etc.). |
 | `steps` | no | list | Ordered list of steps. See below. |
 
@@ -81,11 +81,10 @@ Steps are the core building blocks. Each step can combine multiple fields. The r
 
 1. `title` → `### heading`
 2. `text` → prose paragraph
-3. `scaffold` → bash code block (template init)
-4. `file` → code block with file contents
-5. `run` → bash code block
-6. `post_text` → prose after the action
-7. `extra_run` → additional command block (no heading)
+3. `file` → code block with file contents
+4. `run` → bash code block
+5. `post_text` → prose after the action
+6. `extra_run` → additional command block (no heading)
 
 A step without a `title` renders its content inline under the previous heading — useful for continuation content like "Then run:" followed by a code block.
 
@@ -98,31 +97,6 @@ Rendered as a `### heading` in the markdown. Steps without a title don't get a h
 #### `text` (string, optional)
 
 Prose rendered before any action. Supports full markdown.
-
-#### `scaffold` (object, optional)
-
-Initializes a project from a Nix flake template.
-
-| Subfield | Type | Description |
-|----------|------|-------------|
-| `template` | string | The flake template URL (e.g., `github:logos-co/logos-module-builder#with-external-lib`). |
-| `code_block` | string | The exact bash content to show in the markdown. If omitted, just the `nix flake init -t <template>` command is shown. |
-
-**Runner behavior:** Executes `nix flake init -t <template>` in the working directory.
-
-**Generator behavior:** Renders `code_block` (or a default `nix flake init` command) inside a ` ```bash ` block.
-
-```yaml
-scaffold:
-  template: "github:logos-co/logos-module-builder#with-external-lib"
-  code_block: |
-    # For a module that wraps an external C library:
-    mkdir logos-calc-module && cd logos-calc-module
-    nix flake init -t github:logos-co/logos-module-builder#with-external-lib
-
-    # Or for a plain module (no external library):
-    # nix flake init -t github:logos-co/logos-module-builder
-```
 
 #### `file` (object, optional)
 
@@ -151,7 +125,7 @@ A shell command to execute and display.
 
 **Generator behavior:** Renders the command in a ` ```bash ` block. If `code_block` is present on the step, renders that instead (see below).
 
-#### `code_block` (string, optional, on step or scaffold)
+#### `code_block` (string, optional)
 
 The exact content to show in the generated markdown, used **instead of** the `run` command. This is for cases where:
 
@@ -203,9 +177,61 @@ Verifies a file exists. Runner-only, not rendered in the markdown.
 
 **Generator behavior:** Ignored — not rendered.
 
+#### `ui_test` (object, optional)
+
+Runs headless UI tests against a Qt app using [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp). The app is launched with `QT_QPA_PLATFORM=offscreen` (no display needed) and tests connect to the QML inspector to verify elements, click buttons, and check results.
+
+| Subfield | Type | Description |
+|----------|------|-------------|
+| `build` | string | Command to build the app binary (optional — skip if already built by a prior `run` step). |
+| `binary` | string | Path to the app binary, relative to workdir (e.g., `result/bin/run-logos-standalone-ui`). |
+| `qt_mcp` | string | Path to the logos-qt-mcp package, relative to workdir (e.g., `result-mcp`). Falls back to `--qt-mcp` CLI flag or `LOGOS_QT_MCP` env var. |
+| `setup` | list of strings | Commands to run before testing (e.g., `nix build 'github:logos-co/logos-qt-mcp' -o result-mcp`). |
+| `tests` | list of objects | Test actions to execute. See below. |
+
+**Test actions:**
+
+| Action | Fields | What it does |
+|--------|--------|--------------|
+| `click` | `target` | Find element by text and click it |
+| `wait_for` | `texts`, `timeout` (ms, default 10000), `name` | Poll until all texts are visible |
+| `expect_texts` | `texts` | Assert all texts are visible now |
+| `set_text` | `find_by`, `find_value`, `value` | Find element by property and set its `text` property |
+| `sleep` | `ms` | Wait a fixed duration |
+
+**Runner behavior:** Runs setup commands, builds the app, generates a `.mjs` test file from the actions, then runs it via `node test.mjs --ci <binary> --verbose`. Reports pass/fail.
+
+**Generator behavior:** Ignored — not rendered. Use `text:` and `post_text:` for user-facing prose describing what to check visually.
+
+```yaml
+- ui_test:
+    setup:
+      - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
+    build: "nix build"
+    binary: "result/bin/run-logos-standalone-ui"
+    qt_mcp: "result-mcp"
+    tests:
+      - name: "Title visible"
+        action: wait_for
+        texts: ["Logos Calculator"]
+        timeout: 15000
+      - name: "Enter number"
+        action: set_text
+        find_by: "placeholderText"
+        find_value: "a"
+        value: "3"
+      - name: "Click Add"
+        action: click
+        target: "Add"
+      - name: "Result shows 3"
+        action: wait_for
+        texts: ["3"]
+        timeout: 10000
+```
+
 #### `post_text` (string, optional)
 
-Prose rendered **after** the step's action (file, run, scaffold). Supports full markdown including code blocks, tables, blockquotes.
+Prose rendered **after** the step's action (file, run). Supports full markdown including code blocks, tables, blockquotes.
 
 Use this for:
 - Expected output blocks
@@ -273,7 +299,7 @@ When a command uses platform placeholders, provide a `code_block` showing both p
 
 The `release` field lets you pin all GitHub URLs to a specific git tag. This avoids updating every URL individually when you want all `nix build 'github:logos-co/...'` commands to use the same release.
 
-Use the `{release}` placeholder in `run` commands, `code_block`, `scaffold.template`, `scaffold.code_block`, and `file.content`:
+Use the `{release}` placeholder in `run` commands, `code_block`, and `file.content`:
 
 ```yaml
 release: "tutorial-v2"
@@ -281,8 +307,7 @@ release: "tutorial-v2"
 sections:
   - title: "Set Up"
     steps:
-      - scaffold:
-          template: "github:logos-co/logos-module-builder{release}#with-external-lib"
+      - run: "nix flake init -t github:logos-co/logos-module-builder{release}#with-external-lib"
       - run: "nix build 'github:logos-co/logos-module{release}#lm' --out-link ./lm"
 ```
 
@@ -325,7 +350,7 @@ python3 tools/tutorial_runner.py run spec.yaml
 
 | Phase | Typical content |
 |-------|----------------|
-| `scaffold` | Template initialization |
+| `scaffold` | Project setup (template init, git init) |
 | `files` | Writing source files |
 | `build` | Git init, nix build |
 | `inspect` | Using `lm` to inspect the module |
@@ -338,7 +363,7 @@ Sections without a `phase` always run.
 
 - Creates a fresh temp directory (or uses `--workdir`) — all files, builds, and commands happen there
 - Walks sections and steps in order
-- Executes `scaffold`, `file`, `run`, `check_file` actions
+- Executes `file`, `run`, `check_file`, `ui_test` actions
 - Tracks pass/fail/skip counts
 - **Stops on first failure** by default (use `--continue-on-fail` to override)
 - Prints a summary report at the end

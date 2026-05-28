@@ -2,7 +2,7 @@
 """
 Tutorial Runner & Markdown Generator
 
-Executes YAML tutorial specs (scaffold, write files, build, inspect, test)
+Executes YAML tutorial specs (write files, run commands, build, inspect, test)
 and generates .md documentation from them.
 
 Usage:
@@ -42,7 +42,7 @@ IS_MACOS = platform.system() == "Darwin"
 LIB_EXT = "dylib" if IS_MACOS else "so"
 SHARED_FLAGS = "-dynamiclib" if IS_MACOS else "-shared -fPIC"
 
-ALL_PHASES = ["scaffold", "files", "build", "inspect", "logoscore", "basecamp"]
+ALL_PHASES = ["scaffold", "files", "build", "inspect", "logoscore", "basecamp", "test", "run"]
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -200,20 +200,6 @@ def run_cmd(cmd, workdir, verbose=False, capture=False, timeout=None):
 
 
 # ── Step Handlers ─────────────────────────────────────────────────────────────
-
-def handle_scaffold(step, workdir, results, verbose):
-    scaffold = step.get("scaffold", {})
-    template = expand_vars(scaffold.get("template", ""))
-    if not template:
-        return
-    title = step.get("title", "scaffold from template")
-    print(f"  Running: nix flake init -t {template}")
-    rc, _ = run_cmd(f"nix flake init -t {template}", workdir, verbose)
-    if rc == 0:
-        results.pass_(title)
-    else:
-        results.fail(title, "nix flake init failed")
-
 
 def handle_file(step, workdir, results, verbose):
     file_spec = step.get("file", {})
@@ -450,14 +436,32 @@ def handle_basecamp(section, workdir, results, verbose, override_flags,
             results.fail("basecamp install", "nix build '.#install' failed")
             return
 
-    # Generate .mjs test file
-    mjs_path = os.path.join(workdir, "basecamp-test.mjs")
-    tutorial_name = spec.get("name", "tutorial")
-    with open(mjs_path, "w") as f:
+    mjs_path = generate_mjs_tests(
+        tests, qt_mcp, f"{spec.get('name', 'tutorial')}: basecamp UI verification",
+        os.path.join(workdir, "basecamp-test.mjs")
+    )
+
+    cmd = f'node "{mjs_path}" --ci "{basecamp_bin}" --verbose'
+    rc, output = run_cmd(cmd, workdir, verbose, capture=True)
+    if rc == 0:
+        results.pass_("basecamp UI tests")
+    else:
+        results.fail("basecamp UI tests", "test runner exited with non-zero")
+        if verbose:
+            print(f"        {dim(output[:500])}")
+
+
+# ── Shared .mjs test generation ──────────────────────────────────────────────
+
+def generate_mjs_tests(tests, qt_mcp_path, test_name, output_path):
+    """Generate a .mjs test file from YAML test actions for logos-qt-mcp."""
+    import json as _json
+
+    with open(output_path, "w") as f:
         f.write('import { resolve } from "node:path";\n')
-        f.write(f'const qtMcpRoot = "{qt_mcp}";\n')
+        f.write(f'const qtMcpRoot = "{qt_mcp_path}";\n')
         f.write('const { test, run } = await import(resolve(qtMcpRoot, "test-framework/framework.mjs"));\n\n')
-        f.write(f'test("{tutorial_name}: basecamp UI verification", async (app) => {{\n')
+        f.write(f'test("{test_name}", async (app) => {{\n')
 
         for t in tests:
             action = t.get("action", "")
@@ -465,10 +469,10 @@ def handle_basecamp(section, workdir, results, verbose, override_flags,
                 target = t.get("target", "")
                 f.write(f'  await app.click("{target}", {{ exact: true }});\n')
             elif action == "expect_texts":
-                texts = t.get("texts", [])
+                texts = _json.dumps(t.get("texts", []))
                 f.write(f'  await app.expectTexts({texts});\n')
             elif action == "wait_for":
-                texts = t.get("texts", [])
+                texts = _json.dumps(t.get("texts", []))
                 timeout = t.get("timeout", 10000)
                 name = t.get("name", "")
                 f.write(f'  await app.waitFor(\n')
@@ -490,14 +494,112 @@ def handle_basecamp(section, workdir, results, verbose, override_flags,
 
         f.write('});\n\nrun();\n')
 
-    cmd = f'node "{mjs_path}" --ci "{basecamp_bin}" --verbose'
-    rc, output = run_cmd(cmd, workdir, verbose, capture=True)
-    if rc == 0:
-        results.pass_("basecamp UI tests")
+    return output_path
+
+
+# ── UI Test Handler ──────────────────────────────────────────────────────────
+
+def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, spec):
+    """Run headless UI tests via logos-qt-mcp test framework.
+
+    YAML format:
+        ui_test:
+          build: "nix build"           # command to build the app (optional)
+          binary: "result/bin/app"     # path to app binary (relative to workdir)
+          qt_mcp: "result-mcp"         # path to logos-qt-mcp package
+          setup:                       # commands to run before testing
+            - "nix build .#test-framework -o result-mcp"
+          tests:                       # test actions
+            - name: "Title visible"
+              action: wait_for
+              texts: ["My App"]
+              timeout: 15000
+    """
+    ui_spec = step.get("ui_test", {})
+    if not ui_spec:
+        return
+
+    tests = ui_spec.get("tests", [])
+    if not tests:
+        return
+
+    title = step.get("title", "UI tests")
+
+    qt_mcp = ui_spec.get("qt_mcp", "") or qt_mcp_cli or os.environ.get("LOGOS_QT_MCP", "")
+
+    # Run setup commands
+    for cmd in ui_spec.get("setup", []):
+        cmd = expand_vars(cmd)
+        cmd = inject_nix_overrides(cmd, override_flags)
+        print(f"  Setup: {cmd}")
+        rc, _ = run_cmd(cmd, workdir, verbose)
+        if rc != 0:
+            results.fail(title, f"setup command failed: {cmd}")
+            return
+
+    # Build the app
+    build_cmd = ui_spec.get("build", "")
+    if build_cmd:
+        build_cmd = expand_vars(build_cmd)
+        build_cmd = inject_nix_overrides(build_cmd, override_flags)
+        print(f"  Build: {build_cmd}")
+        rc, _ = run_cmd(build_cmd, workdir, verbose)
+        if rc != 0:
+            results.fail(title, "build failed")
+            return
+
+    # Resolve binary path
+    binary = ui_spec.get("binary", "")
+    if not binary:
+        results.fail(title, "no binary specified in ui_test")
+        return
+
+    if binary == "nix-app":
+        print(f"  Resolving app binary from flake...")
+        try:
+            proc = subprocess.run(
+                'nix eval .#apps."$(nix eval --impure --expr builtins.currentSystem --raw)".default.program --raw',
+                shell=True, cwd=workdir, capture_output=True, text=True, timeout=60
+            )
+            binary_path = (proc.stdout or "").strip()
+            if proc.returncode != 0 or not binary_path:
+                results.fail(title, f"failed to resolve nix app binary: {(proc.stderr or '').strip()}")
+                return
+        except Exception as e:
+            results.fail(title, f"nix eval failed: {e}")
+            return
     else:
-        results.fail("basecamp UI tests", "test runner exited with non-zero")
-        if verbose:
-            print(f"        {dim(output[:500])}")
+        binary_path = os.path.join(workdir, binary)
+
+    if not os.path.isfile(binary_path):
+        results.fail(title, f"binary not found: {binary_path}")
+        return
+
+    # Resolve qt_mcp path
+    if qt_mcp and not os.path.isabs(qt_mcp):
+        qt_mcp = os.path.join(workdir, qt_mcp)
+    if not qt_mcp or not os.path.isdir(qt_mcp):
+        results.fail(title, f"logos-qt-mcp not found: {qt_mcp}")
+        return
+
+    # Generate .mjs test file
+    test_name = f"{spec.get('name', 'tutorial')}: {title}"
+    mjs_path = generate_mjs_tests(
+        tests, qt_mcp, test_name,
+        os.path.join(workdir, "ui-test.mjs")
+    )
+
+    # Run with offscreen Qt and the test framework's --ci mode
+    env_prefix = "QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1"
+    cmd = f'{env_prefix} node "{mjs_path}" --ci "{binary_path}" --verbose'
+    print(f"  Running UI tests ({len(tests)} actions)...")
+    rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
+    if rc == 0:
+        results.pass_(title)
+    else:
+        results.fail(title, "UI tests failed")
+        trimmed = output.strip()[-800:] if output else "(no output)"
+        print(f"        {dim(trimmed)}")
 
 
 # ── Find module name from spec ────────────────────────────────────────────────
@@ -618,12 +720,13 @@ def cmd_run(args):
                     continue
 
                 for step in steps:
-                    if step.get("scaffold"):
-                        handle_scaffold(step, workdir, results, args.verbose)
-                    elif step.get("file"):
+                    if step.get("file"):
                         handle_file(step, workdir, results, args.verbose)
                     elif step.get("run"):
                         handle_run(step, workdir, results, args.verbose, override_flags)
+                    elif step.get("ui_test"):
+                        handle_ui_test(step, workdir, results, args.verbose,
+                                       override_flags, args.qt_mcp, spec)
                     elif step.get("check_file"):
                         handle_check_file(step, workdir, results, args.verbose)
                     elif args.verbose:
@@ -746,11 +849,14 @@ def cmd_generate(args):
     # ── Sections ──────────────────────────────────────────────────────────
     step_number = 1
 
-    for section in spec.get("sections", []):
+    all_sections = spec.get("sections", [])
+    for si, section in enumerate(all_sections):
         sec_title = section.get("title", "")
         sec_phase = section.get("phase")
+        is_last = (si == len(all_sections) - 1)
+        show_sep = bool(sec_phase) and not is_last
 
-        if sec_phase and sec_phase != "basecamp":
+        if sec_phase:
             emit(f"## Step {step_number}: {sec_title}")
             step_number += 1
         else:
@@ -791,8 +897,9 @@ def cmd_generate(args):
                 emit("```")
                 emit()
 
-            emit("---")
-            emit()
+            if show_sep:
+                emit("---")
+                emit()
             continue
 
         # ── Basecamp section ──────────────────────────────────────────
@@ -810,14 +917,15 @@ def cmd_generate(args):
                     emit(f"- {t.get('name', '')}")
                 emit()
 
-            emit("---")
-            emit()
+            if show_sep:
+                emit("---")
+                emit()
             continue
 
         # ── Steps ─────────────────────────────────────────────────────
         steps = section.get("steps", [])
         if not steps:
-            if not sec_text:
+            if show_sep:
                 emit("---")
                 emit()
             continue
@@ -837,24 +945,8 @@ def cmd_generate(args):
 
             text = step.get("text", "")
             if text:
-                emit_block(text)
+                emit_block(expand_vars(text))
                 emit()
-
-            # scaffold action
-            scaffold = step.get("scaffold", {})
-            if scaffold:
-                code_block = scaffold.get("code_block", "")
-                if code_block:
-                    emit("```bash")
-                    emit_block(expand_vars(code_block))
-                    emit("```")
-                    emit()
-                else:
-                    template = expand_vars(scaffold.get("template", ""))
-                    emit("```bash")
-                    emit(f"nix flake init -t {template}")
-                    emit("```")
-                    emit()
 
             # file action
             file_spec = step.get("file", {})
@@ -889,7 +981,7 @@ def cmd_generate(args):
             # post_text
             post_text = step.get("post_text", "")
             if post_text:
-                emit_block(post_text)
+                emit_block(expand_vars(post_text))
                 emit()
 
             # extra_run (continuation command under the same heading)
@@ -906,11 +998,12 @@ def cmd_generate(args):
                 emit()
                 extra_post = extra.get("post_text", "")
                 if extra_post:
-                    emit_block(extra_post)
+                    emit_block(expand_vars(extra_post))
                     emit()
 
-        emit("---")
-        emit()
+        if show_sep:
+            emit("---")
+            emit()
 
     # Clean up triple+ blank lines to double
     output_text = "\n".join(lines).rstrip() + "\n"
