@@ -10,6 +10,7 @@ This document describes the YAML format used by `tools/tutorial_runner.py` to de
 ```yaml
 name: "My Tutorial"
 output: my-tutorial.md
+release: ""
 
 intro: |
   One-paragraph description of what this tutorial covers.
@@ -57,6 +58,7 @@ sections:
 | `what_you_learn` | no | list of strings | Bullet list prefixed with "**What you'll learn:**". |
 | `comparison` | no | string | Free-form markdown block rendered after the learning objectives (useful for comparison tables). |
 | `prerequisites` | no | list of strings | Rendered as a bullet list under a `## Prerequisites` heading. Each item can contain markdown (code blocks, links, etc.). |
+| `release` | no | string | Git tag applied to all `{release}` placeholders in GitHub URLs (e.g., `tutorial-v2`). See [Release tags](#release-tags). |
 | `build_overrides` | no | map | Nix `--override-input` flags for the runner. Keys are input names, values are relative paths to local repos. Only affects execution, not generation. |
 | `sections` | yes | list | The tutorial content. See below. |
 
@@ -256,16 +258,58 @@ A continuation command rendered under the same step heading (no separate `###`).
 
 ## Platform placeholders
 
-These placeholders are expanded by the runner at execution time:
+These placeholders are expanded at execution time by the runner and at generation time in rendered content:
 
 | Placeholder | Linux | macOS |
 |-------------|-------|-------|
 | `{ext}` | `so` | `dylib` |
 | `{shared_flags}` | `-shared -fPIC` | `-dynamiclib` |
 
-They only work in `run`, `check_file`, and `extra_run.run` fields. They are **not** expanded in `code_block`, `text`, `post_text`, or `file` content — those are rendered verbatim.
+Platform placeholders work in `run`, `check_file`, `extra_run.run`, and `file.content` fields. They are **not** expanded in `code_block`, `text`, or `post_text` — those are rendered verbatim.
 
 When a command uses platform placeholders, provide a `code_block` showing both platform variants for the markdown.
+
+## Release tags
+
+The `release` field lets you pin all GitHub URLs to a specific git tag. This avoids updating every URL individually when you want all `nix build 'github:logos-co/...'` commands to use the same release.
+
+Use the `{release}` placeholder in `run` commands, `code_block`, `scaffold.template`, `scaffold.code_block`, and `file.content`:
+
+```yaml
+release: "tutorial-v2"
+
+sections:
+  - title: "Set Up"
+    steps:
+      - scaffold:
+          template: "github:logos-co/logos-module-builder{release}#with-external-lib"
+      - run: "nix build 'github:logos-co/logos-module{release}#lm' --out-link ./lm"
+```
+
+When `release` is set to `"tutorial-v2"`, `{release}` expands to `/tutorial-v2`:
+
+```bash
+nix build 'github:logos-co/logos-module/tutorial-v2#lm' --out-link ./lm
+```
+
+When `release` is empty or omitted, `{release}` expands to nothing:
+
+```bash
+nix build 'github:logos-co/logos-module#lm' --out-link ./lm
+```
+
+The `--release` CLI flag overrides the YAML field:
+
+```bash
+# Use a specific tag (overrides whatever is in the YAML)
+python3 tools/tutorial_runner.py run spec.yaml --release tutorial-v3
+
+# Generate markdown with a tag
+python3 tools/tutorial_runner.py generate spec.yaml --release tutorial-v2
+
+# Clear the tag even if the YAML sets one
+python3 tools/tutorial_runner.py run spec.yaml --release ""
+```
 
 ## Phases
 

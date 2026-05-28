@@ -39,9 +39,15 @@ python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml
 
 # Generate the .md tutorial from the YAML spec
 python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml
+
+# Pin all GitHub URLs to a specific release tag
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
+python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
 ```
 
 The `--workdir` flag lets you point the runner at a directory of your choice — all files, builds, and artifacts end up there so you can inspect or re-use them. Without it, a temp directory is created and deleted after the run (use `--keep-workdir` to preserve it).
+
+The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/tutorial-v2#output`. Set it to `""` or omit it for latest.
 
 ## Example Modules
 

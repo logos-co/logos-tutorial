@@ -1,5 +1,6 @@
 name: "Tutorial: Wrapping a C Library as a Logos Module"
 output: tutorial-wrapping-c-library.md
+release: ""
 
 intro: |
   This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.dylib` on macOS) as a Logos module. By the end, you will have a module that compiles, loads, and responds to method calls via `logoscore`.
@@ -34,14 +35,14 @@ sections:
     steps:
       - title: "Create the project using the module builder template"
         scaffold:
-          template: "github:logos-co/logos-module-builder#with-external-lib"
+          template: "github:logos-co/logos-module-builder{release}#with-external-lib"
           code_block: |
             # For a module that wraps an external C library:
             mkdir logos-calc-module && cd logos-calc-module
-            nix flake init -t github:logos-co/logos-module-builder#with-external-lib
+            nix flake init -t github:logos-co/logos-module-builder{release}#with-external-lib
 
             # Or for a plain module (no external library):
-            # nix flake init -t github:logos-co/logos-module-builder
+            # nix flake init -t github:logos-co/logos-module-builder{release}
         post_text: |
           This generates the skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, etc.) pre-configured for the logos-module-builder. You then customize them for your specific library.
 
@@ -305,7 +306,7 @@ sections:
               description = "Calculator module - wraps libcalc C library for Logos";
 
               inputs = {
-                logos-module-builder.url = "github:logos-co/logos-module-builder";
+                logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
               };
 
               outputs = inputs@{ logos-module-builder, ... }:
@@ -561,7 +562,7 @@ sections:
       - title: "Build the `lm` tool"
         text: |
           The `lm` CLI inspects compiled module binaries. Build it from the `logos-module` repo:
-        run: "nix build 'github:logos-co/logos-module#lm' --out-link ./lm"
+        run: "nix build 'github:logos-co/logos-module{release}#lm' --out-link ./lm"
 
       - title: "View metadata"
         run: "./lm/bin/lm metadata result/lib/calc_module_plugin.{ext}"
@@ -674,13 +675,13 @@ sections:
     phase: logoscore
     steps:
       - title: "Build logoscore"
-        run: "nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos"
+        run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"
 
       - title: "Set up the modules directory"
         text: |
           `logoscore` expects modules in subdirectories, each with a `manifest.json`. Rather than copying files and writing the manifest manually, use the Nix derivation to create an LGX package and install it with the package manager:
         run: "nix build '.#lgx'"
-      - run: "nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm"
+      - run: "nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm"
       - run: "mkdir -p modules"
       - run: "./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx"
         post_text: |
@@ -769,7 +770,7 @@ sections:
       To install a portable package on another machine:
 
       ```bash
-      nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+      nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm
       ./pm/bin/lgpm --modules-dir ./modules install --file result-lgx-portable/*.lgx
       ```
 

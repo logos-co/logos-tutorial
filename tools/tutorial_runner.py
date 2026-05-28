@@ -128,12 +128,21 @@ class Results:
         return self.failed == 0
 
 
-# ── Platform Expansion ────────────────────────────────────────────────────────
+# ── Variable Expansion ────────────────────────────────────────────────────────
 
-def expand_platform(s):
-    """Replace {ext} and {shared_flags} with platform-appropriate values."""
+RELEASE_TAG = ""
+
+
+def set_release(tag):
+    global RELEASE_TAG
+    RELEASE_TAG = f"/{tag}" if tag else ""
+
+
+def expand_vars(s):
+    """Replace {ext}, {shared_flags}, and {release} with resolved values."""
     s = s.replace("{ext}", LIB_EXT)
     s = s.replace("{shared_flags}", SHARED_FLAGS)
+    s = s.replace("{release}", RELEASE_TAG)
     return s
 
 
@@ -194,7 +203,7 @@ def run_cmd(cmd, workdir, verbose=False, capture=False, timeout=None):
 
 def handle_scaffold(step, workdir, results, verbose):
     scaffold = step.get("scaffold", {})
-    template = scaffold.get("template", "")
+    template = expand_vars(scaffold.get("template", ""))
     if not template:
         return
     title = step.get("title", "scaffold from template")
@@ -211,8 +220,8 @@ def handle_file(step, workdir, results, verbose):
     path = file_spec.get("path", "")
     if not path:
         return
-    path = expand_platform(path)
-    content = file_spec.get("content", "")
+    path = expand_vars(path)
+    content = expand_vars(file_spec.get("content", ""))
     encoding = file_spec.get("encoding", "")
 
     full_path = os.path.join(workdir, path)
@@ -233,7 +242,7 @@ def handle_file(step, workdir, results, verbose):
 
 def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_contains=None):
     """Execute a single run command with optional output assertions."""
-    cmd = expand_platform(cmd)
+    cmd = expand_vars(cmd)
     cmd = inject_nix_overrides(cmd, override_flags)
     expect_contains = expect_contains or []
 
@@ -288,7 +297,7 @@ def handle_check_file(step, workdir, results, verbose):
     if not pattern:
         return
     title = step.get("title", f"check {pattern}")
-    pattern = expand_platform(pattern)
+    pattern = expand_vars(pattern)
     full_pattern = os.path.join(workdir, pattern)
     matches = glob.glob(full_pattern)
     if matches:
@@ -310,7 +319,7 @@ def handle_logoscore(section, workdir, results, verbose, override_flags,
     if setup_cmds:
         print("  -- Setup --")
         for cmd in setup_cmds:
-            cmd = expand_platform(cmd)
+            cmd = expand_vars(cmd)
             cmd = inject_nix_overrides(cmd, override_flags)
             rc, output = run_cmd(cmd, workdir, verbose, capture=verbose)
             if rc != 0:
@@ -520,6 +529,9 @@ def cmd_run(args):
     with open(spec_path) as f:
         spec = yaml.safe_load(f)
 
+    release = args.release if args.release is not None else spec.get("release", "")
+    set_release(release)
+
     phases = set(args.phase.split(",")) if args.phase else set(ALL_PHASES)
     fail_fast = not args.continue_on_fail
     results = Results(fail_fast=fail_fast)
@@ -548,6 +560,7 @@ def cmd_run(args):
     print(f"  spec     : {spec_path}")
     print(f"  workdir  : {workdir}")
     print(f"  platform : {platform.system()} (ext={LIB_EXT})")
+    print(f"  release  : {release or '(none)'}")
     print(f"  phases   : {','.join(sorted(phases))}")
     if override_flags:
         print(f"  overrides: {override_flags}")
@@ -667,6 +680,9 @@ def cmd_generate(args):
     with open(spec_path) as f:
         spec = yaml.safe_load(f)
 
+    release = args.release if args.release is not None else spec.get("release", "")
+    set_release(release)
+
     if args.output:
         output_path = os.path.abspath(args.output)
     else:
@@ -743,7 +759,7 @@ def cmd_generate(args):
 
         sec_text = section.get("text", "")
         if sec_text:
-            emit_block(sec_text)
+            emit_block(expand_vars(sec_text))
             emit()
 
         # ── Logoscore section ─────────────────────────────────────────
@@ -830,11 +846,11 @@ def cmd_generate(args):
                 code_block = scaffold.get("code_block", "")
                 if code_block:
                     emit("```bash")
-                    emit_block(code_block)
+                    emit_block(expand_vars(code_block))
                     emit("```")
                     emit()
                 else:
-                    template = scaffold.get("template", "")
+                    template = expand_vars(scaffold.get("template", ""))
                     emit("```bash")
                     emit(f"nix flake init -t {template}")
                     emit("```")
@@ -852,7 +868,7 @@ def cmd_generate(args):
                 else:
                     emit(f"```{lang}")
                     content = file_spec.get("content", "")
-                    emit_block(content)
+                    emit_block(expand_vars(content))
                     emit("```")
                 emit()
 
@@ -862,9 +878,9 @@ def cmd_generate(args):
                 code_block = step.get("code_block", "")
                 emit("```bash")
                 if code_block:
-                    emit_block(code_block)
+                    emit_block(expand_vars(code_block))
                 else:
-                    emit(run_cmd_str)
+                    emit(expand_vars(run_cmd_str))
                 emit("```")
                 emit()
 
@@ -883,9 +899,9 @@ def cmd_generate(args):
                 extra_cmd = extra.get("run", "")
                 emit("```bash")
                 if extra_code:
-                    emit_block(extra_code)
+                    emit_block(expand_vars(extra_code))
                 elif extra_cmd:
-                    emit(extra_cmd)
+                    emit(expand_vars(extra_cmd))
                 emit("```")
                 emit()
                 extra_post = extra.get("post_text", "")
@@ -937,12 +953,16 @@ def main():
                             help="Timeout for logoscore calls (default: 60)")
     run_parser.add_argument("--continue-on-fail", action="store_true",
                             help="Don't stop at the first failure (default: stop)")
+    run_parser.add_argument("--release", default=None,
+                            help="Git tag for GitHub URLs (overrides spec's 'release' field)")
 
     # ── generate ──────────────────────────────────────────────────────────
     gen_parser = subparsers.add_parser("generate", help="Generate markdown from a spec")
     gen_parser.add_argument("spec", help="Path to the YAML spec file")
     gen_parser.add_argument("-o", "--output", default=None,
                             help="Output file path (default: uses spec's 'output' field)")
+    gen_parser.add_argument("--release", default=None,
+                            help="Git tag for GitHub URLs (overrides spec's 'release' field)")
 
     args = parser.parse_args()
 
