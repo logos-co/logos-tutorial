@@ -10,12 +10,19 @@ Usage:
     tutorial_runner.py generate <spec.yaml> [-o output.md]
 
 Run options:
+    --output-dir <dir>    Run into <dir> and keep it (created if missing, never
+                          deleted). Chained tutorials write each project to
+                          <dir>/<project_name>/; standalone specs use <dir> directly.
     --keep-workdir        Don't delete the temp working directory on exit
     --workdir <path>      Use existing directory instead of creating a fresh one
+                          (standalone only; requires: chains are not run)
+    --report <path>       Write a two-column HTML report (rendered tutorial +
+                          the commands actually run and their output) to <path>
     --verbose             Print commands as they execute
     --basecamp-bin <path> Path to LogosBasecamp binary (for basecamp sections)
     --qt-mcp <path>       Path to logos-qt-mcp package (for basecamp/ui_test sections)
     --call-timeout <sec>  Timeout for logoscore calls (default: 60)
+    --continue-on-fail    Don't stop at the first failure (default: stop)
 
 Generate options:
     -o <path>             Output file (default: uses spec's 'output' field)
@@ -966,7 +973,29 @@ def cmd_run(args):
     if getattr(args, "report", None):
         _REPORT = ReportCollector()
 
-    if args.workdir:
+    output_dir = getattr(args, "output_dir", None)
+
+    if output_dir:
+        # --output-dir: run into a persistent directory the caller chooses,
+        # never deleted. For a chained tutorial it becomes the chain root and
+        # each project lands in its own subdir (output_dir/<project_name>/);
+        # standalone, the project is written directly into output_dir.
+        out = os.path.abspath(output_dir)
+        os.makedirs(out, exist_ok=True)
+        if requires:
+            project_name = spec.get("project_name")
+            if not project_name:
+                print(f"ERROR: spec with requires: must also have project_name", file=sys.stderr)
+                sys.exit(2)
+            root_dir = out
+            created_root = True
+            workdir = os.path.join(root_dir, project_name)
+            os.makedirs(workdir, exist_ok=True)
+        else:
+            root_dir = None
+            created_root = False
+            workdir = out
+    elif args.workdir:
         workdir = os.path.abspath(args.workdir)
         if not os.path.isdir(workdir):
             print(f"ERROR: --workdir path does not exist: {workdir}", file=sys.stderr)
@@ -990,7 +1019,8 @@ def cmd_run(args):
         created_root = False
 
     def cleanup():
-        if not args.keep_workdir:
+        # --output-dir is an explicit, caller-owned location: never auto-delete.
+        if not args.keep_workdir and not output_dir:
             target = root_dir if created_root else workdir
             if target:
                 shutil.rmtree(target, ignore_errors=True)
@@ -1049,7 +1079,9 @@ def cmd_run(args):
     except StopEarly:
         pass
 
-    if args.keep_workdir or args.workdir:
+    if output_dir:
+        print(f"  output : {root_dir or workdir}")
+    elif args.keep_workdir or args.workdir:
         print(f"  workdir: {root_dir or workdir}")
 
     ok = results.summary()
@@ -1715,6 +1747,10 @@ def main():
                             help="Don't delete the temp working directory on exit")
     run_parser.add_argument("--workdir", default=None,
                             help="Use existing directory instead of creating a fresh one")
+    run_parser.add_argument("--output-dir", default=None, metavar="DIR",
+                            help="Run into DIR and keep the result (never deleted). "
+                                 "For chained tutorials DIR becomes the chain root and "
+                                 "each project lands in DIR/<project_name>/. Created if missing.")
     run_parser.add_argument("--verbose", action="store_true",
                             help="Print commands as they execute")
     run_parser.add_argument("--basecamp-bin", default="",

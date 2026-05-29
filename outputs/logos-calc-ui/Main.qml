@@ -9,6 +9,7 @@ Item {
     property string errorText: ""
     property string versionFromEvent: ""
 
+    // ── Event subscription ────────────────────────────────────
     // Subscribe to "versionReady" events pushed from calc_module.
     Component.onCompleted: {
         if (typeof logos !== "undefined" && logos.onModuleEvent)

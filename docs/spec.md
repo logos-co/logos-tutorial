@@ -348,21 +348,22 @@ python3 tools/tutorial_runner.py run spec.yaml --release ""
 
 ## Runner behavior
 
-- Creates a fresh temp directory (or uses `--workdir`) — all files, builds, and commands happen there
+- Creates a fresh temp directory (or uses `--output-dir` / `--workdir`) — all files, builds, and commands happen there
 - Walks sections and steps in order
 - Executes `file`, `run`, `check_file`, `ui_test` actions
 - Tracks pass/fail/skip counts
 - **Stops on first failure** by default (use `--continue-on-fail` to override)
-- Prints a summary report at the end
-- By default the temp directory is **deleted** when the run finishes
+- Prints a summary report at the end (and an HTML report with `--report <path>`)
+- By default the temp directory is **deleted** when the run finishes (use `--output-dir` or `--keep-workdir` to keep it)
 
 ### Working directory
 
-The runner needs a directory to work in. There are three modes:
+The runner needs a directory to work in. There are four modes:
 
 1. **Default (temp dir, auto-deleted):** A fresh `/tmp/tutorial-test-XXXXX/` is created and removed after the run.
 2. **`--keep-workdir`:** Same temp dir, but it's kept after the run so you can inspect the results (built artifacts, installed modules, etc.).
-3. **`--workdir <path>`:** Use your own directory. It is never deleted. Useful for re-running specific phases against a previous build or for debugging.
+3. **`--output-dir <dir>`:** Run into `<dir>` and **keep it** — created if missing, never auto-deleted. This is the mode to use when you want the finished tutorial output (built modules, `.lgx` packages, `result/` symlinks) in a known location. For a chained tutorial (`requires:`) `<dir>` becomes the chain root and each project lands in `<dir>/<project_name>/`; for a standalone spec the project is written directly into `<dir>`. The path is printed as `output : <dir>` at the end of the run.
+4. **`--workdir <path>`:** Use an **existing** directory. It is never created for you, and it runs the spec **standalone** — `requires:` prerequisite chains are *not* run in this mode (the directory is used as the single project's workdir). Useful for re-running a spec against a previous build or for debugging. Note: unless `--keep-workdir` is also given, the directory is deleted on exit. Prefer `--output-dir` when you want a persistent, chain-aware output location.
 
 The workdir path is printed at the top of every run:
 
@@ -417,6 +418,26 @@ The graph is walked depth-first in post-order, so a prerequisite always runs bef
 
 When running standalone (no `requires:`), `project_name` is ignored and the runner behaves as before.
 
+### HTML execution report (`--report`)
+
+`run --report <path>` writes a self-contained HTML report next to (or instead of) the console output. The report has **two columns per step**:
+
+- **Left:** the step's rendered tutorial markdown — identical to what `generate` produces, so the report shows exactly what the reader sees.
+- **Right:** the command(s) actually executed for that step and their captured output, each with a pass/fail badge and exit code.
+
+It records every executed action type:
+
+| Step type | Recorded on the right |
+|-----------|-----------------------|
+| `file`    | the path written and a pass/fail marker (contents already shown on the left) |
+| `run` / `extra_run` | the expanded command, exit code, and combined stdout/stderr (both the command and its `(verify)` continuation appear) |
+| `check_file` | the glob checked and which file matched |
+| `ui_test` | the launch command, the list of UI test actions, and the framework output (plus the app log tail on failure) |
+
+When a chain runs (`requires:`), every tutorial in the chain is included; a dropdown at the top switches between them. Markdown is rendered client-side via [marked.js](https://marked.js.org/) loaded from a CDN, so viewing the report needs network access on first open.
+
+Pair `--report` with `--continue-on-fail` so the report captures the full run rather than stopping at the first failure. The CI workflow ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs with `--report` and publishes the result to GitHub Pages, linked from a PR comment.
+
 ## Generator behavior
 
 - Walks the same YAML structure
@@ -445,20 +466,23 @@ repos/logos-tutorial/
 ## Usage
 
 ```bash
-# Run a tutorial (all phases)
+# Run a tutorial (temp dir, auto-deleted)
 python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --verbose
 
-# Run specific phases
-python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --phase scaffold,files,build
-
-# Run into a specific directory (kept after run, useful for inspecting results)
-python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --workdir /tmp/my-tutorial-test --verbose
+# Run into a persistent output directory (created if missing, never deleted).
+# For a chained tutorial each part lands in <dir>/<project_name>/.
+python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml \
+  --output-dir ./outputs --continue-on-fail
 
 # Keep the auto-generated temp directory for debugging
 python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --keep-workdir --verbose
 
-# Re-run just the logoscore phase against a previous build
-python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --workdir /tmp/my-tutorial-test --phase logoscore --verbose
+# Re-run a spec standalone against an existing directory
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --workdir /tmp/my-tutorial-test --verbose
+
+# Write a two-column HTML report (rendered tutorial + commands run and their output)
+python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml \
+  --report ./tutorial-report.html --continue-on-fail
 
 # Generate markdown
 python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml
