@@ -10,5 +10,9 @@
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
+      tests = {
+        dir = ./tests;
+        mockCLibs = [ "calc" ];
+      };
     };
 }
