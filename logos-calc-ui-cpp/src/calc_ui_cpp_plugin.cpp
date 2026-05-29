@@ -8,7 +8,9 @@ CalcUiCppPlugin::~CalcUiCppPlugin() { delete m_logos; }
 void CalcUiCppPlugin::initLogos(LogosAPI* api)
 {
     if (m_logos) return;
-    m_logosAPI = api;
+    // Assign to the inherited `logosAPI` member from PluginInterface — the Logos
+    // host reads it directly to dispatch calls; a separate member won't be seen.
+    logosAPI = api;
     m_logos = new LogosModules(api);
     // Register this object as the Remote Objects source so the QML replica
     // can see its properties and call its slots.

@@ -42,7 +42,6 @@ signals:
     void eventResponse(const QString& eventName, const QVariantList& args);
 
 private:
-    LogosAPI* m_logosAPI = nullptr;
     LogosModules* m_logos = nullptr;
 };
 

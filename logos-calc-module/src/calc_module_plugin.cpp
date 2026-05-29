@@ -15,7 +15,10 @@ CalcModulePlugin::~CalcModulePlugin()
 
 void CalcModulePlugin::initLogos(LogosAPI* api)
 {
-    // IMPORTANT: Use the global `logosAPI` variable from liblogos, NOT a class member.
+    // IMPORTANT: Assign to the inherited `logosAPI` member, NOT your own class member.
+    // `logosAPI` is a public member variable of the `PluginInterface` base class
+    // (declared in the SDK's core/interface.h); the Logos host reads it directly to
+    // dispatch calls. Storing the pointer in a separate `m_logosAPI` member will NOT work.
     logosAPI = api;
     qDebug() << "CalcModulePlugin: LogosAPI initialized";
 }

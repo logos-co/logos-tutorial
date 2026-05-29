@@ -481,7 +481,7 @@ signals:
 - `initLogos` must be `Q_INVOKABLE` but **not** `override` — the base class `PluginInterface` does not declare it as virtual; the Logos host calls it reflectively via `QMetaObject::invokeMethod`
 - `eventResponse` signal is required for event forwarding between modules. Emit it to push data to subscribers (e.g., QML UIs listening via `logos.onModuleEvent()`)
 - `name()` must return the same string as the `name` field in `metadata.json`
-- **No `m_logosAPI` member variable** — the `LogosAPI`\* pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
+- **No `m_logosAPI` member variable** — store the `LogosAPI`\* pointer in the inherited `logosAPI` member, a public member variable of the `PluginInterface` base class (declared in the SDK's `core/interface.h`), not in your own class member. The Logos host reads this inherited member directly to dispatch inter-module calls. See the `initLogos` implementation below.
 
 ### 2.6 `src/calc_module_plugin.cpp` — Plugin Implementation
 
@@ -507,9 +507,10 @@ CalcModulePlugin::~CalcModulePlugin()
 
 void CalcModulePlugin::initLogos(LogosAPI* api)
 {
-    // IMPORTANT: Use the global `logosAPI` variable from liblogos, NOT a class member.
-    // `logosAPI` is defined in the Logos SDK headers and is used by the API
-    // internally. Storing the pointer in a local `m_logosAPI` member will NOT work.
+    // IMPORTANT: Assign to the inherited `logosAPI` member, NOT your own class member.
+    // `logosAPI` is a public member variable of the `PluginInterface` base class
+    // (declared in the SDK's core/interface.h); the Logos host reads it directly to
+    // dispatch calls. Storing the pointer in a separate `m_logosAPI` member will NOT work.
     logosAPI = api;
     qDebug() << "CalcModulePlugin: LogosAPI initialized";
 }
@@ -1085,10 +1086,10 @@ Cannot load library calc_module_plugin.so: libcalc.so: cannot open shared object
 
 ### `initLogos` stores API pointer in wrong variable
 
-If inter-module calls or API features silently fail, check that `initLogos` assigns to the **global** `logosAPI` variable (defined in the Logos SDK / liblogos), not to a class member like `m_logosAPI`:
+If inter-module calls or API features silently fail, check that `initLogos` assigns to the inherited `logosAPI` member — a public member variable of the `PluginInterface` base class (declared in the SDK's `core/interface.h`) — not to a class member like `m_logosAPI`. The Logos host reads this inherited member directly to dispatch inter-module calls:
 
 ```cpp
-// CORRECT — uses the global variable from liblogos
+// CORRECT — assigns to the inherited `logosAPI` member from PluginInterface
 void MyPlugin::initLogos(LogosAPI* api)
 {
     logosAPI = api;
