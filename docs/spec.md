@@ -438,6 +438,15 @@ When a chain runs (`requires:`), every tutorial in the chain is included; a drop
 
 Pair `--report` with `--continue-on-fail` so the report captures the full run rather than stopping at the first failure. The CI workflow ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs with `--report` and publishes the result to GitHub Pages, linked from a PR comment.
 
+### Live TUI (`--tui` / `--iterative`)
+
+`run --tui` shows the same two-column view live in the terminal instead of (or in addition to) writing an HTML file. The left pane renders the current step's tutorial markdown; the right pane shows the command being executed and its output, updating as the run proceeds. Execution goes through the exact same handlers as a normal run, so behaviour is identical — only the presentation differs.
+
+- **Auto mode (default):** steps execute back-to-back; failed steps pause briefly so they're readable.
+- **`--iterative`:** the runner waits for a keypress before executing each step — **down arrow**, **right arrow**, or **space** to advance; **`q`** to quit. (Using `--iterative` without `--tui` is an error.)
+
+`--tui` requires an interactive terminal (a TTY) and the [`rich`](https://github.com/Textualize/rich) package. `rich` is an **optional** dependency used only for the TUI; if it's not installed the runner prints an install hint and exits. All other functionality needs only `pyyaml`.
+
 ## Generator behavior
 
 - Walks the same YAML structure

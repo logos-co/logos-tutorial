@@ -112,7 +112,7 @@ echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3
 
 The `view` field tells the host which QML file to load for the UI. The `dependencies` field tells the host to load `calc_module` before showing your UI.
 
-> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
+> **Naming convention:** Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., the input must be called `calc_module`. The URL can point anywhere (a local `path:` or a remote `github:` repo); the attribute name is how the builder resolves dependencies.
 
 ---
 
@@ -330,11 +330,10 @@ The template already has everything wired up. Update the description and add `ca
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
 
-    # Option A: point to a remote repo (for CI or when calc_module is published)
-    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
-
-    # Option B: point to your local checkout (for local development)
-    # calc_module.url = "path:../logos-calc-module";
+    # Points at your local calc_module checkout. This is a placeholder —
+    # you lock it to your actual path in the next step with
+    # `nix flake update --override-input` (see "Test with nix run" below).
+    calc_module.url = "path:/path/to/your/calc_module";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -348,16 +347,14 @@ The template already has everything wired up. Update the description and add `ca
 
 The input attribute name (`calc_module`) must match the dependency name in `metadata.json`.
 
-The `calc_module.url` can be either:
+The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited by hand — Nix won't let a `flake.nix` input use a relative path like `../logos-calc-module` (the flake is evaluated from a sandboxed copy, so `..` escapes it). Instead you point it at your real checkout **once** via `--override-input` in the next step, which records the resolved absolute path in `flake.lock`. After that, plain `nix run` uses the locked path with no override needed.
 
-- **`github:`** — fetches from a remote GitHub repo. Use this for CI or when `calc_module` has been published.
-- **`path:`** — points to a local directory on disk. Use this during development when both repos live side by side (e.g., `path:../logos-calc-module`).
+- **`path:`** (used here) — a local directory on disk. Best for developing `calc_module` and its UI side by side, no network.
+- **`github:`** — fetches `calc_module` from a remote repo instead (for CI, or once it's published to its own repo), e.g. `calc_module.url = "github:your-org/your-calc-module";`.
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library) for build instructions.
 
 `mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
-
-> **Tip:** Even if `flake.nix` uses a `github:` URL, you can override it at build time with `--override-input calc_module path:../logos-calc-module` to use your local checkout without editing `flake.nix`. This is covered in [Step 5.2](#52-full-functionality-with-modules).
 
 ---
 
@@ -370,7 +367,7 @@ git add -A
 ```
 
 ```bash
-nix flake update
+nix flake update --override-input calc_module path:../logos-calc-module
 ```
 
 ```bash
@@ -420,7 +417,7 @@ The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), which
 
 ### 6.2 Option A: Use `--override-input` (quick, no flake.nix edits)
 
-If your `flake.nix` points to a `github:` URL, you can override it at build time to use your local checkout:
+You can point `calc_module` at your local checkout for a single command, without touching `flake.nix` or its lock — handy for a one-off run or when the input is set to a `github:` URL:
 
 ```bash
 nix run . --override-input calc_module path:../logos-calc-module
@@ -428,30 +425,26 @@ nix run . --override-input calc_module path:../logos-calc-module
 
 This tells nix to resolve the `calc_module` flake input from your local directory instead of from the remote URL. Any changes you've made to `calc_module` locally (including the built `.so`/`.dylib` in `lib/`) are picked up immediately — no need to push to GitHub first.
 
-### 6.3 Option B: Set `path:` in `flake.nix` (persistent local development)
+### 6.3 Option B: Lock `path:` once, then run normally
 
-If you're iterating on both repos side by side, you can point the flake input directly to your local `calc_module` checkout. In `flake.nix`, change:
-
-```nix
-# From remote:
-calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
-# To local:
-calc_module.url = "path:../logos-calc-module";
-```
-
-Then run normally without overrides:
+If you're iterating on both repos side by side, lock `calc_module` to your local checkout once. You can't write `path:../logos-calc-module` directly into `flake.nix` — Nix evaluates the flake from a sandboxed copy, so a relative `..` escapes it and is rejected. Instead, lock it with an `--override-input` (which resolves to an absolute path and stores it in `flake.lock`):
 
 ```bash
-nix flake update   # re-lock with the local path
+nix flake update --override-input calc_module path:../logos-calc-module
 git add flake.lock
+```
+
+After that, plain `nix run .` uses the locked local path — no override needed on each command:
+
+```bash
 nix run .
 ```
 
-This is convenient when you always want to build against the local copy. Switch back to `github:` when you're ready to pin to a published version.
+Re-run the `nix flake update --override-input …` line whenever you want to re-point or refresh the lock. Switch to a `github:` URL in `flake.nix` when you're ready to pin to a published version.
 
 ### 6.4 Option C: Pin to the remote repo
 
-If `calc_module` has been pushed to the remote repository (with the `.so`/`.dylib` committed in `lib/`), the `github:` URL in `flake.nix` already points to it. A plain `nix run .` fetches and builds `calc_module` from the remote:
+Once `calc_module` is published to its own repo (with the `.so`/`.dylib` committed in `lib/`), point the input at it with a `github:` URL instead of the local `path:` — e.g. `calc_module.url = "github:your-org/your-calc-module";`. Then a plain `nix run .` fetches and builds `calc_module` from the remote:
 
 ```bash
 nix run .
@@ -566,8 +559,11 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 > For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
 ```bash
-nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable
+nix build '.#lgx' --out-link result-lgx
+nix build '.#lgx-portable' --out-link result-lgx-portable
 ```
+
+> **Re-locking note:** earlier steps rebuilt `calc_module` and dropped `result-lgx` links inside its directory, so its on-disk contents changed since you first locked it. Because `calc_module` is a local `path:` input, re-run `nix flake update --override-input calc_module path:../logos-calc-module` before building so the lock matches the current contents (a stricter Nix otherwise rejects the stale hash).
 
 ### 8.2 Build and run logos-basecamp
 
