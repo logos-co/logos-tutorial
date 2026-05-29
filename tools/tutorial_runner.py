@@ -18,6 +18,8 @@ Run options:
                           (standalone only; requires: chains are not run)
     --report <path>       Write a two-column HTML report (rendered tutorial +
                           the commands actually run and their output) to <path>
+    --tui                 Run in an interactive two-column TUI (needs 'rich')
+    --iterative           With --tui, advance one step per keypress (arrow/space)
     --verbose             Print commands as they execute
     --basecamp-bin <path> Path to LogosBasecamp binary (for basecamp sections)
     --qt-mcp <path>       Path to logos-qt-mcp package (for basecamp/ui_test sections)
@@ -876,6 +878,25 @@ def find_module_name(spec):
 # RUN COMMAND
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _dispatch_step(step, workdir, results, args, override_flags, spec):
+    """Execute one step via the appropriate handler. Returns True if the step
+    was an executable action (file/run/ui_test/check_file), False if it was
+    prose-only. Shared by the normal run loop and the TUI so execution logic
+    never diverges between them."""
+    if step.get("file"):
+        handle_file(step, workdir, results, args.verbose)
+    elif step.get("run"):
+        handle_run(step, workdir, results, args.verbose, override_flags)
+    elif step.get("ui_test"):
+        handle_ui_test(step, workdir, results, args.verbose,
+                       override_flags, args.qt_mcp, spec)
+    elif step.get("check_file"):
+        handle_check_file(step, workdir, results, args.verbose)
+    else:
+        return False
+    return True
+
+
 def run_single_spec(spec, spec_path, workdir, args, results):
     """Run a single tutorial spec in the given workdir. May raise StopEarly."""
     spec_dir = os.path.dirname(spec_path)
@@ -905,6 +926,12 @@ def run_single_spec(spec, spec_path, workdir, args, results):
             "platform": f"{platform.system()} (ext={LIB_EXT})",
             "release": release or "(none)",
         })
+
+    # In TUI mode, hand off to the rich-driven two-column view. It walks the
+    # same spec and uses the same _dispatch_step path, so execution is identical.
+    if getattr(args, "tui", False):
+        run_tui(_REPORT, spec, spec_path, workdir, args, results, override_flags)
+        return
 
     sections = spec.get("sections", [])
 
@@ -942,16 +969,9 @@ def run_single_spec(spec, spec_path, workdir, args, results):
             continue
 
         for step in steps:
-            if step.get("file"):
-                handle_file(step, workdir, results, args.verbose)
-            elif step.get("run"):
-                handle_run(step, workdir, results, args.verbose, override_flags)
-            elif step.get("ui_test"):
-                handle_ui_test(step, workdir, results, args.verbose,
-                               override_flags, args.qt_mcp, spec)
-            elif step.get("check_file"):
-                handle_check_file(step, workdir, results, args.verbose)
-            elif args.verbose:
+            if _dispatch_step(step, workdir, results, args, override_flags, spec):
+                continue
+            if args.verbose:
                 title = step.get("title", "untitled")
                 print(f"  {dim(f'(prose-only step: {title})')}")
 
@@ -969,8 +989,27 @@ def cmd_run(args):
     fail_fast = not args.continue_on_fail
     results = Results(fail_fast=fail_fast)
 
+    tui = getattr(args, "tui", False)
+
+    if getattr(args, "iterative", False) and not tui:
+        print("ERROR: --iterative only applies with --tui", file=sys.stderr)
+        sys.exit(2)
+    if tui:
+        try:
+            import rich  # noqa: F401
+        except ImportError:
+            print("ERROR: --tui requires the 'rich' package. Install it with:\n"
+                  "  pip3 install rich", file=sys.stderr)
+            sys.exit(2)
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            print("ERROR: --tui requires an interactive terminal (a TTY).",
+                  file=sys.stderr)
+            sys.exit(2)
+
     global _REPORT
-    if getattr(args, "report", None):
+    # The TUI reads per-step execution records from the collector, so it needs
+    # one active even without --report.
+    if getattr(args, "report", None) or tui:
         _REPORT = ReportCollector()
 
     output_dir = getattr(args, "output_dir", None)
@@ -1265,6 +1304,291 @@ def build_report_model(collector):
 
         tutorials.append({"meta": entry["meta"], "rows": rows})
     return tutorials
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TUI (run --tui)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _read_single_key():
+    """Block for one keypress, return a normalized name: 'next', 'quit', or ''.
+    Arrow keys / space / enter advance; q / Ctrl-C quit."""
+    import termios, tty
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":               # escape sequence (arrow keys)
+            seq = sys.stdin.read(2)
+            # Down (\x1b[B) / Right (\x1b[C) advance; others ignored
+            if seq in ("[B", "[C"):
+                return "next"
+            return ""
+        if ch in ("q", "Q", "\x03"):   # q or Ctrl-C
+            return "quit"
+        if ch in (" ", "\r", "\n", "j", "l"):
+            return "next"
+        return ""
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _iter_tui_units(spec):
+    """Yield render units for the TUI in execution order. Each unit is a dict:
+      {kind: 'preamble'|'section'|'step', md: <markdown>, step: <step or None>}
+    Mirrors build_report_model's walk so the left pane matches the tutorial."""
+    units = []
+
+    # Preamble (title + intro + objectives + prerequisites)
+    pre = [f"# {spec.get('name', 'Tutorial')}", ""]
+    if spec.get("intro"):
+        pre += [spec["intro"].rstrip("\n"), ""]
+    if spec.get("what_you_build"):
+        pre += [f"**What you'll build:** {spec['what_you_build']}", ""]
+    if spec.get("prerequisites"):
+        pre += ["## Prerequisites", ""] + [f"- {p}" for p in spec["prerequisites"]]
+    units.append({"kind": "preamble", "md": "\n".join(pre).strip(), "step": None})
+
+    step_number = 1
+    for section in spec.get("sections", []):
+        is_step = section.get("step", False)
+        units.append({
+            "kind": "section",
+            "md": _section_preamble_markdown(section, step_number, is_step),
+            "step": None,
+        })
+        if is_step:
+            step_number += 1
+        sec_num = (step_number - 1) if is_step else None
+        sub_step = 1
+        for step in section.get("steps", []):
+            md, sub_step = _step_to_markdown(step, sec_num, sub_step)
+            if not md:
+                md = "*(verification step)*"
+            units.append({"kind": "step", "md": md, "step": step})
+    return units
+
+
+def _pending_commands(step):
+    """What this step is *about* to execute, derived from the step dict (the
+    collector only has records *after* a handler runs). Returns a list of
+    (kind, command_text) so the right pane can show the actual command while
+    it's still running, instead of a bare 'running…'."""
+    cmds = []
+    if step.get("file"):
+        path = expand_vars(step["file"].get("path", ""))
+        cmds.append(("file", f"write {path}"))
+    if step.get("run"):
+        cmds.append(("run", expand_vars(step["run"])))
+        extra = step.get("extra_run", {})
+        if extra.get("run"):
+            cmds.append(("run", expand_vars(extra["run"])))
+    if step.get("check_file"):
+        cmds.append(("check_file", f"check file: {expand_vars(step['check_file'])}"))
+    ui = step.get("ui_test", {})
+    if ui:
+        if ui.get("launch"):
+            cmds.append(("ui_test", expand_vars(ui["launch"])))
+        elif ui.get("build"):
+            cmds.append(("ui_test", expand_vars(ui["build"])))
+        n = len(ui.get("tests", []))
+        if n:
+            cmds.append(("ui_test", f"# then run {n} UI test action(s)"))
+    return cmds
+
+
+def _running_renderable(step):
+    """Right-pane content shown *while* a step executes: a clear 'Running'
+    banner followed by the exact command(s) about to run."""
+    from rich.console import Group
+    from rich.text import Text
+    from rich.syntax import Syntax
+
+    parts = [Text("running…", style="bold yellow")]
+    pending = _pending_commands(step)
+    if pending:
+        for kind, cmd in pending:
+            label = Text()
+            label.append(" RUN ", style="bold black on yellow")
+            label.append(f"  {kind}", style="dim")
+            parts.append(label)
+            parts.append(Syntax(cmd, "bash", theme="ansi_dark",
+                                word_wrap=True, background_color="default"))
+    else:
+        parts.append(Text("(preparing…)", style="dim italic"))
+    return Group(*parts)
+
+
+def _execs_to_renderable(execs, running_label=None):
+    """Build a rich renderable for the right pane from exec records."""
+    from rich.console import Group
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.syntax import Syntax
+
+    parts = []
+    if running_label is not None:
+        parts.append(Text(running_label, style="bold yellow"))
+    for e in execs:
+        status = e.get("status", "info")
+        color = {"pass": "green", "fail": "red"}.get(status, "yellow")
+        head = Text()
+        head.append(f" {status.upper()} ", style=f"bold white on {color}")
+        head.append(f"  {e.get('kind', '')}", style="dim")
+        if e.get("exit_code") is not None:
+            head.append(f"  exit {e['exit_code']}", style="dim")
+        parts.append(head)
+        if e.get("note"):
+            parts.append(Text(e["note"], style="italic dim"))
+        if e.get("cmd"):
+            parts.append(Syntax(e["cmd"], "bash", theme="ansi_dark",
+                                word_wrap=True, background_color="default"))
+        out = (e.get("output") or "").strip()
+        if out:
+            # Show a tail so long build logs don't blow past the pane.
+            lines = out.splitlines()
+            if len(lines) > 30:
+                out = "...\n" + "\n".join(lines[-30:])
+            parts.append(Text(out, style="grey70"))
+        parts.append(Text(""))
+    if not parts:
+        parts.append(Text("(no commands for this step)", style="dim italic"))
+    return Group(*parts)
+
+
+def run_tui(collector, spec, spec_path, workdir, args, results, override_flags):
+    """Drive execution of one spec inside a two-column rich TUI.
+
+    Left pane: rendered markdown for the current unit. Right pane: the commands
+    executed for the current step and their captured output. Execution goes
+    through the same _dispatch_step path as a normal run; handler stdout/stderr
+    is captured to a temp file so it doesn't corrupt the display."""
+    from rich.console import Console, Group
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.text import Text
+
+    console = Console()
+    units = _iter_tui_units(spec)
+
+    spec_rel = os.path.relpath(spec_path) if spec_path else "(spec)"
+    tutorial_name = spec.get("name", "Tutorial")
+
+    def make_layout(unit, right_renderable, footer, right_title="Executed"):
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=1),
+            Layout(name="body", ratio=1),
+            Layout(name="footer", size=1),
+        )
+        header = Text()
+        header.append(" spec: ", style="bold cyan")
+        header.append(spec_rel, style="bold white")
+        header.append(f"    {tutorial_name}", style="dim")
+        layout["header"].update(header)
+        layout["body"].split_row(
+            Layout(Panel(Markdown(unit["md"] or ""), title="Tutorial",
+                         border_style="cyan"), name="left"),
+            Layout(Panel(right_renderable, title=right_title,
+                         border_style="magenta"), name="right"),
+        )
+        layout["footer"].update(Text(footer, style="dim"))
+        return layout
+
+    iterative = getattr(args, "iterative", False)
+    keyhint = "[↓/→/space] next   [q] quit" if iterative else "[q] quit   (auto-advancing)"
+    quit_requested = {"v": False}
+
+    with Live(console=console, screen=True, auto_refresh=False, transient=False) as live:
+        for i, unit in enumerate(units):
+            title = unit.get("md", "").splitlines()[0] if unit.get("md") else ""
+            footer = f"{i + 1}/{len(units)}   {keyhint}"
+
+            if unit["kind"] != "step" or unit["step"] is None:
+                # Prose-only: show it, then advance (wait for key if iterative).
+                live.update(make_layout(unit, Text("—", style="dim"), footer), refresh=True)
+                if iterative and not _wait_or_quit(live, quit_requested):
+                    break
+                continue
+
+            step = unit["step"]
+            # Show the step with the actual command(s) about to run before
+            # executing, so it's clear *what* is running (not just "running…").
+            live.update(make_layout(unit, _running_renderable(step),
+                                    footer, right_title="Running"), refresh=True)
+
+            # Execute via the shared dispatch path, capturing handler output so
+            # prints/subprocess noise don't corrupt the Live display.
+            try:
+                with _capture_fds():
+                    _dispatch_step(step, workdir, results, args, override_flags, spec)
+            except StopEarly:
+                # Surface the failure in the pane, then stop.
+                live.update(make_layout(unit, _execs_to_renderable(
+                    collector.execs_for(step)), footer + "  — stopped (fail-fast)"),
+                    refresh=True)
+                if iterative:
+                    _wait_or_quit(live, quit_requested)
+                raise
+
+            live.update(make_layout(unit, _execs_to_renderable(
+                collector.execs_for(step)), footer), refresh=True)
+
+            if iterative:
+                if not _wait_or_quit(live, quit_requested):
+                    break
+            else:
+                # Brief pause so fast steps are perceptible; longer if it failed.
+                failed = any(e.get("status") == "fail" for e in collector.execs_for(step))
+                time.sleep(1.2 if failed else 0.35)
+
+        if not quit_requested["v"]:
+            # Final summary screen.
+            s = results
+            summary = Text()
+            summary.append(f"\n  {s.passed} passed", style="bold green")
+            if s.failed:
+                summary.append(f"   {s.failed} failed", style="bold red")
+            if s.skipped:
+                summary.append(f"   {s.skipped} skipped", style="bold yellow")
+            summary.append("\n\n  Press any key to exit.", style="dim")
+            live.update(Panel(summary, title="Done", border_style="cyan"), refresh=True)
+            _read_single_key()
+
+
+def _wait_or_quit(live, quit_requested):
+    """Block for a keypress in iterative mode. Returns False if the user quit."""
+    key = _read_single_key()
+    if key == "quit":
+        quit_requested["v"] = True
+        return False
+    return True
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def _capture_fds():
+    """Redirect stdout+stderr (at the fd level, so subprocesses are caught too)
+    to a temp file for the duration of the block. Keeps handler/subprocess
+    output from corrupting the rich Live display."""
+    import tempfile as _tf
+    saved_out, saved_err = os.dup(1), os.dup(2)
+    tmp = _tf.TemporaryFile(mode="w+b")
+    try:
+        os.dup2(tmp.fileno(), 1)
+        os.dup2(tmp.fileno(), 2)
+        yield tmp
+    finally:
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(saved_out)
+        os.close(saved_err)
+        tmp.close()
 
 
 def write_html_report(collector, output_path, results):
@@ -1766,6 +2090,14 @@ def main():
     run_parser.add_argument("--report", default=None, metavar="PATH",
                             help="Write a two-column HTML report (rendered tutorial + "
                                  "the commands actually run and their output) to PATH")
+    run_parser.add_argument("--tui", action="store_true",
+                            help="Run in an interactive two-column TUI (left: rendered "
+                                 "tutorial, right: the command running and its output). "
+                                 "Requires the 'rich' package.")
+    run_parser.add_argument("--iterative", action="store_true",
+                            help="With --tui, wait for a keypress (down/right arrow or "
+                                 "space) before executing each step instead of "
+                                 "auto-advancing")
 
     # ── generate ──────────────────────────────────────────────────────────
     gen_parser = subparsers.add_parser("generate", help="Generate markdown from a spec")

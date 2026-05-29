@@ -72,6 +72,20 @@ python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test
 
 It covers every step type (file writes, shell commands, `check_file`, and headless `ui_test` runs). Pair it with `--continue-on-fail` so the report captures the whole run instead of stopping at the first failure. CI publishes this report for every run — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
+### Watching it live in a terminal (`--tui`)
+
+`--tui` runs the same two-column view live in your terminal instead of writing a file: the left pane shows the rendered tutorial for the current step, the right pane shows the command being run and its output, updating as the run proceeds.
+
+```bash
+# Auto-advancing: steps run one after another
+python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml --tui
+
+# Iterative: press the down/right arrow (or space) to execute each next step
+python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml --tui --iterative
+```
+
+Press `q` to quit at any time. `--tui` needs an interactive terminal and the [`rich`](https://github.com/Textualize/rich) package (`pip3 install rich`) — it's the only optional dependency; everything else needs just `pyyaml`.
+
 The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/tutorial-v2#output`. Set it to `""` or omit it for latest.
 
 ## Example Modules
