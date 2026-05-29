@@ -507,16 +507,25 @@ import socket
 import time
 
 
-def _wait_for_inspector(host="localhost", port=3768, timeout=60):
-    """Poll until the QML inspector TCP port accepts connections."""
+def _wait_for_inspector(host="localhost", port=3768, timeout=60, proc=None):
+    """Poll until the QML inspector TCP port accepts connections.
+
+    Returns "ok" once the port is connectable. If `proc` is given and the app
+    exits before the port opens, returns "died" immediately (no point waiting
+    out the full timeout for a process that is gone). Returns "timeout" if the
+    deadline passes while the app is still running (e.g. a slow cold-cache
+    `nix run` build that hasn't finished compiling the app yet).
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return "died"
         try:
             with socket.create_connection((host, port), timeout=2):
-                return True
+                return "ok"
         except (ConnectionRefusedError, OSError):
             time.sleep(0.5)
-    return False
+    return "timeout"
 
 
 def _kill_process_tree(pid):
@@ -608,18 +617,56 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
             "QT_LOGGING_RULES": "qt.*.debug=false;default.debug=true",
         }
 
+        # Pre-build the app before starting the inspector clock. `nix run .`
+        # builds the app closure on first use; on a cold cache (e.g. an x86_64
+        # CI runner with no binary cache) that compile can take minutes and
+        # would otherwise be counted against the inspector timeout — the app
+        # never even boots before we give up. Building first (best effort)
+        # means the subsequent launch only has to boot, not compile. Output is
+        # streamed with -L so a real build failure is visible in CI logs.
+        if launch_cmd.lstrip().startswith("nix run"):
+            warm_cmd = "nix build" + launch_cmd.lstrip()[len("nix run"):]
+            if " -L" not in warm_cmd:
+                warm_cmd += " -L"
+            build_timeout = ui_spec.get("build_timeout", 1800)
+            print(f"  Pre-building app: {warm_cmd}")
+            wrc, _ = run_cmd(warm_cmd, workdir, verbose, timeout=build_timeout)
+            if wrc != 0:
+                print(f"        {yellow('pre-build returned non-zero; launching anyway')}")
+
+        app_log_path = os.path.join(workdir, "ui-test-app.log")
+        app_log = open(app_log_path, "w")
+
         print(f"  Launching: {launch_cmd}")
         app_proc = subprocess.Popen(
             launch_cmd, shell=True, cwd=workdir, env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=app_log, stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
         )
 
+        def _dump_app_log(reason):
+            app_log.flush()
+            try:
+                with open(app_log_path) as f:
+                    tail = f.read().strip()[-1500:]
+            except OSError:
+                tail = ""
+            print(f"        {dim(reason)}")
+            print(f"        {dim('app output (' + app_log_path + '):')}")
+            print(f"        {dim(tail if tail else '(no output captured)')}")
+
         try:
             port = ui_spec.get("inspector_port", 3768)
-            print(f"  Waiting for inspector on port {port}...")
-            if not _wait_for_inspector(port=port, timeout=90):
-                results.fail(title, f"inspector not available on port {port} after 90s")
+            timeout = ui_spec.get("launch_timeout", 120)
+            print(f"  Waiting for inspector on port {port} (timeout {timeout}s)...")
+            status = _wait_for_inspector(port=port, timeout=timeout, proc=app_proc)
+            if status == "died":
+                results.fail(title, f"app exited (code {app_proc.returncode}) before inspector opened on port {port}")
+                _dump_app_log("app process exited before opening the inspector port")
+                return
+            if status == "timeout":
+                results.fail(title, f"inspector not available on port {port} after {timeout}s")
+                _dump_app_log("inspector port never opened (app still running — likely slow boot or wrong port)")
                 return
 
             print(f"  Running UI tests ({len(tests)} actions)...")
@@ -631,12 +678,17 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
                 results.fail(title, "UI tests failed")
                 trimmed = output.strip()[-800:] if output else "(no output)"
                 print(f"        {dim(trimmed)}")
+                _dump_app_log("app output during test run")
         finally:
             try:
                 os.killpg(os.getpgid(app_proc.pid), signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
                 pass
-            app_proc.wait(timeout=10)
+            try:
+                app_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            app_log.close()
 
     else:
         # Binary mode: use --ci flag (test framework manages the app)
