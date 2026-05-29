@@ -313,7 +313,9 @@ The UI demonstrates two communication patterns:
 
 - **Green section (direct calls):** `logos.callModule("calc_module", "libVersion", [])` sends a request to `calc_module` and returns the result synchronously. Simple request/response.
 
-- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event via `eventResponse`, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+
+On the `calc_module` side (Part 1), that event is just the `versionReady(...)` method declared in its `logos_events:` block — the module's `libVersionNotify()` calls it. Nothing about the QML changes regardless of how the backend module is written; the bridge only sees the event name and its arguments.
 
 The `logos` object is injected by the host at runtime.
 
@@ -812,13 +814,14 @@ node tests/ui-tests.mjs  # in another terminal
 
 ### QML-to-C++ type coercion
 
-When calling C++ module methods from QML via `logos.callModule()`, arguments are passed through IPC as `QVariant` values. The runtime automatically coerces mismatched types to match the target method signature — for example, a `double` sent from QML will be converted to `int` if the method expects `int`, and numeric strings will be converted to their numeric types.
+When calling C++ module methods from QML via `logos.callModule()`, arguments are passed through IPC as `QVariant` values. The runtime automatically coerces mismatched types to match the target method signature — for example, a `double` sent from QML will be converted to `int` if the method expects an integer, and numeric strings will be converted to their numeric types.
 
-This means you can define methods with their natural parameter types (`int`, `bool`, `double`, etc.) and calls from QML will work without manual conversion:
+This means you can define your module methods with their natural parameter types and calls from QML will work without manual conversion. In the pure-C++ (`universal`) module from Part 1 that looks like:
 
 ```cpp
-// This works — the runtime coerces arguments automatically
-Q_INVOKABLE int add(int a, int b) { return a + b; }
+// In calc_module_impl.h — plain C++, no Qt. The generator maps
+// int64_t onto the wire as int; the runtime coerces QML args to match.
+int64_t add(int64_t a, int64_t b);
 ```
 
 > **Note:** Type coercion uses `QVariant::convert()`, which rounds (not truncates) when converting `double` to `int` — e.g., `3.7` becomes `4`.
@@ -851,14 +854,14 @@ Then reinstall your custom modules.
 
 ## Recap
 
-|                     | Core Module (Part 1)                            | QML UI Plugin (Part 2)        |
-| ------------------- | ----------------------------------------------- | ----------------------------- |
-| Language            | C++                                             | QML / JavaScript              |
-| Files               | `.cpp`, `.h`, `CMakeLists.txt`, `metadata.json` | `Main.qml`, `metadata.json`   |
-| Compilation         | Yes (CMake → `.so`)                             | No (file copy)                |
-| `metadata.type`     | `"core"`                                        | `"ui_qml"`                    |
-| Test command        | `logoscore -m ./result/lib -l calc_module`      | `nix run .`                   |
-| Calls other modules | Via `LogosAPI*` (C++)                           | Via `logos.callModule()` (JS) |
+|                     | Core Module (Part 1)                                   | QML UI Plugin (Part 2)        |
+| ------------------- | ------------------------------------------------------ | ----------------------------- |
+| Language            | C++ (plain `*_impl` class)                             | QML / JavaScript              |
+| Files               | `*_impl.h/.cpp`, `CMakeLists.txt`, `metadata.json`     | `Main.qml`, `metadata.json`   |
+| Compilation         | Yes (CMake → `.so`)                                    | No (file copy)                |
+| `metadata.type`     | `"core"` (`interface: "universal"`)                    | `"ui_qml"`                    |
+| Test command        | `logoscore -D -m ./modules` + `call`                   | `nix run .`                   |
+| Calls other modules | Via `LogosModuleContext` `modules()` (C++)             | Via `logos.callModule()` (JS) |
 
 ## What's Next
 

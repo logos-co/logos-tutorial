@@ -2,13 +2,15 @@
 
 This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.dylib` on macOS) as a Logos module. By the end, you will have a module that compiles, loads, and responds to method calls via `logoscore`.
 
-**What you'll build:** A `calc_module` that wraps a tiny C calculator library (`libcalc`), exposing arithmetic functions to the Logos platform.
+**What you'll build:** A `calc_module` that wraps a tiny C calculator library (`libcalc`), exposing arithmetic functions to the Logos platform. You write a single **plain C++ class** — no Qt, no plugin boilerplate — and the build system generates the Qt plugin around it.
 
 **What you'll learn:**
 
-- How a Logos module wraps a C library
+- {'How a Logos module wraps a C library using the pure-C++ (`interface': 'universal`) pattern'}
 - The role of each file in the module project
-- How to build, inspect, and test your module
+- Which C++ types the code generator maps onto the wire (`std::string`, `int64_t`, `bool`, …)
+- How to emit events from a plain C++ class with `logos_events:`
+- How to build, inspect, and unit-test your module (with the Logos Test Framework)
 - How `logoscore` discovers, loads, and calls your module
 
 ## Prerequisites
@@ -44,11 +46,21 @@ nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 # nix flake init -t github:logos-co/logos-module-builder
 ```
 
-This generates the skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, etc.) pre-configured for the logos-module-builder. You then customize them for your specific library.
+This generates skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` directory) pre-configured for the logos-module-builder. You then customize them for your specific library.
+
+> **Heads up — the template is the older Qt-plugin style.** As of this writing, `nix flake init` scaffolds a hand-written Qt plugin (`*_interface.h` + `*_plugin.h` + `*_plugin.cpp`). This tutorial uses the newer and simpler **pure-C++ pattern** instead: you write one plain `*_impl.h` / `*_impl.cpp` class with no Qt in it, set `"interface": "universal"` in `metadata.json`, and the build generates the Qt plugin wrapper for you. So in the steps below we **replace** the template's `src/` files entirely. We still use `nix flake init` to get the `flake.nix` / `CMakeLists.txt` skeleton and directory layout.
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in the flake.nix step below to ensure reproducible builds.
 
 > **Alternative approach:** You can also create the C library as a separate project, build it there, then copy the resulting `.so`/`.dylib` and header files into the module's `lib/` directory. This can be cleaner for larger libraries with their own build systems.
+
+### 1.2 Remove the template's example sources
+
+The `with-external-lib` template ships an example Qt plugin (`external_lib_*`). Delete those files — this tutorial supplies its own pure-C++ `src/` files:
+
+```bash
+rm -f src/external_lib_interface.h src/external_lib_plugin.h src/external_lib_plugin.cpp
+```
 
 ---
 
@@ -186,16 +198,17 @@ You should see each symbol marked with `T` (text/code section). Addresses will v
 
 ## Step 3: Configure the Logos Module
 
-The template generated skeleton files with placeholder names (`external_lib`, `example_lib`). Now rename and customize them for your library. You need to edit **every generated file**.
+Now write the files that turn your C library into a Logos module. With the **pure-C++ (`universal`) pattern** you only hand-write a single C++ class — `metadata.json`, `CMakeLists.txt`, and `flake.nix` tell the build system the rest, and `logos-cpp-generator` synthesizes the Qt plugin wrapper.
 
-After editing, your project should look like this:
+After this step your project will look like this:
 
-| File                   | What to change                                                    |
-| ---------------------- | ----------------------------------------------------------------- |
-| `metadata.json`        | Module name, description, library name, include dirs              |
-| `CMakeLists.txt`       | Project name, module name, source filenames, library name         |
-| `flake.nix`            | Description (and dependency inputs if needed)                     |
-| `src/*.h`, `src/*.cpp` | Rename files, replace class/method names, add your wrapping logic |
+| File                          | Role                                                              |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `metadata.json`               | Module metadata + nix build settings (note `interface: universal`)|
+| `CMakeLists.txt`              | Lists your impl source files                                      |
+| `flake.nix`                   | Nix build (description, dependency inputs)                        |
+| `src/calc_module_impl.h`      | Plain C++ class declaration — **no Qt**                           |
+| `src/calc_module_impl.cpp`    | Implementation: each method calls the C library                   |
 
 ```
 logos-calc-module/
@@ -206,16 +219,17 @@ logos-calc-module/
 │   ├── libcalc.h      # C library header
 │   └── libcalc.c      # C library source (compiled by CMake)
 └── src/
-    ├── calc_module_interface.h   # Interface declaration
-    ├── calc_module_plugin.h      # Plugin header
-    └── calc_module_plugin.cpp    # Plugin implementation (wrapping logic)
+    ├── calc_module_impl.h     # Plain C++ class (no Qt, no plugin macros)
+    └── calc_module_impl.cpp   # Implementation (wrapping logic)
 ```
+
+> **Where did the `*_interface.h` / `*_plugin.h` / `*_plugin.cpp` files go?** The older pattern made you hand-write a Qt `QObject` plugin, an abstract interface, and the `Q_INVOKABLE` / `Q_PLUGIN_METADATA` boilerplate. With `interface: universal`, the generator derives all of that from your plain class — so those three files no longer exist in your source tree. They are emitted into `generated_code/` at build time.
 
 ### 3.1 `metadata.json` — Module Configuration
 
-> **Edit:** Change `name`, `description`, `main`, `nix.external_libraries[].name`, and `nix.cmake.extra_include_dirs` to match your module and library.
+> **Edit:** Set `name`, `description`, `main`, add `"interface": "universal"`, and declare your library under `nix.external_libraries`.
 
-This is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
+This is the single source of truth for your module. It is embedded into the generated plugin binary (for runtime metadata via `lm`), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve and link external libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest.
 
 ```json
 {
@@ -225,6 +239,7 @@ This is the single source of truth for your module. It is embedded into the plug
   "category": "general",
   "description": "Calculator module wrapping libcalc C library",
   "main": "calc_module_plugin",
+  "interface": "universal",
   "dependencies": [],
 
   "nix": {
@@ -250,15 +265,19 @@ This is the single source of truth for your module. It is embedded into the plug
 
 **Key fields explained:**
 
-| Field                                  | What it does                                                                                                                                                                                                                                                                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                                 | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                                                                                                                        |
-| `nix.external_libraries`               | Declares C/C++ libraries vendored in the repo. Each entry has a `name` (used for the Nix derivation and CMake target) and `vendor_path` (directory containing the source). The build system compiles the library and makes it available as a CMake target                                                            |
-| `nix.cmake.extra_include_dirs`         | Added to the CMake include path so your C++ code can `#include "libcalc.h"`                                                                                                                                                                                                                                         |
+| Field                          | What it does                                                                                                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                         | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                       |
+| `main`                         | The generated plugin's name, `<name>_plugin`. You don't write this file; the builder produces `calc_module_plugin.so` / `.dylib`                                                                                   |
+| `interface`                    | `"universal"` selects the pure-C++ pattern. The builder runs `logos-cpp-generator --from-header` over `src/calc_module_impl.h` and emits the Qt plugin glue, so you never touch Qt directly                        |
+| `nix.external_libraries`       | Declares C/C++ libraries vendored in the repo. Each entry has a `name` (the CMake target) and `vendor_path` (directory with the source/binary). The build compiles the library and links it into the plugin        |
+| `nix.cmake.extra_include_dirs` | Added to the include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                          |
 
 ### 3.2 `CMakeLists.txt` — Build File
 
-> **Edit:** Change `project()` name, `NAME`, `SOURCES` filenames, and `EXTERNAL_LIBS` to match your module and library.
+> **Edit:** Set `project()` name, `NAME`, the `SOURCES` (your two impl files), and `EXTERNAL_LIBS`.
+
+For a universal module you list only your plain C++ source files. The generated glue (`generated_code/*.cpp`) is picked up automatically by `LogosModule.cmake` — you don't reference it here.
 
 ```cmake
 cmake_minimum_required(VERSION 3.14)
@@ -273,30 +292,31 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found")
 endif()
 
-# Define the module with its external library dependency
+# Define the module with its external library dependency.
+# Because metadata.json sets `interface: universal`, the builder runs
+# logos-cpp-generator over src/calc_module_impl.h before configuring,
+# and LogosModule.cmake compiles the generated glue automatically.
 logos_module(
     NAME calc_module
     SOURCES
-        src/calc_module_interface.h
-        src/calc_module_plugin.h
-        src/calc_module_plugin.cpp
+        src/calc_module_impl.h
+        src/calc_module_impl.cpp
     EXTERNAL_LIBS
         calc
 )
 ```
 
-The template generates this with default names (e.g., `external_lib`). You **must** update:
+You **must** keep these in sync with `metadata.json`:
 
-- **`project()`** — rename to match your module (e.g., `CalcModulePlugin`)
 - **`NAME`** — your module name (must match `name` in `metadata.json`, e.g., `calc_module`)
-- **`SOURCES`** — your renamed source files
-- **`EXTERNAL_LIBS`** — names of external libraries to link (must match `nix.external_libraries[].name` in `metadata.json`)
+- **`SOURCES`** — your impl files (`src/calc_module_impl.h`, `src/calc_module_impl.cpp`)
+- **`EXTERNAL_LIBS`** — external libraries to link (must match `nix.external_libraries[].name` in `metadata.json`)
 
 The `if/elseif/else` block above it is boilerplate — don't change it.
 
-> **Common mistake:** If `NAME` doesn't match `name` in `metadata.json`, the build will succeed but the install phase will fail because it looks for `<name>_plugin.dylib` based on `metadata.json`.
+> **Common mistake:** If `NAME` doesn't match `name` in `metadata.json`, the build may succeed but the install phase fails because it looks for `<name>_plugin.so`/`.dylib` based on `metadata.json`.
 
-**How `EXTERNAL_LIBS calc` works:** The `logos_module()` CMake function searches `lib/` for `libcalc.so` (Linux) or `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
+**How `EXTERNAL_LIBS calc` works:** `logos_module()` searches `lib/` for `libcalc.so` (Linux) / `libcalc.dylib` (macOS), links it to your plugin, and sets up RPATH so the library is found at runtime.
 
 ### 3.3 `flake.nix` — Nix Build Config
 
@@ -319,180 +339,127 @@ Change `description`. Add flake inputs here if your module depends on other modu
 }
 ```
 
-That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, setting up include paths, etc.). Note that `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
+That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, running `logos-cpp-generator --from-header`, setting up include paths, etc.). `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
 
 > **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`.
 
-### 3.4 `src/calc_module_interface.h` — Interface Declaration
+### 3.4 `src/calc_module_impl.h` — The Module Class
 
-This declares the methods your module exposes. It inherits from `PluginInterface` (provided by the Logos C++ SDK). Every method you want callable by other modules must be `Q_INVOKABLE` and `virtual`.
+This is the **only interface you write**, and it's plain C++ — no `QObject`, no `Q_INVOKABLE`, no plugin macros, no Qt headers at all. Every `public` method becomes a method other modules (and `logoscore`) can call. The code generator parses this header as text to derive the wire signatures, so keep it to the supported types (see the table below).
+
+We also inherit `LogosModuleContext` so the class can emit events (the `logos_events:` block) and, if needed later, call other modules — without ever touching the raw `LogosAPI`.
 
 ```cpp
-#ifndef CALC_MODULE_INTERFACE_H
-#define CALC_MODULE_INTERFACE_H
+#pragma once
 
-#include <QObject>
-#include <QString>
-#include "interface.h"
+#include <cstdint>
+#include <string>
 
-class CalcModuleInterface : public PluginInterface
-{
+#include <logos_module_context.h>  // LogosModuleContext base + `logos_events:`
+
+// Include the C library header (extern "C" already in the header).
+extern "C" {
+    #include "lib/libcalc.h"
+}
+
+class CalcModuleImpl : public LogosModuleContext {
 public:
-    virtual ~CalcModuleInterface() = default;
+    CalcModuleImpl() = default;
+    ~CalcModuleImpl() = default;
 
-    Q_INVOKABLE virtual int add(int a, int b) = 0;
-    Q_INVOKABLE virtual int multiply(int a, int b) = 0;
-    Q_INVOKABLE virtual int factorial(int n) = 0;
-    Q_INVOKABLE virtual int fibonacci(int n) = 0;
-    Q_INVOKABLE virtual QString libVersion() = 0;
+    // ── Public API — every method here is callable over IPC ──────────
+    // The generator maps C++ types onto the wire automatically:
+    //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
+    int64_t add(int64_t a, int64_t b);
+    int64_t multiply(int64_t a, int64_t b);
+    int64_t factorial(int64_t n);
+    int64_t fibonacci(int64_t n);
+    std::string libVersion();
+
+    // Fire-and-forget: looks up the version, then emits it as an event
+    // instead of returning it. Used by the QML tutorial (Part 2).
+    void libVersionNotify();
+
+    // ── Events ───────────────────────────────────────────────────────
+    // Declared like Qt signals. The generator emits the body (in
+    // calc_module_events.cpp) that routes the typed args to subscribers
+    // via the host's `eventResponse` mechanism. QML subscribes with
+    // logos.onModuleEvent("calc_module", "versionReady").
+logos_events:
+    void versionReady(const std::string& version);
 };
-
-#define CalcModuleInterface_iid "org.logos.CalcModuleInterface"
-Q_DECLARE_INTERFACE(CalcModuleInterface, CalcModuleInterface_iid)
-
-#endif // CALC_MODULE_INTERFACE_H
 ```
 
-**Rules for the interface:**
+**Rules for the impl class:**
 
-- Every method you want callable by other modules must be `Q_INVOKABLE` and `virtual`
-- Supported parameter/return types: `int`, `bool`, `QString`, `QByteArray`, `QVariant`, `QJsonArray`, `QStringList`, `LogosResult`
-- The interface ID string (e.g., `"org.logos.CalcModuleInterface"`) must be unique across all modules
+- It's a normal C++ class. Any `public` method is exposed; `private` members and helpers are not.
+- **Supported parameter/return types** (what the generator can translate):
 
-### 3.5 `src/calc_module_plugin.h` — Plugin Header
+  | C++ type                    | On the wire (Qt)   |
+  | --------------------------- | ------------------ |
+  | `void`                      | `void`             |
+  | `bool`                      | `bool`             |
+  | `int64_t`                   | `int`              |
+  | `uint64_t`                  | `uint`             |
+  | `double`                    | `double`           |
+  | `std::string`               | `QString`          |
+  | `std::vector<std::string>`  | `QStringList`      |
+  | `std::vector<uint8_t>`      | `QByteArray`       |
+  | `LogosMap` / `LogosList`    | `QVariantMap` / `QVariantList` (from `<logos_json.h>`) |
+  | `StdLogosResult`            | `LogosResult` (from `<logos_result.h>`) — `{ success, value, error }` |
 
-This is the actual plugin class. It inherits from both `QObject` (for Qt's meta-object system) and your interface.
+- Use `int64_t` for integers (not `int`) — that's the type the parser recognizes.
+- Events are declared in a `logos_events:` section. The token is recognized by the generator before preprocessing; under a normal compile it just expands to `public`.
 
-```cpp
-#ifndef CALC_MODULE_PLUGIN_H
-#define CALC_MODULE_PLUGIN_H
+### 3.5 `src/calc_module_impl.cpp` — Implementation
 
-#include <QObject>
-#include <QString>
-#include "calc_module_interface.h"
-
-// Include the C library header
-#include "lib/libcalc.h"
-
-class LogosAPI;
-
-class CalcModulePlugin : public QObject, public CalcModuleInterface
-{
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID CalcModuleInterface_iid FILE "metadata.json")
-    Q_INTERFACES(CalcModuleInterface PluginInterface)
-
-public:
-    explicit CalcModulePlugin(QObject* parent = nullptr);
-    ~CalcModulePlugin() override;
-
-    // PluginInterface
-    QString name() const override { return "calc_module"; }
-    QString version() const override { return "1.0.0"; }
-
-    Q_INVOKABLE void initLogos(LogosAPI* api);
-
-    // CalcModuleInterface
-    Q_INVOKABLE int add(int a, int b) override;
-    Q_INVOKABLE int multiply(int a, int b) override;
-    Q_INVOKABLE int factorial(int n) override;
-    Q_INVOKABLE int fibonacci(int n) override;
-    Q_INVOKABLE QString libVersion() override;
-    Q_INVOKABLE void libVersionNotify();
-
-signals:
-    void eventResponse(const QString& eventName, const QVariantList& args);
-
-};
-
-#endif // CALC_MODULE_PLUGIN_H
-```
-
-**Critical details:**
-
-- `Q_PLUGIN_METADATA(IID ... FILE "metadata.json")` — embeds the metadata into the binary
-- `Q_INTERFACES(CalcModuleInterface PluginInterface)` — registers both interfaces with Qt's plugin system
-- `initLogos` must be `Q_INVOKABLE` but **not** `override` — the base class `PluginInterface` does not declare it as virtual; the Logos host calls it reflectively via `QMetaObject::invokeMethod`
-- `eventResponse` signal is required for event forwarding between modules. Emit it to push data to subscribers (e.g., QML UIs listening via `logos.onModuleEvent()`)
-- `name()` must return the same string as the `name` field in `metadata.json`
-- **No `m_logosAPI` member variable** — the `LogosAPI*` pointer is stored in the global `logosAPI` variable defined in `liblogos`, not in a class member. See the `initLogos` implementation below.
-
-### 3.6 `src/calc_module_plugin.cpp` — Plugin Implementation
-
-This is where the wrapping happens. Each method calls the corresponding C function.
+Each method calls the corresponding C function and converts the result. No Qt types appear anywhere — you work in plain C++ and the generated glue handles the wire conversion.
 
 ```cpp
-#include "calc_module_plugin.h"
-#include "logos_api.h"
-#include <QDebug>
+#include "calc_module_impl.h"
 
-CalcModulePlugin::CalcModulePlugin(QObject* parent)
-    : QObject(parent)
+int64_t CalcModuleImpl::add(int64_t a, int64_t b)
 {
-    qDebug() << "CalcModulePlugin: created";
+    return calc_add(static_cast<int>(a), static_cast<int>(b));
 }
 
-CalcModulePlugin::~CalcModulePlugin()
+int64_t CalcModuleImpl::multiply(int64_t a, int64_t b)
 {
-    qDebug() << "CalcModulePlugin: destroyed";
+    return calc_multiply(static_cast<int>(a), static_cast<int>(b));
 }
 
-void CalcModulePlugin::initLogos(LogosAPI* api)
+int64_t CalcModuleImpl::factorial(int64_t n)
 {
-    logosAPI = api;
-    qDebug() << "CalcModulePlugin: LogosAPI initialized";
+    return calc_factorial(static_cast<int>(n));
 }
 
-int CalcModulePlugin::add(int a, int b)
+int64_t CalcModuleImpl::fibonacci(int64_t n)
 {
-    int result = calc_add(a, b);
-    qDebug() << "CalcModulePlugin::add" << a << "+" << b << "=" << result;
-    return result;
+    return calc_fibonacci(static_cast<int>(n));
 }
 
-int CalcModulePlugin::multiply(int a, int b)
+std::string CalcModuleImpl::libVersion()
 {
-    int result = calc_multiply(a, b);
-    qDebug() << "CalcModulePlugin::multiply" << a << "*" << b << "=" << result;
-    return result;
+    return std::string(calc_version());
 }
 
-int CalcModulePlugin::factorial(int n)
+void CalcModuleImpl::libVersionNotify()
 {
-    int result = calc_factorial(n);
-    qDebug() << "CalcModulePlugin::factorial" << n << "! =" << result;
-    return result;
-}
-
-int CalcModulePlugin::fibonacci(int n)
-{
-    int result = calc_fibonacci(n);
-    qDebug() << "CalcModulePlugin::fibonacci fib(" << n << ") =" << result;
-    return result;
-}
-
-QString CalcModulePlugin::libVersion()
-{
-    const char* ver = calc_version();
-    QString result = QString::fromUtf8(ver);
-    qDebug() << "CalcModulePlugin::libVersion" << result;
-    return result;
-}
-
-void CalcModulePlugin::libVersionNotify()
-{
-    const char* ver = calc_version();
-    QString result = QString::fromUtf8(ver);
-    qDebug() << "CalcModulePlugin::libVersionNotify" << result;
-    emit eventResponse("versionReady", {result});
+    // Emit the event declared in `logos_events:`. When the module is
+    // loaded by a host, this reaches every subscriber. When the class
+    // is constructed outside a host (e.g. in unit tests), it is a
+    // safe no-op.
+    versionReady(std::string(calc_version()));
 }
 ```
 
 **The wrapping pattern** is always the same:
 
-1. Call the C function with the arguments
-2. Convert the C result to a Qt type if needed (e.g., `const char*` → `QString`)
-3. Return the Qt type
+1. Call the C function (convert `int64_t` → `int` for libcalc's `int` API)
+2. Convert the C result to a C++ type if needed (e.g., `const char*` → `std::string`)
+3. Return it — the generated glue marshals it onto the wire
+
+Notice what you **didn't** write: no `initLogos`, no `Q_INVOKABLE`, no `name()`/`version()` (read from `metadata.json`), no signal declaration. The generator produces all of it from the header.
 
 ---
 
@@ -545,7 +512,7 @@ The first build takes a while (5–15 minutes) as Nix downloads Qt, the Logos SD
 
 ### 4.3 Build the full package
 
-Build everything (library + generated SDK headers):
+Build everything (library + generated SDK headers). For a `universal` module this is also where `logos-cpp-generator --from-header` runs over `src/calc_module_impl.h` to produce the Qt plugin glue under `generated_code/` before CMake compiles it:
 
 ```bash
 nix build
@@ -651,9 +618,15 @@ int fibonacci(int n)
 QString libVersion()
   Signature: libVersion()
   Invokable: yes
+
+void libVersionNotify()
+  Signature: libVersionNotify()
+  Invokable: yes
 ```
 
-All five wrapping methods are visible and invokable. The `initLogos` method is automatically called by the Logos host when loading the module.
+Notice the signatures are **Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue at work: `lm` is inspecting the synthesized Qt plugin, not your impl class. Your `int64_t add(int64_t, int64_t)` shows up on the wire as `add(int,int)`.
+
+The `eventResponse` signal and `initLogos` method are also part of the generated wrapper — you didn't write them. `initLogos` is how the host hands the module its `LogosAPI`; `eventResponse` is the channel your `versionReady` event travels over. Both come for free with `interface: universal`.
 
 ### 5.4 JSON output
 
@@ -765,11 +738,11 @@ sleep 3
 
 1. `logoscore` scans `./modules/` for subdirectories containing `manifest.json`
 2. It finds `calc_module` and extracts metadata from the plugin binary
-3. It spawns a `logos_host` process that loads `calc_module_plugin.so`
-4. `logos_host` calls `initLogos()` on the plugin, providing a `LogosAPI*` for inter-module communication
+3. It spawns a `logos_host` process that loads `calc_module_plugin.so` (the generated wrapper around your impl class)
+4. `logos_host` calls `initLogos()` on the generated plugin, providing a `LogosAPI*` for inter-module communication
 5. The call command is parsed: module name `calc_module`, method `add`, args `[3, 5]`
 6. `logoscore` sends the call to `logos_host` via Qt Remote Objects (IPC)
-7. `logos_host` invokes `CalcModulePlugin::add(3, 5)` which calls `calc_add(3, 5)` from libcalc
+7. The generated glue converts the args and invokes `CalcModuleImpl::add(3, 5)`, which calls `calc_add(3, 5)` from libcalc
 8. The result is returned via IPC to `logoscore`
 
 You'll see debug output like:
@@ -784,6 +757,200 @@ Debug: Loading plugin: "calc_module" in separate process
 Debug: Executing call: "calc_module" . "add" with 2 params
 Method call successful. Result: ...
 ```
+
+---
+
+## Step 7: Unit-test the Module
+
+Because your module is a plain C++ class, you can unit-test it **directly** — no Qt, no running host, no IPC. The [Logos Test Framework](https://github.com/logos-co/logos-test-framework) adds two things on top of that: a tiny test runner (`LOGOS_TEST` / `LOGOS_ASSERT_*`) and **link-time mocking of your C library**, so each test can make `calc_add`, `calc_factorial`, … return whatever it wants and assert how your wrapper behaves.
+
+You wire it up by pointing `mkLogosModule` at a `tests/` directory in `flake.nix`, then writing the test files. `nix build .#unit-tests` builds and runs them.
+
+### 7.1 Enable tests in `flake.nix`
+
+Add a `tests` block to the `mkLogosModule` call. `mockCLibs` lists the external libraries to replace with link-time mocks (so tests don't need the real `libcalc`):
+
+```nix
+{
+  description = "Calculator module - wraps libcalc C library for Logos";
+
+  inputs = {
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
+  };
+
+  outputs = inputs@{ logos-module-builder, ... }:
+    logos-module-builder.lib.mkLogosModule {
+      src = ./.;
+      configFile = ./metadata.json;
+      flakeInputs = inputs;
+      tests = {
+        dir = ./tests;
+        mockCLibs = [ "calc" ];
+      };
+    };
+}
+```
+
+### 7.2 `tests/CMakeLists.txt` — wire up the test binary
+
+The test harness configures and builds `tests/` as its own CMake project, so it needs a `tests/CMakeLists.txt`. It includes `LogosTest` (provided by the framework) and calls `logos_test()`, listing your impl source, the test sources, and the C-library mock:
+
+```cmake
+cmake_minimum_required(VERSION 3.14)
+project(CalcModuleTests LANGUAGES CXX)
+
+include(LogosTest)
+
+logos_test(
+    NAME calc_module_tests
+    MODULE_SOURCES
+        ../src/calc_module_impl.cpp
+        mocks/calc_module_events_stub.cpp
+    TEST_SOURCES
+        main.cpp
+        test_calc.cpp
+    MOCK_C_SOURCES
+        mocks/mock_libcalc.cpp
+)
+```
+
+- **`MODULE_SOURCES`** — your impl `.cpp` (compiled into the test binary, not the real plugin), plus the events stub explained below
+- **`TEST_SOURCES`** — the runner entry point plus your `test_*.cpp` files
+- **`MOCK_C_SOURCES`** — the link-time replacement for libcalc, so the real library is never linked
+
+`logos_test()` automatically puts the repo root and `../src` on the include path, so `#include "calc_module_impl.h"` and `#include "lib/libcalc.h"` both resolve.
+
+### 7.3 `tests/mocks/calc_module_events_stub.cpp` — stub the event method
+
+In a normal build, `logos-cpp-generator` emits `calc_module_events.cpp` containing the body of every `logos_events:` method (e.g. `versionReady`). The test harness runs the generator in a reduced mode that does **not** emit that file, so `libVersionNotify()` — which calls `versionReady(...)` — would fail to link. Provide a tiny no-op stub for unit tests:
+
+```cpp
+// Stub bodies for the impl's `logos_events:` methods.
+// In the real build the codegen generates calc_module_events.cpp with
+// bodies that route through LogosModuleContext. The test build skips
+// that codegen, so we provide no-op stubs to satisfy the linker.
+#include "calc_module_impl.h"
+
+void CalcModuleImpl::versionReady(const std::string&) {}
+```
+
+If you add more events to `logos_events:`, add a matching no-op line here. (A module with no events doesn't need this stub at all.)
+
+### 7.4 Test runner entry point
+
+Create `tests/main.cpp` — one line pulls in the framework's `main()`:
+
+```cpp
+#include <logos_test.h>
+
+LOGOS_TEST_MAIN()
+```
+
+### 7.5 Mock the C library
+
+When building tests, the real `libcalc` is **not** linked. Instead you provide functions with the same signatures backed by the framework's mock store. Each one records that it was called and returns a value the test set up. Create `tests/mocks/mock_libcalc.cpp`:
+
+```cpp
+// Link-time replacement for libcalc. Each function records the call
+// and returns whatever the active test configured via mockCFunction().
+#include <logos_clib_mock.h>
+
+extern "C" {
+    #include "lib/libcalc.h"
+}
+
+extern "C" int calc_add(int a, int b) {
+    LOGOS_CMOCK_RECORD("calc_add");
+    return LOGOS_CMOCK_RETURN(int, "calc_add");
+}
+
+extern "C" int calc_multiply(int a, int b) {
+    LOGOS_CMOCK_RECORD("calc_multiply");
+    return LOGOS_CMOCK_RETURN(int, "calc_multiply");
+}
+
+extern "C" int calc_factorial(int n) {
+    LOGOS_CMOCK_RECORD("calc_factorial");
+    return LOGOS_CMOCK_RETURN(int, "calc_factorial");
+}
+
+extern "C" int calc_fibonacci(int n) {
+    LOGOS_CMOCK_RECORD("calc_fibonacci");
+    return LOGOS_CMOCK_RETURN(int, "calc_fibonacci");
+}
+
+extern "C" const char* calc_version(void) {
+    LOGOS_CMOCK_RECORD("calc_version");
+    return LOGOS_CMOCK_RETURN_STRING("calc_version");
+}
+```
+
+`LOGOS_CMOCK_RECORD(name)` logs the call; `LOGOS_CMOCK_RETURN(type, name)` / `LOGOS_CMOCK_RETURN_STRING(name)` hand back the value the test set with `mockCFunction(...).returns(...)`.
+
+### 7.6 Write the tests
+
+Create `tests/test_calc.cpp`. Each `LOGOS_TEST` constructs your impl directly, configures the C-function return values, calls a method, and asserts. `LogosTestContext` resets the mock store between tests:
+
+```cpp
+#include <logos_test.h>
+#include "calc_module_impl.h"
+
+LOGOS_TEST(add_forwards_to_calc_add) {
+    auto t = LogosTestContext("calc_module");
+    t.mockCFunction("calc_add").returns(8);
+
+    CalcModuleImpl calc;
+    LOGOS_ASSERT_EQ(calc.add(3, 5), 8);
+    LOGOS_ASSERT(t.cFunctionCalled("calc_add"));
+}
+
+LOGOS_TEST(multiply_forwards_to_calc_multiply) {
+    auto t = LogosTestContext("calc_module");
+    t.mockCFunction("calc_multiply").returns(42);
+
+    CalcModuleImpl calc;
+    LOGOS_ASSERT_EQ(calc.multiply(6, 7), 42);
+    LOGOS_ASSERT(t.cFunctionCalled("calc_multiply"));
+}
+
+LOGOS_TEST(factorial_returns_mocked_value) {
+    auto t = LogosTestContext("calc_module");
+    t.mockCFunction("calc_factorial").returns(120);
+
+    CalcModuleImpl calc;
+    LOGOS_ASSERT_EQ(calc.factorial(5), 120);
+}
+
+LOGOS_TEST(libVersion_converts_cstring_to_string) {
+    auto t = LogosTestContext("calc_module");
+    t.mockCFunction("calc_version").returns("1.0.0");
+
+    CalcModuleImpl calc;
+    LOGOS_ASSERT_EQ(calc.libVersion(), std::string("1.0.0"));
+}
+```
+
+A few things worth calling out:
+
+- The tests construct `CalcModuleImpl` like any class — no Qt, no host, no `initLogos`. That's the payoff of the pure-C++ pattern.
+- `libVersionNotify()` is safe to call here too: its `versionReady(...)` event resolves to the no-op stub you added, so it won't crash and simply does nothing in the test process.
+- `LOGOS_ASSERT_EQ`, `LOGOS_ASSERT`, `LOGOS_ASSERT_TRUE/FALSE`, `LOGOS_ASSERT_NE/GT/GE/LT` are all available from `<logos_test.h>`.
+
+### 7.7 Run the tests
+
+Track the new files (nix only sees git-tracked files), then build and run:
+
+```bash
+git add tests/ flake.nix
+```
+
+```bash
+nix build '.#unit-tests' -L
+```
+
+The build compiles your impl (`src/calc_module_impl.cpp`) against the mock library and the test sources, then runs every `LOGOS_TEST`. A passing run ends with a summary line; a failed assertion prints the file/line and fails the build.
+
+> **From the workspace?** You can also run `ws test logos-calc-module` (after `ws sync-graph` picks up the new tests). See the workspace `CLAUDE.md`.
 
 ---
 
@@ -817,6 +984,8 @@ nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 
 ## Common Wrapping Patterns
 
+All of these are plain C++ — the impl class holds whatever state it needs as private members, and methods use std types. No Qt appears anywhere.
+
 ### Wrapping C functions with opaque pointers
 
 Many C libraries use opaque pointers (handles) for state management:
@@ -829,36 +998,33 @@ int db_get(db_ctx_t* ctx, const char* key, char* buf, int buf_len);
 void db_close(db_ctx_t* ctx);
 ```
 
-Store the handle in your plugin class:
+Store the handle as a private member of your impl class:
 
 ```cpp
-class DbModulePlugin : public QObject, public DbModuleInterface
+class DbModuleImpl : public LogosModuleContext
 {
-    // ...
-private:
-    db_ctx_t* m_ctx = nullptr;
-
 public:
-    Q_INVOKABLE bool open(const QString& path) {
-        m_ctx = db_open(path.toUtf8().constData());
+    bool open(const std::string& path) {
+        m_ctx = db_open(path.c_str());
         return m_ctx != nullptr;
     }
 
-    Q_INVOKABLE QString get(const QString& key) {
-        if (!m_ctx) return QString();
+    std::string get(const std::string& key) {
+        if (!m_ctx) return {};
         char buf[4096];
-        int len = db_get(m_ctx, key.toUtf8().constData(), buf, sizeof(buf));
-        if (len < 0) return QString();
-        return QString::fromUtf8(buf, len);
+        int len = db_get(m_ctx, key.c_str(), buf, sizeof(buf));
+        if (len < 0) return {};
+        return std::string(buf, len);
     }
 
-    ~DbModulePlugin() {
-        if (m_ctx) db_close(m_ctx);
-    }
+    ~DbModuleImpl() { if (m_ctx) db_close(m_ctx); }
+
+private:
+    db_ctx_t* m_ctx = nullptr;   // private — not exposed over IPC
 };
 ```
 
-### Wrapping C callbacks
+### Wrapping C callbacks → events
 
 C libraries often use callbacks for async operations:
 
@@ -867,47 +1033,56 @@ typedef void (*event_cb)(int code, const char* msg, void* user_data);
 void lib_set_callback(void* ctx, event_cb cb, void* user_data);
 ```
 
-Use a static method as the callback, passing `this` as `user_data`:
+Use a static function as the callback, passing `this` as `user_data`, and forward into a declared event:
 
 ```cpp
-class MyPlugin : public QObject, public MyInterface
+class MyImpl : public LogosModuleContext
 {
-    // ...
-    static void c_callback(int code, const char* msg, void* user_data) {
-        auto* self = static_cast<MyPlugin*>(user_data);
-        // Forward to Qt signal (thread-safe)
-        emit self->eventResponse("lib_event",
-            QVariantList() << code << QString::fromUtf8(msg));
+public:
+    void startListening() {
+        lib_set_callback(m_ctx, &MyImpl::c_callback, this);
     }
 
-    Q_INVOKABLE void startListening() {
-        lib_set_callback(m_ctx, c_callback, this);
+logos_events:
+    void libEvent(int64_t code, const std::string& message);
+
+private:
+    static void c_callback(int code, const char* msg, void* user_data) {
+        auto* self = static_cast<MyImpl*>(user_data);
+        self->libEvent(code, std::string(msg ? msg : ""));
     }
+    void* m_ctx = nullptr;
 };
 ```
+
+Calling the declared event (`libEvent(...)`) routes the typed args to subscribers — you never touch Qt signals or `QVariantList` yourself.
 
 ### Wrapping C libraries that allocate strings
 
 If the C library returns allocated strings that must be freed:
 
 ```cpp
-Q_INVOKABLE QString getData() {
-    char* c_str = lib_get_data(m_ctx);  // Library allocates
-    QString result = QString::fromUtf8(c_str);
+std::string getData() {
+    char* c_str = lib_get_data(m_ctx);   // Library allocates
+    std::string result = c_str ? c_str : "";
     lib_free_string(c_str);              // Library deallocates
     return result;
 }
 ```
 
-### String conversion reference
+### Type conversion reference (C ↔ impl class)
 
-| C type                 | Qt type           | C → Qt                     | Qt → C                     |
-| ---------------------- | ----------------- | -------------------------- | -------------------------- |
-| `const char*`          | `QString`         | `QString::fromUtf8(c_str)` | `str.toUtf8().constData()` |
-| `const char*` (binary) | `QByteArray`      | `QByteArray(data, len)`    | `ba.data()`, `ba.size()`   |
-| `int`                  | `int`             | direct                     | direct                     |
-| `bool` / `int`         | `bool`            | `result != 0`              | direct                     |
-| `void*`                | (store in member) | —                          | —                          |
+In the impl class you work entirely in std/C++ types — the generated glue handles the Qt/wire side. These are the conversions you write between the C library and your method signatures:
+
+| C type                 | Impl type                  | C → impl                  | impl → C                   |
+| ---------------------- | -------------------------- | ------------------------- | -------------------------- |
+| `const char*`          | `std::string`              | `std::string(c_str)`      | `s.c_str()`                |
+| `const char*` (binary) | `std::vector<uint8_t>`     | `{data, data + len}`      | `v.data()`, `v.size()`     |
+| `int`                  | `int64_t`                  | direct (widen)            | `static_cast<int>(n)`      |
+| `bool` / `int`         | `bool`                     | `result != 0`             | direct                     |
+| `void*`                | (store as private member)  | —                         | —                          |
+
+> Use `int64_t` (not `int`) in the public signatures — that's the integer type the generator recognizes. Narrow to the C library's `int` inside the method, as the calc example does.
 
 ## Advanced: Wrapping a Library from a Flake Input
 
@@ -952,6 +1127,7 @@ Instead of pre-building the library and placing it in `lib/`, you can have Nix f
   "type": "core",
   "description": "Module wrapping libfoo",
   "main": "foo_module_plugin",
+  "interface": "universal",
   "dependencies": [],
 
   "nix": {
@@ -1009,24 +1185,24 @@ The [logos-libp2p-module](https://github.com/logos-co/logos-libp2p-module) is a 
 
 - `**flake.nix**` — Uses `externalLibInputs` to fetch the nim-libp2p C bindings from a GitHub flake
 - `**metadata.json**` — Declares `nim_libp2p` as an external library with `go_build: false` in the `nix` section
-- `**src/plugin.cpp**` — Wraps ~40 C functions (`libp2p_new`, `libp2p_start`, `libp2p_connect`, `libp2p_dial`, `libp2p_gossipsub_subscribe`, etc.) as `Q_INVOKABLE` methods
-- `**tests/**` — Qt test suite that exercises every wrapped function
+- `**src/*_impl.cpp**` — Wraps ~40 C functions (`libp2p_new`, `libp2p_start`, `libp2p_connect`, `libp2p_dial`, `libp2p_gossipsub_subscribe`, etc.) as plain public methods
+- `**tests/**` — test suite that exercises every wrapped function with the Logos Test Framework
 
 It follows the exact same pattern as this tutorial, just at a larger scale.
 
 ## Troubleshooting
 
-### `initLogos` marked 'override', but does not override
+### A method doesn't show up in `lm` / can't be called
 
-```
-error: 'void MyPlugin::initLogos(LogosAPI*)' marked 'override', but does not override
-```
+The generator only exposes `public` methods on the impl class whose parameter and return types it recognizes. If a method is missing:
 
-**Fix:** Remove the `override` keyword from `initLogos`. The base `PluginInterface` class does not declare it as virtual. The Logos host calls it reflectively via `QMetaObject::invokeMethod`. Declare it as:
+1. Make sure it's in the `public:` section (not `private:`).
+2. Use supported types only — notably `int64_t` (not `int`), `std::string` (not `char*` or `QString`), `std::vector<std::string>`, `bool`, `double`, `LogosMap`/`LogosList`, `StdLogosResult`. See the type table in [Step 3](#step-3-configure-the-logos-module).
+3. Keep the signature on as few lines as the parser expects — one declaration per method.
 
-```cpp
-Q_INVOKABLE void initLogos(LogosAPI* api);  // No override!
-```
+### Build error: unknown type / generator can't parse a method
+
+The `--from-header` parser reads your `*_impl.h` as text. Pulling Qt types or unusual templates into a *public method signature* will confuse it. Keep Qt out of the impl header entirely, and move any helper that needs exotic types into the `private:` section or the `.cpp`.
 
 ### Library not found at runtime
 
@@ -1036,23 +1212,13 @@ Cannot load library calc_module_plugin.so: libcalc.so: cannot open shared object
 
 **Fix:** Ensure `libcalc.so` / `libcalc.dylib` is in the same directory as the plugin. The build system sets RPATH to `$ORIGIN` (Linux) / `@loader_path` (macOS) so the plugin looks for libraries in its own directory.
 
-### `initLogos` stores API pointer in wrong variable
+### Events never reach subscribers
 
-If inter-module calls or API features silently fail, check that `initLogos` assigns to the **global** `logosAPI` variable (defined in the Logos SDK / liblogos), not to a class member like `m_logosAPI`:
+If you emit an event (e.g. `versionReady(...)`) but a QML view or another module never receives it:
 
-```cpp
-// CORRECT — uses the global variable from liblogos
-void MyPlugin::initLogos(LogosAPI* api)
-{
-    logosAPI = api;
-}
-
-// WRONG — stores in a local member, API calls won't work
-void MyPlugin::initLogos(LogosAPI* api)
-{
-    m_logosAPI = api;
-}
-```
+1. The event must be declared in a `logos_events:` section of the impl header, and your class must inherit `LogosModuleContext`.
+2. The event only fires when the module is loaded by a host (logoscore / basecamp). Constructed standalone (unit tests), emission is a safe no-op — that's expected.
+3. The subscriber must use the exact event name string, e.g. `logos.onModuleEvent("calc_module", "versionReady")`.
 
 ### Plugin not discovered by logoscore
 

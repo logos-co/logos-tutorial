@@ -1750,6 +1750,11 @@ _REPORT_HTML_TEMPLATE = r"""<!DOCTYPE html>
   .col.left { border-right: 1px solid var(--border); }
   .row.preamble .col.left, .row.section .col.left { border-right: none; }
   .col.right { background: var(--panel); }
+  /* A row containing any failed step is tinted red end-to-end so it's
+     impossible to miss when scanning the report. */
+  .row.has-fail { border-color: var(--fail); box-shadow: 0 0 0 1px var(--fail); }
+  .row.has-fail .col.left { background: rgba(248,81,73,.07); border-right-color: var(--fail); }
+  .row.has-fail .col.right { background: rgba(248,81,73,.12); }
   .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
   .md :first-child { margin-top: 0; }
   .md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 15px; }
@@ -1840,7 +1845,9 @@ _REPORT_HTML_TEMPLATE = r"""<!DOCTYPE html>
         (/^#\s|^##\s/.test(row.md.trim()));
       const div = document.createElement("div");
       const hasExec = row.execs.length > 0;
-      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble"));
+      const hasFail = row.execs.some(e => e.status === "fail");
+      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble")) +
+        (hasFail ? " has-fail" : "");
 
       const left = document.createElement("div");
       left.className = "col left";
