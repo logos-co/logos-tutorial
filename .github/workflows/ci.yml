@@ -40,7 +40,7 @@ jobs:
       - name: Test - QML UI App (includes C Library tutorial via requires)
         run: |
           python3 tools/tutorial_runner.py run \
-            tests/tutorial-qml-ui-app.test.yaml \
+            tests/tutorial-cpp-ui-app.test.yaml \
             --verbose
 
       - name: Verify markdown generation
