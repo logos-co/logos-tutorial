@@ -568,17 +568,33 @@ def _screenshot_filename(raw):
     return name
 
 
-def _screenshot_md_lines(ui_test_spec):
+def _screenshot_md_lines(ui_test_spec, images_dir=None):
     """Markdown image embeds for any ui_test action carrying a `screenshot:`
-    field. Paths are relative (`images/<file>.png`) so they resolve from the
-    generated .md in outputs/."""
+    field.
+
+    With no `images_dir` (the published-tutorial generator), emit a relative
+    link `images/<file>.png` so it resolves from the generated .md in outputs/.
+    With an `images_dir` (the self-contained HTML report), inline the captured
+    PNG as a base64 `data:` URI when the file exists — so the report stays a
+    single portable file that renders the screenshots even when served from
+    GitHub Pages; fall back to the relative link if the capture is missing."""
+    import base64 as _base64
     lines = []
     for t in ui_test_spec.get("tests", []):
         fname = _screenshot_filename(t.get("screenshot", ""))
         if not fname:
             continue
         alt = t.get("name") or os.path.splitext(fname)[0]
-        lines.append(f"![{alt}](images/{fname})")
+        src = f"images/{fname}"
+        if images_dir:
+            path = os.path.join(images_dir, fname)
+            try:
+                with open(path, "rb") as fh:
+                    b64 = _base64.b64encode(fh.read()).decode("ascii")
+                src = f"data:image/png;base64,{b64}"
+            except OSError:
+                pass  # capture missing (e.g. step failed) — keep relative link
+        lines.append(f"![{alt}]({src})")
     return lines
 
 
@@ -1211,10 +1227,14 @@ def cmd_run(args):
 # HTML REPORT (run --report)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _step_to_markdown(step, sec_num, sub_step):
+def _step_to_markdown(step, sec_num, sub_step, images_dir=None):
     """Render a single step to the same markdown the generator produces.
     Returns (markdown_str, next_sub_step). Mirrors the per-step block in
-    cmd_generate so the report's left column matches the published tutorial."""
+    cmd_generate so the report's left column matches the published tutorial.
+
+    When `images_dir` is given, ui_test screenshots are inlined as base64
+    `data:` URIs (for the self-contained report); otherwise they render as
+    relative `images/<file>.png` links (for the published tutorial / TUI)."""
     out = []
 
     def emit(t=""):
@@ -1269,7 +1289,7 @@ def _step_to_markdown(step, sec_num, sub_step):
             emit(expand_vars(launch))
             emit("```")
             emit()
-        for img in _screenshot_md_lines(ui_test_spec):
+        for img in _screenshot_md_lines(ui_test_spec, images_dir):
             emit(img)
             emit()
 
@@ -1321,6 +1341,15 @@ def build_report_model(collector):
         spec = entry["spec"]
         rows = []
 
+        # Where this spec's ui_test screenshots were written, so they can be
+        # inlined into the report. Mirrors handle_ui_test's resolution: the
+        # global output images dir if set, else <workdir>/images. The report is
+        # built before cleanup(), so these files still exist.
+        spec_workdir = entry.get("workdir")
+        images_dir = _IMAGES_DIR or (
+            os.path.join(spec_workdir, "images") if spec_workdir else None
+        )
+
         # ── Preamble row (title + intro + objectives + prerequisites) ──────
         pre = []
         pre.append(f"# {spec.get('name', 'Tutorial')}")
@@ -1362,7 +1391,7 @@ def build_report_model(collector):
             sec_num = (step_number - 1) if is_step else None
             sub_step = 1
             for step in steps:
-                md, sub_step = _step_to_markdown(step, sec_num, sub_step)
+                md, sub_step = _step_to_markdown(step, sec_num, sub_step, images_dir)
                 execs = collector.execs_for(step)
                 # Runner-only steps (e.g. check_file) render no markdown. Give
                 # them a small left-column note so the row isn't visually empty.

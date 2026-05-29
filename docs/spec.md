@@ -216,6 +216,12 @@ section as `![<name>](images/<file>.png)`, so screenshots appear in the
 published tutorial with no extra markup. The `.png` extension is added if
 omitted; the value is reduced to a basename.
 
+The two-column HTML report (`--report`) inlines each captured screenshot as a
+base64 `data:` URI, so the report stays a single self-contained file that
+renders the screenshots even when served from GitHub Pages (where only the
+`index.html` is published). If a capture is missing (e.g. its step failed), the
+report falls back to the relative `images/<file>.png` link.
+
 **Runner behavior (launch mode):** Runs setup commands, launches the app in the background with `QT_QPA_PLATFORM=offscreen`, waits for the QML inspector to be available, generates a `.mjs` test file, runs it, then kills the app. Reports pass/fail.
 
 **Runner behavior (binary mode):** Runs setup + build, generates a `.mjs` test file, runs it via `node test.mjs --ci <binary> --verbose`. Reports pass/fail.
