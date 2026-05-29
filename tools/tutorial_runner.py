@@ -125,6 +125,72 @@ class Results:
         return self.failed == 0
 
 
+# ── Execution capture for --report ────────────────────────────────────────────
+
+# When `run --report <path>` is active this holds a ReportCollector; otherwise
+# it stays None and the handlers' recording calls are cheap no-ops. It's a
+# module global (like RELEASE_TAG) so the existing handler signatures don't all
+# have to grow a parameter.
+_REPORT = None
+
+
+class ReportCollector:
+    """Accumulates what each step actually executed, keyed by the identity of
+    the step dict so the report builder (which walks the same spec objects) can
+    line up real execution against rendered markdown. Spec objects are held in
+    `specs` so their step dicts stay alive and their ids stay stable/unique."""
+
+    def __init__(self):
+        self.specs = []          # [{spec, spec_path, workdir, meta}] in run order
+        self._by_step = {}       # id(step) -> [exec record dict, ...]
+
+    def begin_spec(self, spec, spec_path, workdir, meta):
+        self.specs.append({
+            "spec": spec, "spec_path": spec_path,
+            "workdir": workdir, "meta": meta,
+        })
+
+    def record(self, step, **rec):
+        """Attach one execution record to a step. `rec` keys: kind, cmd,
+        status (pass|fail|info), exit_code, output, note."""
+        self._by_step.setdefault(id(step), []).append(rec)
+
+    def execs_for(self, step):
+        return self._by_step.get(id(step), [])
+
+
+def _describe_ui_actions(tests):
+    """One-line-per-action human summary of a ui_test's test list."""
+    lines = []
+    for t in tests:
+        action = t.get("action", "")
+        name = t.get("name", "")
+        if action == "wait_for":
+            detail = f"wait for {t.get('texts', [])}"
+        elif action == "expect_texts":
+            detail = f"expect {t.get('texts', [])}"
+        elif action == "click":
+            detail = f"click {t.get('target', '')!r}"
+        elif action == "set_text":
+            detail = f"set {t.get('find_by','')}={t.get('find_value','')!r} to {t.get('value','')!r}"
+        elif action == "sleep":
+            detail = f"sleep {t.get('ms', 0)}ms"
+        else:
+            detail = action
+        lines.append(f"- {name + ': ' if name else ''}{detail}")
+    return "\n".join(lines)
+
+
+def _rec_ui(step, launch_cmd, tests, status, note, output):
+    """Record a ui_test execution: the launch command, the action list, and the
+    captured output/log."""
+    if not _REPORT:
+        return
+    cmd = launch_cmd + "\n\n# test actions:\n" + _describe_ui_actions(tests)
+    _REPORT.record(step, kind="ui_test", cmd=cmd, status=status,
+                   output=output, note=note)
+
+
 # ── Variable Expansion ────────────────────────────────────────────────────────
 
 RELEASE_TAG = ""
@@ -227,17 +293,29 @@ def handle_file(step, workdir, results, verbose):
 
     if os.path.isfile(full_path):
         print(f"  wrote   {path}")
+        if _REPORT:
+            _REPORT.record(step, kind="file", cmd=f"write {path}",
+                           status="pass", note=f"Wrote {path}")
     else:
+        if _REPORT:
+            _REPORT.record(step, kind="file", cmd=f"write {path}",
+                           status="fail", note="file was not created")
         results.fail(f"write {path}", "file was not created")
 
 
-def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_contains=None):
+def _exec_run(cmd, title, workdir, results, verbose, override_flags,
+              expect_contains=None, step=None):
     """Execute a single run command with optional output assertions."""
     cmd = expand_vars(cmd)
     cmd = inject_nix_overrides(cmd, override_flags)
     expect_contains = expect_contains or []
 
     rc, output = run_cmd(cmd, workdir, verbose, capture=True)
+
+    def _rec(status, note=""):
+        if _REPORT:
+            _REPORT.record(step, kind="run", cmd=cmd, status=status,
+                           exit_code=rc, output=output, note=note)
 
     if rc != 0:
         if output and output.strip():
@@ -247,6 +325,7 @@ def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_cont
                 print(f"        {dim(f'... ({len(lines) - 20} lines omitted)')}")
             for line in tail:
                 print(f"        {dim(line)}")
+        _rec("fail", f"exit code {rc}")
         results.fail(title, f"command failed with exit code {rc}")
         return
 
@@ -256,12 +335,15 @@ def _exec_run(cmd, title, workdir, results, verbose, override_flags, expect_cont
             if expected not in output:
                 trimmed = output.strip()
                 out_msg = trimmed[:500] if trimmed else "(empty)"
+                _rec("fail", f"expected '{expected}' not found in output")
                 results.fail(title, f"expected '{expected}' not found in output\n        actual:   {out_msg}")
                 all_found = False
                 break
         if all_found:
+            _rec("pass")
             results.pass_(title)
     else:
+        _rec("pass")
         results.pass_(title)
 
 
@@ -271,14 +353,14 @@ def handle_run(step, workdir, results, verbose, override_flags):
         return
     title = step.get("title", cmd)
     _exec_run(cmd, title, workdir, results, verbose, override_flags,
-              step.get("expect_contains", []))
+              step.get("expect_contains", []), step=step)
 
     extra = step.get("extra_run", {})
     if extra:
         extra_cmd = extra.get("run", "")
         if extra_cmd:
             _exec_run(extra_cmd, f"{title} (verify)", workdir, results, verbose,
-                      override_flags, extra.get("expect_contains", []))
+                      override_flags, extra.get("expect_contains", []), step=step)
 
 
 def handle_check_file(step, workdir, results, verbose):
@@ -290,8 +372,14 @@ def handle_check_file(step, workdir, results, verbose):
     full_pattern = os.path.join(workdir, pattern)
     matches = glob.glob(full_pattern)
     if matches:
+        if _REPORT:
+            _REPORT.record(step, kind="check_file", cmd=f"check file: {pattern}",
+                           status="pass", note=f"Found: {matches[0]}")
         results.pass_(title)
     else:
+        if _REPORT:
+            _REPORT.record(step, kind="check_file", cmd=f"check file: {pattern}",
+                           status="fail", note=f"file not found: {pattern}")
         results.fail(title, f"file not found: {pattern}")
 
 
@@ -655,16 +743,30 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
             print(f"        {dim('app output (' + app_log_path + '):')}")
             print(f"        {dim(tail if tail else '(no output captured)')}")
 
+        def _app_log_tail():
+            app_log.flush()
+            try:
+                with open(app_log_path) as f:
+                    return f.read().strip()[-1500:]
+            except OSError:
+                return ""
+
         try:
             port = ui_spec.get("inspector_port", 3768)
             timeout = ui_spec.get("launch_timeout", 120)
             print(f"  Waiting for inspector on port {port} (timeout {timeout}s)...")
             status = _wait_for_inspector(port=port, timeout=timeout, proc=app_proc)
             if status == "died":
+                _rec_ui(step, launch_cmd, tests, "fail",
+                        f"app exited (code {app_proc.returncode}) before inspector opened on port {port}",
+                        _app_log_tail())
                 results.fail(title, f"app exited (code {app_proc.returncode}) before inspector opened on port {port}")
                 _dump_app_log("app process exited before opening the inspector port")
                 return
             if status == "timeout":
+                _rec_ui(step, launch_cmd, tests, "fail",
+                        f"inspector not available on port {port} after {timeout}s",
+                        _app_log_tail())
                 results.fail(title, f"inspector not available on port {port} after {timeout}s")
                 _dump_app_log("inspector port never opened (app still running — likely slow boot or wrong port)")
                 return
@@ -673,8 +775,11 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
             cmd = f'node "{mjs_path}" --verbose'
             rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
             if rc == 0:
+                _rec_ui(step, launch_cmd, tests, "pass", "", output)
                 results.pass_(title)
             else:
+                _rec_ui(step, launch_cmd, tests, "fail", "UI tests failed",
+                        (output or "") + "\n\n--- app log ---\n" + _app_log_tail())
                 results.fail(title, "UI tests failed")
                 trimmed = output.strip()[-800:] if output else "(no output)"
                 print(f"        {dim(trimmed)}")
@@ -733,8 +838,10 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
         print(f"  Running UI tests ({len(tests)} actions)...")
         rc, output = run_cmd(cmd, workdir, verbose, capture=True, timeout=120)
         if rc == 0:
+            _rec_ui(step, cmd, tests, "pass", "", output)
             results.pass_(title)
         else:
+            _rec_ui(step, cmd, tests, "fail", "UI tests failed", output)
             results.fail(title, "UI tests failed")
             trimmed = output.strip()[-800:] if output else "(no output)"
             print(f"        {dim(trimmed)}")
@@ -784,6 +891,13 @@ def run_single_spec(spec, spec_path, workdir, args, results):
     if override_flags:
         print(f"  overrides: {override_flags}")
     print()
+
+    if _REPORT:
+        _REPORT.begin_spec(spec, spec_path, workdir, {
+            "name": tutorial_name,
+            "platform": f"{platform.system()} (ext={LIB_EXT})",
+            "release": release or "(none)",
+        })
 
     sections = spec.get("sections", [])
 
@@ -847,6 +961,10 @@ def cmd_run(args):
     requires = spec.get("requires", [])
     fail_fast = not args.continue_on_fail
     results = Results(fail_fast=fail_fast)
+
+    global _REPORT
+    if getattr(args, "report", None):
+        _REPORT = ReportCollector()
 
     if args.workdir:
         workdir = os.path.abspath(args.workdir)
@@ -936,12 +1054,368 @@ def cmd_run(args):
 
     ok = results.summary()
 
+    # Build the HTML report before cleanup removes the working directories.
+    if _REPORT is not None:
+        try:
+            report_path = os.path.abspath(args.report)
+            write_html_report(_REPORT, report_path, results)
+            print(f"  report : {report_path}")
+        except Exception as e:
+            print(f"  {yellow(f'report generation failed: {e}')}")
+
     try:
         cleanup()
     except Exception:
         pass
 
     sys.exit(0 if ok else 1)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HTML REPORT (run --report)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _step_to_markdown(step, sec_num, sub_step):
+    """Render a single step to the same markdown the generator produces.
+    Returns (markdown_str, next_sub_step). Mirrors the per-step block in
+    cmd_generate so the report's left column matches the published tutorial."""
+    out = []
+
+    def emit(t=""):
+        out.append(t)
+
+    def emit_block(t):
+        out.extend(t.rstrip("\n").split("\n"))
+
+    title = step.get("title", "")
+    if title:
+        if sec_num is not None:
+            emit(f"### {sec_num}.{sub_step} {title}")
+            sub_step += 1
+        else:
+            emit(f"### {title}")
+        emit()
+
+    text = step.get("text", "")
+    if text:
+        emit_block(expand_vars(text))
+        emit()
+
+    file_spec = step.get("file", {})
+    if file_spec:
+        path = file_spec.get("path", "")
+        encoding = file_spec.get("encoding", "")
+        lang = lang_for_path(path, file_spec.get("language"))
+        if encoding == "base64":
+            emit(f"*Binary file: `{path}`*")
+        else:
+            emit(f"```{lang}")
+            emit_block(expand_vars(file_spec.get("content", "")))
+            emit("```")
+        emit()
+
+    run_cmd_str = step.get("run", "")
+    if run_cmd_str:
+        code_block = step.get("code_block", "")
+        emit("```bash")
+        if code_block:
+            emit_block(expand_vars(code_block))
+        else:
+            emit(expand_vars(run_cmd_str))
+        emit("```")
+        emit()
+
+    ui_test_spec = step.get("ui_test", {})
+    if ui_test_spec:
+        launch = ui_test_spec.get("launch", "")
+        if launch:
+            emit("```bash")
+            emit(expand_vars(launch))
+            emit("```")
+            emit()
+
+    post_text = step.get("post_text", "")
+    if post_text:
+        emit_block(expand_vars(post_text))
+        emit()
+
+    extra = step.get("extra_run", {})
+    if extra:
+        extra_code = extra.get("code_block", "")
+        extra_cmd = extra.get("run", "")
+        emit("```bash")
+        if extra_code:
+            emit_block(expand_vars(extra_code))
+        elif extra_cmd:
+            emit(expand_vars(extra_cmd))
+        emit("```")
+        emit()
+        extra_post = extra.get("post_text", "")
+        if extra_post:
+            emit_block(expand_vars(extra_post))
+            emit()
+
+    return "\n".join(out).strip(), sub_step
+
+
+def _section_preamble_markdown(section, step_number, is_step):
+    """Markdown for a section heading + its intro text (no steps)."""
+    out = []
+    title = section.get("title", "")
+    if is_step:
+        out.append(f"## Step {step_number}: {title}")
+    else:
+        out.append(f"## {title}")
+    out.append("")
+    sec_text = section.get("text", "")
+    if sec_text:
+        out.extend(expand_vars(sec_text).rstrip("\n").split("\n"))
+    return "\n".join(out).strip()
+
+
+def build_report_model(collector):
+    """Turn the collector's per-spec execution data into a JSON-serializable
+    model: a list of tutorials, each with rows. A row has rendered markdown
+    (left column) and a list of execution records (right column)."""
+    tutorials = []
+    for entry in collector.specs:
+        spec = entry["spec"]
+        rows = []
+
+        # ── Preamble row (title + intro + objectives + prerequisites) ──────
+        pre = []
+        pre.append(f"# {spec.get('name', 'Tutorial')}")
+        pre.append("")
+        if spec.get("intro"):
+            pre.append(spec["intro"].rstrip("\n"))
+            pre.append("")
+        if spec.get("what_you_build"):
+            pre.append(f"**What you'll build:** {spec['what_you_build']}")
+            pre.append("")
+        if spec.get("what_you_learn"):
+            pre.append("**What you'll learn:**")
+            pre.append("")
+            for it in spec["what_you_learn"]:
+                pre.append(f"- {it}")
+            pre.append("")
+        if spec.get("comparison"):
+            pre.append(spec["comparison"].rstrip("\n"))
+            pre.append("")
+        if spec.get("prerequisites"):
+            pre.append("## Prerequisites")
+            pre.append("")
+            for p in spec["prerequisites"]:
+                pre.append(f"- {p}")
+        rows.append({"md": "\n".join(pre).strip(), "execs": []})
+
+        # ── Sections and steps ─────────────────────────────────────────────
+        step_number = 1
+        for section in spec.get("sections", []):
+            is_step = section.get("step", False)
+            rows.append({
+                "md": _section_preamble_markdown(section, step_number, is_step),
+                "execs": [],
+            })
+            if is_step:
+                step_number += 1
+
+            steps = section.get("steps", [])
+            sec_num = (step_number - 1) if is_step else None
+            sub_step = 1
+            for step in steps:
+                md, sub_step = _step_to_markdown(step, sec_num, sub_step)
+                execs = collector.execs_for(step)
+                # Runner-only steps (e.g. check_file) render no markdown. Give
+                # them a small left-column note so the row isn't visually empty.
+                if not md and execs:
+                    md = "*(verification step — not shown in the published tutorial)*"
+                rows.append({"md": md, "execs": execs})
+
+        tutorials.append({"meta": entry["meta"], "rows": rows})
+    return tutorials
+
+
+def write_html_report(collector, output_path, results):
+    import json as _json
+    model = build_report_model(collector)
+    payload = {
+        "generated_platform": f"{platform.system()}",
+        "summary": {
+            "passed": results.passed,
+            "failed": results.failed,
+            "skipped": results.skipped,
+        },
+        "tutorials": model,
+    }
+    data_json = _json.dumps(payload)
+    # Close any literal </script> in the data so it can't terminate the tag.
+    data_json = data_json.replace("</", "<\\/")
+
+    html = _REPORT_HTML_TEMPLATE.replace("__DATA__", data_json)
+    with open(output_path, "w") as f:
+        f.write(html)
+
+
+_REPORT_HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial Execution Report</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --pass: #2ea043; --fail: #f85149; --info: #d29922;
+    --code-bg: #0b0f14;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .pill.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .pill.skip { background: rgba(210,153,34,.15); color: var(--info); }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  .tutorial-title { font-size: 20px; font-weight: 700; margin: 24px 0 8px; color: #fff; }
+  .row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden;
+  }
+  .row.preamble, .row.section { grid-template-columns: 1fr; }
+  .col { padding: 14px 18px; min-width: 0; }
+  .col.left { border-right: 1px solid var(--border); }
+  .row.preamble .col.left, .row.section .col.left { border-right: none; }
+  .col.right { background: var(--panel); }
+  .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+  .md :first-child { margin-top: 0; }
+  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 15px; }
+  .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .md :not(pre) > code { background: rgba(110,118,129,.2); padding: .15em .4em; border-radius: 4px; }
+  .md table { border-collapse: collapse; margin: 8px 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; }
+  .md blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 2px 12px; color: var(--muted); }
+  .exec { margin-bottom: 14px; }
+  .exec:last-child { margin-bottom: 0; }
+  .exec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+  .badge.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .badge.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .badge.info { background: rgba(210,153,34,.15); color: var(--info); }
+  .kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .note { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  pre.cmd { background: var(--code-bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 0 0 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  pre.output { background: #010409; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0; overflow-x: auto; max-height: 360px; overflow-y: auto; color: #b9c1ca; }
+  pre.cmd, pre.output { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+  .empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tutorial Execution Report</h1>
+  <span id="summary"></span>
+  <label style="margin-left:auto; font-size:12px; color:var(--muted)">Tutorial
+    <select id="picker"></select>
+  </label>
+</header>
+<main id="main"></main>
+
+<script id="report-data" type="application/json">__DATA__</script>
+<script>
+  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+  if (window.marked) { marked.setOptions({ gfm: true, breaks: false }); }
+  const mdToHtml = (s) => window.marked ? marked.parse(s || "") : ("<pre>" + (s || "") + "</pre>");
+
+  const sum = DATA.summary;
+  document.getElementById("summary").innerHTML =
+    `<span class="pill pass">${sum.passed} passed</span> ` +
+    (sum.failed ? `<span class="pill fail">${sum.failed} failed</span> ` : "") +
+    (sum.skipped ? `<span class="pill skip">${sum.skipped} skipped</span>` : "");
+
+  const picker = document.getElementById("picker");
+  DATA.tutorials.forEach((t, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = t.meta.name; picker.appendChild(o);
+  });
+
+  function execHtml(e) {
+    const badge = `<span class="badge ${e.status}">${e.status.toUpperCase()}</span>`;
+    const kind = `<span class="kind">${e.kind}${e.exit_code !== undefined ? " · exit " + e.exit_code : ""}</span>`;
+    let h = `<div class="exec"><div class="exec-head">${badge}${kind}</div>`;
+    if (e.note) h += `<div class="note">${escapeHtml(e.note)}</div>`;
+    if (e.cmd) h += `<pre class="cmd">${escapeHtml(e.cmd)}</pre>`;
+    const out = (e.output || "").trim();
+    if (out) {
+      const long = out.split("\n").length > 12;
+      if (long) {
+        h += `<details><summary>output (${out.split("\n").length} lines)</summary><pre class="output">${escapeHtml(out)}</pre></details>`;
+      } else {
+        h += `<pre class="output">${escapeHtml(out)}</pre>`;
+      }
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function render(idx) {
+    const t = DATA.tutorials[idx];
+    const main = document.getElementById("main");
+    main.innerHTML = "";
+    const h = document.createElement("div");
+    h.className = "tutorial-title";
+    h.textContent = t.meta.name + "  —  " + t.meta.platform;
+    main.appendChild(h);
+
+    t.rows.forEach(row => {
+      const isStructural = row.execs.length === 0 &&
+        (/^#\s|^##\s/.test(row.md.trim()));
+      const div = document.createElement("div");
+      const hasExec = row.execs.length > 0;
+      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble"));
+
+      const left = document.createElement("div");
+      left.className = "col left";
+      left.innerHTML = `<div class="md">${mdToHtml(row.md)}</div>`;
+      div.appendChild(left);
+
+      if (hasExec || !isStructural) {
+        const right = document.createElement("div");
+        right.className = "col right";
+        if (hasExec) {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            row.execs.map(execHtml).join("");
+        } else {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            `<div class="empty">No commands run for this step.</div>`;
+        }
+        div.appendChild(right);
+      }
+      main.appendChild(div);
+    });
+  }
+
+  picker.addEventListener("change", () => render(+picker.value));
+  render(0);
+</script>
+</body>
+</html>
+"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1253,6 +1727,9 @@ def main():
                             help="Don't stop at the first failure (default: stop)")
     run_parser.add_argument("--release", default=None,
                             help="Git tag for GitHub URLs (overrides spec's 'release' field)")
+    run_parser.add_argument("--report", default=None, metavar="PATH",
+                            help="Write a two-column HTML report (rendered tutorial + "
+                                 "the commands actually run and their output) to PATH")
 
     # ── generate ──────────────────────────────────────────────────────────
     gen_parser = subparsers.add_parser("generate", help="Generate markdown from a spec")

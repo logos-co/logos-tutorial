@@ -39,9 +39,22 @@ jobs:
 
       - name: Test - QML UI App (includes C Library tutorial via requires)
         run: |
+          # --continue-on-fail so the run walks the whole Part 1 -> 2 -> 3 chain
+          # and the uploaded report is complete. The job still fails (non-zero
+          # exit) if any step failed; this only changes whether we stop early.
           python3 tools/tutorial_runner.py run \
             tests/tutorial-cpp-ui-app.test.yaml \
-            --verbose
+            --verbose \
+            --continue-on-fail \
+            --report "${{ runner.temp }}/tutorial-report.html"
+
+      - name: Upload tutorial execution report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tutorial-report-${{ matrix.os }}
+          path: ${{ runner.temp }}/tutorial-report.html
+          if-no-files-found: warn
 
       - name: Verify markdown generation
         run: |
