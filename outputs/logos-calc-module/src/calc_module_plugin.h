@@ -20,15 +20,13 @@ public:
     explicit CalcModulePlugin(QObject* parent = nullptr);
     ~CalcModulePlugin() override;
 
-    // PluginInterface — required by every module
+    // PluginInterface
     QString name() const override { return "calc_module"; }
     QString version() const override { return "1.0.0"; }
 
-    // Called by the Logos host when the module is loaded.
-    // NOT marked override — it is invoked reflectively via QMetaObject.
     Q_INVOKABLE void initLogos(LogosAPI* api);
 
-    // CalcModuleInterface — each wraps a libcalc C function
+    // CalcModuleInterface
     Q_INVOKABLE int add(int a, int b) override;
     Q_INVOKABLE int multiply(int a, int b) override;
     Q_INVOKABLE int factorial(int n) override;

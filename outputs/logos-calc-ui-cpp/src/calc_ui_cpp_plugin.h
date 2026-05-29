@@ -31,7 +31,7 @@ public:
     Q_INVOKABLE void initLogos(LogosAPI* api);
 
     // Slots from calc_ui_cpp.rep — return values directly. The QML replica
-    // receives QRemoteObjectPendingReply; use QtRemoteObjects.watch() in QML to get the value.
+    // receives QRemoteObjectPendingReply; use logos.watch() in QML to get the value.
     int add(int a, int b) override;
     int multiply(int a, int b) override;
     int factorial(int n) override;
