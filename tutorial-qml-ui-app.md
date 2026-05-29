@@ -11,7 +11,7 @@ This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrappin
 - The project structure and metadata for a QML plugin
 - How to package and install your UI into `logos-basecamp`
 
-**Prerequisites:**
+## Prerequisites
 
 - Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module` with the shared library built (`.so` on Linux, `.dylib` on macOS in `logos-calc-module/lib/`)
 - Nix with flakes enabled (same as Part 1)
@@ -40,19 +40,25 @@ Key points:
 - **The `logos` bridge** is injected by the host. Call core modules with `logos.callModule("module", "method", [args])`.
 - **Entry point** is defined by the required `"view"` field in `metadata.json` (for this tutorial it is `Main.qml`).
 
----
-
 ## Step 1: Scaffold
 
-Use the QML module template from `logos-module-builder`:
+Create a new directory and initialise it from the QML module template:
+
+`mkdir logos-calc-ui && cd logos-calc-ui`
 
 ```bash
-mkdir logos-calc-ui && cd logos-calc-ui
 nix flake init -t github:logos-co/logos-module-builder#ui-qml
-git init && git add -A
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 4](#step-4-update-flakenix) to ensure reproducible builds.
+
+```bash
+git init
+```
+
+```bash
+git add -A
+```
 
 This gives you:
 
@@ -361,18 +367,29 @@ The `calc_module.url` can be either:
 
 ```bash
 git add -A
-nix flake update   # regenerate flake.lock to match the pinned inputs in flake.nix
+```
+
+```bash
+nix flake update
+```
+
+```bash
 git add flake.lock
+```
+
+```bash
 nix run .
 ```
 
 The app opens immediately. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
 
-### 5.2 Full functionality (with modules)
+---
+
+## Step 6: Full functionality (with modules)
 
 The standalone app automatically bundles and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
 
-#### Ensure `calc_module` is built
+### 6.1 Ensure `calc_module` is built
 
 Go back to your `logos-calc-module` directory and verify the shared library exists:
 
@@ -401,7 +418,7 @@ cd ../logos-calc-ui
 
 The `nix build` produces `result/lib/calc_module_plugin.so` (or `.dylib`), which is the compiled Qt plugin. The `lib/libcalc.so` (or `.dylib`) inside the source tree is the underlying C library that gets linked in during the build.
 
-#### Option A: Use `--override-input` (quick, no flake.nix edits)
+### 6.2 Option A: Use `--override-input` (quick, no flake.nix edits)
 
 If your `flake.nix` points to a `github:` URL, you can override it at build time to use your local checkout:
 
@@ -411,7 +428,7 @@ nix run . --override-input calc_module path:../logos-calc-module
 
 This tells nix to resolve the `calc_module` flake input from your local directory instead of from the remote URL. Any changes you've made to `calc_module` locally (including the built `.so`/`.dylib` in `lib/`) are picked up immediately — no need to push to GitHub first.
 
-#### Option B: Set `path:` in `flake.nix` (persistent local development)
+### 6.3 Option B: Set `path:` in `flake.nix` (persistent local development)
 
 If you're iterating on both repos side by side, you can point the flake input directly to your local `calc_module` checkout. In `flake.nix`, change:
 
@@ -432,7 +449,7 @@ nix run .
 
 This is convenient when you always want to build against the local copy. Switch back to `github:` when you're ready to pin to a published version.
 
-#### Option C: Pin to the remote repo
+### 6.4 Option C: Pin to the remote repo
 
 If `calc_module` has been pushed to the remote repository (with the `.so`/`.dylib` committed in `lib/`), the `github:` URL in `flake.nix` already points to it. A plain `nix run .` fetches and builds `calc_module` from the remote:
 
@@ -446,7 +463,7 @@ Whichever option you choose, clicking **Add**, **Multiply**, **Factorial**, or *
 
 ---
 
-## Step 6: Using the Logos Design System
+## Step 7: Using the Logos Design System
 
 `logos-basecamp` (and `logos-standalone-app`) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
 
@@ -528,9 +545,9 @@ Feel free to report bugs, file feature requests, or contribute components / them
 
 ---
 
-## Step 7: Load in `logos-basecamp`
+## Step 8: Load in `logos-basecamp`
 
-### 7.1 Bundle as LGX packages
+### 8.1 Bundle as LGX packages
 
 Create `.lgx` packages for both dev and portable variants. Use `--out-link` to avoid overwriting the `result` symlink:
 
@@ -548,16 +565,21 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 
 > For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
-### 7.2 Build and run logos-basecamp
+```bash
+nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable
+```
+
+### 8.2 Build and run logos-basecamp
 
 Build logos-basecamp, launch it once to preinstall its bundled modules, then install your modules.
 
 > **Note:** `logos-basecamp` does not accept `--modules-dir` or `--ui-plugins-dir` CLI flags. It manages its own data directory and preinstalls bundled modules (main_ui, package_manager, etc.) on first launch.
 
 ```bash
-# Build logos-basecamp
 nix build 'github:logos-co/logos-basecamp' -o basecamp-result
+```
 
+```bash
 # Launch once to preinstall bundled modules, then close it
 ./basecamp-result/bin/logos-basecamp
 ```
@@ -574,6 +596,8 @@ ls ~/.local/share/Logos/
 
 The dev build directory is named `LogosBasecampDev` (portable builds use `LogosBasecamp`).
 
+### 8.3 Install modules with lgpm
+
 Install your modules using `lgpm`. First, set `BASECAMP_DIR` to your platform's path:
 
 ```bash
@@ -585,9 +609,10 @@ BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
 ```
 
 ```bash
-# Build lgpm CLI
 nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+```
 
+```bash
 # Install core module
 ./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
   install --file ../logos-calc-module/result-lgx/*.lgx
@@ -600,14 +625,15 @@ nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ./basecamp-result/bin/logos-basecamp
 ```
 
-### 7.3 Portable basecamp build (optional)
+### 8.4 Portable basecamp build (optional)
 
 The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
 
 ```bash
-# Build portable basecamp (bundles all Qt frameworks/libraries)
 nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
+```
 
+```bash
 # Launch once to preinstall bundled modules
 ./basecamp-portable/bin/logos-basecamp
 ```
@@ -639,7 +665,7 @@ Install your modules using the **portable** `.lgx` variants:
 
 > **Important:** Portable basecamp requires portable `.lgx` variants (`result-lgx-portable`), and the dev build requires dev variants (`result-lgx`). Mixing them will cause loading failures.
 
-### 7.4 Install via logos-basecamp UI
+### 8.5 Install via logos-basecamp UI
 
 Instead of using `lgpm` on the command line, you can install modules through the basecamp UI:
 
@@ -651,7 +677,7 @@ Instead of using `lgpm` on the command line, you can install modules through the
 
 The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml`.
 
-### 7.5 Live reloading with `logos-standalone-app`
+### 8.6 Live reloading with `logos-standalone-app`
 
 For QML iteration, set `DEV_QML_PATH` to the directory that contains your view entry file (the basename from `metadata.json` `view` must exist under that directory). For this tutorial's layout (`view`: `Main.qml` at repo root):
 
@@ -684,7 +710,7 @@ DEV_QML_PATH=$PWD ./result/bin/run-logos-standalone-ui
 
 > This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so changes to your source files are not reflected until you rebuild and reinstall the `.lgx` package.
 
-### 7.6 Testing without any runtime
+### 8.7 Testing without any runtime
 
 You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout.
 
@@ -713,13 +739,13 @@ qml6 Main.qml
 
 ---
 
-## Step 8: UI Integration Tests (Optional)
+## Step 9: UI Integration Tests
 
 You can add automated UI tests that verify your QML plugin renders correctly. The test infrastructure is built into `logos-module-builder` — just add `.mjs` test files to a `tests/` directory and you get `nix build .#integration-test` for free.
 
 Tests use the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework, which connects to the QML inspector inside `logos-standalone-app` and can find elements, click buttons, verify text, and take screenshots.
 
-### 8.1 Create a test file
+### 9.1 Create a test file
 
 Create `tests/ui-tests.mjs`:
 
@@ -737,7 +763,7 @@ const { test, run } = await import(
 test("calc_ui: loads and shows title", async (app) => {
   await app.waitFor(
     async () => {
-      await app.expectTexts(["Calculator"]);
+      await app.expectTexts(["Logos Calculator"]);
     },
     { timeout: 15000, interval: 500, description: "calc_ui to load" },
   );
@@ -747,37 +773,40 @@ test("calc_ui: add button visible", async (app) => {
   await app.expectTexts(["Add"]);
 });
 
-test("calc_ui: click add and check result", async (app) => {
+test("calc_ui: click add shows validation", async (app) => {
   await app.click("Add");
-  // Verify the result appears (depends on your UI)
   await app.waitFor(
     async () => {
-      await app.expectTexts(["Result:"]);
+      await app.expectTexts(["Enter values for a and b"]);
     },
-    { timeout: 5000, interval: 500, description: "result to appear" },
+    { timeout: 5000, interval: 500, description: "validation message to appear" },
   );
 });
 
 run();
 ```
 
-### 8.2 Run the tests
+### 9.2 Run the tests
 
 ```bash
 git add tests/
+```
 
-# Hermetic CI test (builds everything, runs headless)
+```bash
 nix build .#integration-test -L
-
-# Interactive: build test framework, run against a running app
-nix build .#test-framework -o result-mcp
-nix run .          # start the app with inspector on :3768
-node tests/ui-tests.mjs  # in another terminal
 ```
 
 The `integration-test` output launches `logos-standalone-app` with `QT_QPA_PLATFORM=offscreen` (no display needed), connects to the QML inspector, and runs all `.mjs` files in `tests/`.
 
 You can have multiple test files (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`) — they are all discovered and run automatically.
+
+To run tests interactively (against an already-running app):
+
+```bash
+nix build .#test-framework -o result-mcp
+nix run .          # start the app with inspector on :3768
+node tests/ui-tests.mjs  # in another terminal
+```
 
 ---
 
@@ -822,8 +851,6 @@ rm -rf ~/.local/share/Logos/LogosBasecampDev
 
 Then reinstall your custom modules.
 
----
-
 ## Recap
 
 |                     | Core Module (Part 1)                            | QML UI Plugin (Part 2)        |
@@ -834,8 +861,6 @@ Then reinstall your custom modules.
 | `metadata.type`     | `"core"`                                        | `"ui_qml"`                    |
 | Test command        | `logoscore -m ./result/lib -l calc_module`      | `nix run .`                   |
 | Calls other modules | Via `LogosAPI*` (C++)                           | Via `logos.callModule()` (JS) |
-
----
 
 ## What's Next
 

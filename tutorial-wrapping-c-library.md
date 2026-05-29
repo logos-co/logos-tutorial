@@ -33,9 +33,11 @@ Before writing any C code, scaffold the Logos module project using the official 
 
 ### 1.1 Create the project using the module builder template
 
+For a module that wraps an external C library:
+
+`mkdir logos-calc-module && cd logos-calc-module`
+
 ```bash
-# For a module that wraps an external C library:
-mkdir logos-calc-module && cd logos-calc-module
 nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 
 # Or for a plain module (no external library):
