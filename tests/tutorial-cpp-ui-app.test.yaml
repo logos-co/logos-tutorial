@@ -739,7 +739,7 @@ sections:
 
       - title: "Run the tests"
         run: "git add tests/"
-      - run: "nix build .#integration-test -L"
+      - run: "nix flake update --override-input calc_module path:../logos-calc-module && nix build .#integration-test -L"
         code_block: |
           # Hermetic CI test
           nix build .#integration-test -L

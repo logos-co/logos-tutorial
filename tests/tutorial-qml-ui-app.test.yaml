@@ -585,7 +585,12 @@ sections:
           nix build '.#lgx' --out-link result-lgx
           nix build '.#lgx-portable' --out-link result-lgx-portable
         extra_run:
-          run: "nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable"
+          run: "nix flake update --override-input calc_module path:../logos-calc-module && nix build '.#lgx' --out-link result-lgx && nix build '.#lgx-portable' --out-link result-lgx-portable"
+          code_block: |
+            nix build '.#lgx' --out-link result-lgx
+            nix build '.#lgx-portable' --out-link result-lgx-portable
+          post_text: |
+            > **Re-locking note:** earlier steps rebuilt `calc_module` and dropped `result-lgx` links inside its directory, so its on-disk contents changed since you first locked it. Because `calc_module` is a local `path:` input, re-run `nix flake update --override-input calc_module path:../logos-calc-module` before building so the lock matches the current contents (a stricter Nix otherwise rejects the stale hash).
         post_text: |
           > For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
@@ -800,7 +805,7 @@ sections:
 
       - title: "Run the tests"
         run: "git add tests/"
-      - run: "nix build .#integration-test -L"
+      - run: "nix flake update --override-input calc_module path:../logos-calc-module && nix build .#integration-test -L"
         code_block: |
           nix build .#integration-test -L
         post_text: |
