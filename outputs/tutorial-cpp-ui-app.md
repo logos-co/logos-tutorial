@@ -531,11 +531,10 @@ The template already wires everything up. Update the description and point `calc
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
 
-    # Option A: point to a remote repo (for CI or when calc_module is published)
-    calc_module.url = "github:logos-co/logos-tutorial?dir=logos-calc-module";
-
-    # Option B: point to your local checkout (for local development)
-    # calc_module.url = "path:../logos-calc-module";
+    # Points at your local calc_module checkout. This is a placeholder —
+    # you lock it to your actual path in the next step with
+    # `nix flake update --override-input` (see "Lock and build" below).
+    calc_module.url = "path:/path/to/your/calc_module";
   };
 
   outputs = inputs@{ logos-module-builder, calc_module, ... }:
@@ -547,10 +546,12 @@ The template already wires everything up. Update the description and point `calc
 }
 ```
 
-The `calc_module` input attribute name must match the dependency name in `metadata.json`. The URL can be:
+The `calc_module` input attribute name must match the dependency name in `metadata.json`.
 
-- **`github:`** — fetches from a remote GitHub repo. Use for CI or when `calc_module` is published.
-- **`path:`** — points to a local directory on disk (e.g., `path:../logos-calc-module`). Use during local development.
+The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited by hand — Nix won't let a `flake.nix` input use a relative path like `../logos-calc-module` (it's evaluated from a sandboxed copy, so `..` escapes it). Instead you point it at your real checkout **once** via `--override-input` in the next step, which records the resolved absolute path in `flake.lock`. After that, plain `nix run` / `nix build` use the locked path with no override needed.
+
+- **`path:`** (used here) — a local directory on disk. Best for developing `calc_module` and its UI side by side, no network.
+- **`github:`** — fetches `calc_module` from a remote repo instead (for CI, or once it's published to its own repo), e.g. `calc_module.url = "github:your-org/your-calc-module";`.
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
 
@@ -580,29 +581,24 @@ cd ../../logos-calc-ui-cpp
 
 ### 10.2 Lock and build
 
-Stage your files and lock the flake. Then build and run — choose the approach that matches your `flake.nix` setup.
+Stage your files, then lock `calc_module` to your local Part 1 checkout. The `--override-input` resolves `../logos-calc-module` to an absolute path and records it in `flake.lock`, replacing the placeholder from `flake.nix`:
 
 ```bash
 git add -A
 ```
 
 ```bash
-nix flake update
+nix flake update --override-input calc_module path:../logos-calc-module
 ```
 
 ```bash
 git add flake.lock
 ```
 
+Now that the lock pins the real path, plain `nix run` works — no override needed on subsequent commands:
+
 ```bash
-# If flake.nix uses path:../logos-calc-module — just run directly:
 nix run
-
-# If flake.nix uses github: — override to use your local checkout:
-nix run --override-input calc_module path:../logos-calc-module
-
-# Or from the workspace:
-./scripts/ws run logos-calc-ui-cpp --local logos-calc-ui-cpp logos-calc-module
 ```
 
 ### 10.3 Launch and verify the UI
@@ -610,7 +606,7 @@ nix run --override-input calc_module path:../logos-calc-module
 Launch the app and confirm the view loads with all of its controls. The backend runs in a separate `ui-host` process; clicking **Add** sends the call over Qt Remote Objects and the result comes back through `logos.watch()`.
 
 ```bash
-nix run . --override-input calc_module path:../logos-calc-module
+nix run .
 ```
 
 The result `8` comes from `calc_module.add(3, 5)` executed in the C++ backend — proof the full path (QML replica → Qt Remote Objects → ui-host backend → typed SDK → `calc_module`) works end to end.
