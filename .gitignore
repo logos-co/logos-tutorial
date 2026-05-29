@@ -9,5 +9,4 @@ modules/
 plugins/
 
 # Compiled libraries (keep sources, ignore build outputs)
-logos-calc-module/lib/libcalc.so
 logos-calc-module/lib/libcalc.dylib
