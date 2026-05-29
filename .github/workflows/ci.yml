@@ -1,5 +1,23 @@
 name: Tutorial Tests
 
+# ──────────────────────────────────────────────────────────────────────────────
+# One-time setup required for the clickable report links to work:
+#
+#   1. Repo Settings → Pages → "Build and deployment" → Source: "Deploy from a
+#      branch", Branch: `gh-pages` / `(root)`. (The publish-report job creates
+#      the gh-pages branch on its first run.)
+#   2. Nothing else — GITHUB_TOKEN already has the permissions granted below.
+#
+# Each run publishes the two-column HTML report to:
+#   https://<owner>.github.io/<repo>/pr-<N>/<os>/      (pull requests)
+#   https://<owner>.github.io/<repo>/main/<os>/        (pushes to main/master)
+# and (for PRs) posts/updates a comment with the links.
+#
+# Note: pull requests opened from forks get a read-only GITHUB_TOKEN, so the
+# Pages push and PR comment are skipped for them — the downloadable artifact is
+# still produced. PRs from branches in this repo get the full clickable links.
+# ──────────────────────────────────────────────────────────────────────────────
+
 on:
   pull_request:
     branches: [master, main]
@@ -40,7 +58,7 @@ jobs:
       - name: Test - QML UI App (includes C Library tutorial via requires)
         run: |
           # --continue-on-fail so the run walks the whole Part 1 -> 2 -> 3 chain
-          # and the uploaded report is complete. The job still fails (non-zero
+          # and the published report is complete. The job still fails (non-zero
           # exit) if any step failed; this only changes whether we stop early.
           python3 tools/tutorial_runner.py run \
             tests/tutorial-cpp-ui-app.test.yaml \
@@ -48,12 +66,24 @@ jobs:
             --continue-on-fail \
             --report "${{ runner.temp }}/tutorial-report.html"
 
+      - name: Stage report for upload
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p report-out
+          # Name it index.html so the published directory URL renders directly.
+          if [ -f "${{ runner.temp }}/tutorial-report.html" ]; then
+            cp "${{ runner.temp }}/tutorial-report.html" report-out/index.html
+          else
+            echo "<h1>No report produced</h1>" > report-out/index.html
+          fi
+
       - name: Upload tutorial execution report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tutorial-report-${{ matrix.os }}
-          path: ${{ runner.temp }}/tutorial-report.html
+          path: report-out/index.html
           if-no-files-found: warn
 
       - name: Verify markdown generation
@@ -65,3 +95,106 @@ jobs:
             tests/tutorial-qml-ui-app.test.yaml \
             -o /tmp/gen-part2.md
           echo "Generated markdown successfully"
+
+  publish-report:
+    name: Publish report to GitHub Pages
+    needs: tutorial-tests
+    # Run even when tests fail — a failing run is exactly when you want to open
+    # the report. Skip on forks, where GITHUB_TOKEN can't push or comment.
+    if: ${{ always() && github.event.pull_request.head.repo.fork != true }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write          # push to the gh-pages branch
+      pull-requests: write      # post/update the PR comment
+
+    # Serialize Pages pushes so two refs can't race on the gh-pages branch.
+    concurrency:
+      group: gh-pages-publish
+      cancel-in-progress: false
+
+    steps:
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          # No `name:` → downloads every artifact into artifacts/<name>/...
+
+      - name: Arrange site directory
+        id: arrange
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="pr-${{ github.event.pull_request.number }}"
+          else
+            BASE="main"
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+
+          mkdir -p "site/$BASE"
+          found=""
+          for os in ubuntu-latest macos-latest; do
+            src="artifacts/tutorial-report-$os/index.html"
+            if [ -f "$src" ]; then
+              mkdir -p "site/$BASE/$os"
+              cp "$src" "site/$BASE/$os/index.html"
+              found="$found $os"
+            fi
+          done
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+
+          # Landing page for this ref linking to each OS report.
+          {
+            echo "<!doctype html><meta charset=utf-8>"
+            echo "<title>Tutorial reports — $BASE</title>"
+            echo "<style>body{font:16px system-ui;margin:40px;max-width:640px}a{color:#2563eb}</style>"
+            echo "<h1>Tutorial execution reports</h1>"
+            echo "<p><strong>$BASE</strong> · commit <code>${GITHUB_SHA::7}</code></p><ul>"
+            for os in ubuntu-latest macos-latest; do
+              if [ -d "site/$BASE/$os" ]; then
+                echo "<li><a href=\"./$os/\">$os</a></li>"
+              fi
+            done
+            echo "</ul>"
+          } > "site/$BASE/index.html"
+
+      - name: Deploy to gh-pages
+        if: steps.arrange.outputs.found != ''
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          keep_files: true          # don't wipe other PRs' directories
+          commit_message: "Publish tutorial report for ${{ steps.arrange.outputs.base }} (${{ github.sha }})"
+
+      - name: Comment on PR with report links
+        if: ${{ github.event_name == 'pull_request' && steps.arrange.outputs.found != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const base = "${{ steps.arrange.outputs.base }}";
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const root = `https://${owner}.github.io/${repo}/${base}`;
+            const oses = "${{ steps.arrange.outputs.found }}".trim().split(/\s+/).filter(Boolean);
+
+            const links = oses.map(os => `- [\`${os}\` report](${root}/${os}/)`).join("\n");
+            const marker = "<!-- tutorial-report-links -->";
+            const body =
+              `${marker}\n` +
+              `### 📊 Tutorial execution report\n\n` +
+              `Rendered tutorial alongside the commands actually run and their output ` +
+              `(updated each run, commit \`${context.sha.slice(0,7)}\`):\n\n` +
+              `${links}\n\n` +
+              `_Pages can take a minute to update after the run finishes._`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body });
+            }
