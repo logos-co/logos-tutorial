@@ -20,6 +20,35 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **logos-dev-boost:** [Scaffolding Modules with logos-dev-boost](tutorial-dev-boost.md) — use the `logos-dev-boost` CLI to auto-generate modules from C library directories. Wraps libcalc (source-only) and sqlcipher (pre-built `.so`), including integration tests that create encrypted databases. Covers `--type module`, `--type full-app`, and `--lib-dir`.
 
+## Executable Tutorials
+
+Tutorials have YAML specs in `tests/` that can be both **executed** (to verify they work) and used to **generate** the `.md` files. See [docs/spec.md](docs/spec.md) for the full format reference.
+
+```bash
+# Run a tutorial end-to-end, writing to a directory you can inspect afterwards
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml \
+  --workdir /tmp/my-tutorial-test --verbose
+
+# Run only specific phases (scaffold, files, build, inspect, logoscore)
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml \
+  --phase scaffold,files,build --verbose
+
+# Re-run a single phase against a previous build
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml \
+  --workdir /tmp/my-tutorial-test --phase inspect --verbose
+
+# Generate the .md tutorial from the YAML spec
+python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml
+
+# Pin all GitHub URLs to a specific release tag
+python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
+python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
+```
+
+The `--workdir` flag lets you point the runner at a directory of your choice — all files, builds, and artifacts end up there so you can inspect or re-use them. Without it, a temp directory is created and deleted after the run (use `--keep-workdir` to preserve it).
+
+The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/tutorial-v2#output`. Set it to `""` or omit it for latest.
+
 ## Example Modules
 
 Working module source code used by the tutorials:
