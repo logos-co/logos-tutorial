@@ -432,7 +432,9 @@ Key test APIs:
 - `app.expectTexts(["text1", "text2"])` — assert text is visible in the UI
 - `app.click("Button Text")` — find an element by text and click it
 - `app.waitFor(fn, opts)` — retry an assertion until it passes or times out
-- `app.screenshot()` — capture the current UI state
+- `app.screenshot()` — capture the current UI state (returns a base64 PNG; write it to a file to embed it in docs)
+
+> In the executable-tutorial specs (`tests/*.test.yaml`), you don't call `app.screenshot()` directly — add a `screenshot: "name.png"` field to any UI-test action and the runner captures the headless app to `outputs/images/` and embeds it in the generated tutorial. See [`docs/spec.md`](docs/spec.md).
 
 ### 3.3 Running Tests
 

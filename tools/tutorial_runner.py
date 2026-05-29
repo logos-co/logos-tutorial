@@ -204,6 +204,11 @@ def _rec_ui(step, launch_cmd, tests, status, note, output):
 
 RELEASE_TAG = ""
 
+# Directory where ui_test screenshots are written. Set by cmd_run when an output
+# directory is known so captures land beside the generated .md (output_dir/images);
+# left None for ephemeral temp runs, where handle_ui_test falls back to workdir.
+_IMAGES_DIR = None
+
 
 def set_release(tag):
     global RELEASE_TAG
@@ -553,15 +558,60 @@ def handle_basecamp(section, workdir, results, verbose, override_flags,
 
 # ── Shared .mjs test generation ──────────────────────────────────────────────
 
-def generate_mjs_tests(tests, qt_mcp_path, test_name, output_path):
-    """Generate a .mjs test file from YAML test actions for logos-qt-mcp."""
+def _screenshot_filename(raw):
+    """Normalize a spec's `screenshot:` value to a safe PNG basename."""
+    name = os.path.basename(str(raw).strip())
+    if not name:
+        return ""
+    if not name.lower().endswith(".png"):
+        name += ".png"
+    return name
+
+
+def _screenshot_md_lines(ui_test_spec):
+    """Markdown image embeds for any ui_test action carrying a `screenshot:`
+    field. Paths are relative (`images/<file>.png`) so they resolve from the
+    generated .md in outputs/."""
+    lines = []
+    for t in ui_test_spec.get("tests", []):
+        fname = _screenshot_filename(t.get("screenshot", ""))
+        if not fname:
+            continue
+        alt = t.get("name") or os.path.splitext(fname)[0]
+        lines.append(f"![{alt}](images/{fname})")
+    return lines
+
+
+def generate_mjs_tests(tests, qt_mcp_path, test_name, output_path, images_dir=None):
+    """Generate a .mjs test file from YAML test actions for logos-qt-mcp.
+
+    If an action carries a `screenshot:` field (a filename), the generated test
+    captures the headless app via `app.screenshot()` right after that action and
+    writes the decoded PNG into `images_dir`.
+    """
     import json as _json
 
     with open(output_path, "w") as f:
         f.write('import { resolve } from "node:path";\n')
+        f.write('import { writeFileSync } from "node:fs";\n')
         f.write(f'const qtMcpRoot = "{qt_mcp_path}";\n')
         f.write('const { test, run } = await import(resolve(qtMcpRoot, "test-framework/framework.mjs"));\n\n')
         f.write(f'test("{test_name}", async (app) => {{\n')
+
+        def emit_screenshot(t):
+            fname = _screenshot_filename(t.get("screenshot", ""))
+            if not fname or not images_dir:
+                return
+            dest = _json.dumps(os.path.join(images_dir, fname))
+            label = _json.dumps(fname)
+            f.write(f'  {{\n')
+            f.write(f'    const shot = await app.screenshot();\n')
+            f.write(f'    if (shot && shot.image) {{\n')
+            f.write(f'      writeFileSync({dest}, Buffer.from(shot.image, "base64"));\n')
+            f.write(f'    }} else {{\n')
+            f.write(f'      throw new Error("screenshot " + {label} + ": no image returned");\n')
+            f.write(f'    }}\n')
+            f.write(f'  }}\n')
 
         for t in tests:
             action = t.get("action", "")
@@ -591,6 +641,8 @@ def generate_mjs_tests(tests, qt_mcp_path, test_name, output_path):
             elif action == "sleep":
                 ms = t.get("ms", 1000)
                 f.write(f'  await new Promise(r => setTimeout(r, {ms}));\n')
+
+            emit_screenshot(t)
 
         f.write('});\n\nrun();\n')
 
@@ -693,11 +745,17 @@ def handle_ui_test(step, workdir, results, verbose, override_flags, qt_mcp_cli, 
         results.fail(title, f"logos-qt-mcp not found: {qt_mcp}")
         return
 
-    # Generate .mjs test file
+    # Generate .mjs test file. Screenshots (actions with a `screenshot:` field)
+    # are written into the shared images dir alongside the generated .md so the
+    # published tutorial can embed them; falls back to the workdir for ephemeral
+    # temp runs.
+    images_dir = _IMAGES_DIR or os.path.join(workdir, "images")
+    os.makedirs(images_dir, exist_ok=True)
     test_name = f"{spec.get('name', 'tutorial')}: {title}"
     mjs_path = generate_mjs_tests(
         tests, qt_mcp, test_name,
-        os.path.join(workdir, "ui-test.mjs")
+        os.path.join(workdir, "ui-test.mjs"),
+        images_dir=images_dir,
     )
 
     launch_cmd = ui_spec.get("launch", "")
@@ -1006,13 +1064,20 @@ def cmd_run(args):
                   file=sys.stderr)
             sys.exit(2)
 
-    global _REPORT
+    global _REPORT, _IMAGES_DIR
     # The TUI reads per-step execution records from the collector, so it needs
     # one active even without --report.
     if getattr(args, "report", None) or tui:
         _REPORT = ReportCollector()
 
     output_dir = getattr(args, "output_dir", None)
+
+    # When the caller picks a persistent output directory, write ui_test
+    # screenshots into <output_dir>/images so they sit beside the generated .md
+    # (which references them as images/<file>.png). Temp runs leave this None and
+    # fall back to the workdir.
+    if output_dir:
+        _IMAGES_DIR = os.path.join(os.path.abspath(output_dir), "images")
 
     if output_dir:
         # --output-dir: run into a persistent directory the caller chooses,
@@ -1203,6 +1268,9 @@ def _step_to_markdown(step, sec_num, sub_step):
             emit("```bash")
             emit(expand_vars(launch))
             emit("```")
+            emit()
+        for img in _screenshot_md_lines(ui_test_spec):
+            emit(img)
             emit()
 
     post_text = step.get("post_text", "")
@@ -2011,6 +2079,9 @@ def cmd_generate(args):
                     emit("```bash")
                     emit(expand_vars(launch))
                     emit("```")
+                    emit()
+                for img in _screenshot_md_lines(ui_test_spec):
+                    emit(img)
                     emit()
 
             # check_file is runner-only verification, not rendered in markdown

@@ -628,6 +628,7 @@ sections:
               action: wait_for
               texts: ["Add", "Multiply", "Factorial", "Fibonacci"]
               timeout: 5000
+              screenshot: "calc-cpp-buttons.png"
             - name: "Enter operands"
               action: set_text
               find_by: "placeholderText"
@@ -645,6 +646,7 @@ sections:
               action: wait_for
               texts: ["8"]
               timeout: 10000
+              screenshot: "calc-cpp-result.png"
         post_text: |
           The result `8` comes from `calc_module.add(3, 5)` executed in the C++ backend — proof the full path (QML replica → Qt Remote Objects → ui-host backend → typed SDK → `calc_module`) works end to end.
 

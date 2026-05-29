@@ -378,6 +378,8 @@ git add flake.lock
 nix run .
 ```
 
+![Fibonacci button visible](images/calc-ui.png)
+
 The app opens immediately. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
 
 ---

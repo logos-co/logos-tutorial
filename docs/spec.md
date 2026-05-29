@@ -207,6 +207,15 @@ Two modes:
 | `set_text` | `find_by`, `find_value`, `value` | Find element by property and set its `text` property |
 | `sleep` | `ms` | Wait a fixed duration |
 
+Any action may also carry an optional **`screenshot`** field (a filename, e.g.
+`screenshot: "result.png"`). After that action runs, the runner captures the
+headless app via the qt-mcp `app.screenshot()` API and writes the PNG to an
+`images/` directory next to the generated `.md` (`<output-dir>/images/`; temp
+runs fall back to the workdir). The generator then embeds it inline in that
+section as `![<name>](images/<file>.png)`, so screenshots appear in the
+published tutorial with no extra markup. The `.png` extension is added if
+omitted; the value is reduced to a basename.
+
 **Runner behavior (launch mode):** Runs setup commands, launches the app in the background with `QT_QPA_PLATFORM=offscreen`, waits for the QML inspector to be available, generates a `.mjs` test file, runs it, then kills the app. Reports pass/fail.
 
 **Runner behavior (binary mode):** Runs setup + build, generates a `.mjs` test file, runs it via `node test.mjs --ci <binary> --verbose`. Reports pass/fail.

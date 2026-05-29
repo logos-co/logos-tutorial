@@ -609,6 +609,10 @@ Launch the app and confirm the view loads with all of its controls. The backend 
 nix run .
 ```
 
+![Operation buttons visible](images/calc-cpp-buttons.png)
+
+![Result of 3 + 5 shows 8](images/calc-cpp-result.png)
+
 The result `8` comes from `calc_module.add(3, 5)` executed in the C++ backend — proof the full path (QML replica → Qt Remote Objects → ui-host backend → typed SDK → `calc_module`) works end to end.
 
 ---
