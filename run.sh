@@ -57,6 +57,12 @@ find "${OUTPUT_DIR}" -type f \( -name '*.dylib' -o -name '*.so' \) -delete
 echo "==> Removing log files (*.log)"
 find "${OUTPUT_DIR}" -type f -name '*.log' -delete
 
+# flake.lock pins calc_module to an absolute path resolved on THIS machine
+# (via the tutorial's `nix flake update --override-input` step), so it is not
+# portable. Drop it; a reader regenerates it with their own override.
+echo "==> Removing machine-specific flake.lock files"
+find "${OUTPUT_DIR}" -type f -name 'flake.lock' -delete
+
 # The runner writes these .mjs files on the fly to drive headless UI tests; they
 # embed an absolute, machine-specific path to result-mcp, so they must not be
 # committed. The reader-facing test (tests/ui-tests.mjs) uses a relative path
