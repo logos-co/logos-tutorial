@@ -397,6 +397,7 @@ sections:
               action: wait_for
               texts: ["Fibonacci"]
               timeout: 5000
+              screenshot: "calc-ui.png"
         post_text: |
           The app opens immediately. No modules are loaded, so clicking buttons shows "Logos bridge not available" — but you can verify the layout and styling look correct.
 
