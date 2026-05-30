@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 #
-# Build the full tutorial chain (Part 1 -> 2 -> 3) into ./outputs/, then strip
-# the per-project git repos and build artifacts so what's left is just the
-# generated source trees — safe to inspect or check in.
+# Build the full tutorial chain (Part 1 -> 2 -> 3) into ./outputs/, generate the
+# .md tutorials, then strip the per-project git repos and build artifacts so
+# what's left is just the generated source trees — safe to inspect or check in.
 #
-# Each outputs/<project>/ is created with its own `git init` by the tutorial
-# steps (nix flakes only see git-tracked files), and the build produces nix
-# out-link symlinks (lm, logos, pm, result*) plus compiled binaries. None of
-# that is portable, so we remove it here.
+# The runner and the artifact-cleaning logic live in the shared `doctest` CLI
+# (https://github.com/logos-co/logos-doctest), invoked directly via its flake.
+# `doctest clean` removes the per-project .git/ dirs (each tutorial git init's
+# its project), the nix out-link symlinks (lm, logos, pm, result*), build output
+# (modules/), compiled libraries (*.so/*.dylib), logs, machine-specific
+# flake.lock files, and the runner's scratch *.mjs UI-test scaffolds.
+#
+# To run against a local logos-doctest checkout instead of the published flake,
+# set DOCTEST, e.g.:  DOCTEST="nix run path:../logos-doctest --" ./run.sh
 #
 set -euo pipefail
 
 # Run from the repo root regardless of where the script is invoked from.
 cd "$(dirname "$0")"
 
+# The doctest CLI. Override by exporting DOCTEST (space-separated command).
+read -r -a DOCTEST <<< "${DOCTEST:-nix run github:logos-co/logos-doctest --}"
 OUTPUT_DIR="./outputs"
 
 # Start from a clean slate. `nix flake init` (the scaffold step) refuses to
@@ -24,7 +31,7 @@ echo "==> Clearing previous ${OUTPUT_DIR}/"
 rm -rf "${OUTPUT_DIR}"
 
 echo "==> Running tutorial chain into ${OUTPUT_DIR}/"
-python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml \
+"${DOCTEST[@]}" run tests/tutorial-cpp-ui-app.test.yaml \
   --verbose \
   --output-dir "${OUTPUT_DIR}/"
 
@@ -32,7 +39,7 @@ echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do
   name="$(basename "${spec%.test.yaml}")"
-  python3 tools/tutorial_runner.py generate "${spec}" \
+  "${DOCTEST[@]}" generate "${spec}" \
     -o "${OUTPUT_DIR}/${name}.md"
 done
 
@@ -41,33 +48,7 @@ if [ ! -d "${OUTPUT_DIR}" ]; then
   exit 0
 fi
 
-echo "==> Removing nested .git directories"
-find "${OUTPUT_DIR}" -type d -name .git -prune -exec rm -rf {} +
-
-echo "==> Removing nix out-link symlinks (lm, logos, pm, result*)"
-find "${OUTPUT_DIR}" \( -name lm -o -name logos -o -name pm \
-  -o -name 'result' -o -name 'result-*' \) -exec rm -rf {} +
-
-echo "==> Removing build output: modules/ directories"
-find "${OUTPUT_DIR}" -type d -name modules -prune -exec rm -rf {} +
-
-echo "==> Removing compiled libraries (*.dylib, *.so)"
-find "${OUTPUT_DIR}" -type f \( -name '*.dylib' -o -name '*.so' \) -delete
-
-echo "==> Removing log files (*.log)"
-find "${OUTPUT_DIR}" -type f -name '*.log' -delete
-
-# flake.lock pins calc_module to an absolute path resolved on THIS machine
-# (via the tutorial's `nix flake update --override-input` step), so it is not
-# portable. Drop it; a reader regenerates it with their own override.
-echo "==> Removing machine-specific flake.lock files"
-find "${OUTPUT_DIR}" -type f -name 'flake.lock' -delete
-
-# The runner writes these .mjs files on the fly to drive headless UI tests; they
-# embed an absolute, machine-specific path to result-mcp, so they must not be
-# committed. The reader-facing test (tests/ui-tests.mjs) uses a relative path
-# and is unaffected — these are only the runner's scratch copies.
-echo "==> Removing runner-generated UI test scaffolds (ui-test.mjs, basecamp-test.mjs)"
-find "${OUTPUT_DIR}" -type f \( -name 'ui-test.mjs' -o -name 'basecamp-test.mjs' \) -delete
+echo "==> Cleaning build artifacts from ${OUTPUT_DIR}/"
+"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --verbose
 
 echo "==> Done. Cleaned tutorial output is in ${OUTPUT_DIR}/"
