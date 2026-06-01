@@ -165,9 +165,9 @@ This generates a ready-to-build project with all the boilerplate handled for you
 
 ### 1.2 Project Structure
 
-> We will use the `default` template here (minimal core module).
+> We will use the recommended **pure-C++ pattern** (`"interface": "universal"`) for a core module. The scaffolding templates currently emit the older Qt-plugin layout; you replace their `src/` files with the two `*_impl` files shown here (see [Section 1.4](#14-understanding-the-module-code)).
 
-After scaffolding, your module directory looks like this:
+A pure-C++ core module looks like this:
 
 ```
 logos-my-module/
@@ -175,18 +175,17 @@ logos-my-module/
 ├── metadata.json          # Single source of truth: module metadata + build config (~30 lines)
 ├── CMakeLists.txt         # CMake build file (~25 lines)
 └── src/
-    ├── my_module_interface.h    # Qt interface definition
-    ├── my_module_plugin.h       # Plugin header
-    └── my_module_plugin.cpp     # Plugin implementation
+    ├── my_module_impl.h         # Plain C++ class — no Qt
+    └── my_module_impl.cpp       # Implementation
 ```
 
-The key insight: **logos-module-builder** reduces ~600 lines of configuration across 5+ files down to ~70 lines across 2-3 files. `metadata.json` serves as the single source of truth — it contains both the runtime metadata (embedded into the plugin binary by Qt) and the build configuration (read by the builder via the `nix` section).
+The key insight: **logos-module-builder** reduces ~600 lines of configuration across 5+ files down to ~70 lines across 2-3 files, and the `universal` pattern collapses the three hand-written Qt source files into one plain C++ class. `metadata.json` serves as the single source of truth — it contains both the runtime metadata (embedded into the generated plugin binary) and the build configuration (read by the builder via the `nix` section).
 
-The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by the builder) and calls the `logos_module()` macro, which sets up the Qt plugin target, links the SDK, configures include paths, and handles code generation. You just list your source files. See the generated [`CMakeLists.txt`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/CMakeLists.txt) in the template.
+The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by the builder) and calls the `logos_module()` macro, which sets up the plugin target, runs `logos-cpp-generator` for `universal` modules, links the SDK, configures include paths, and compiles the generated glue. You just list your `*_impl` source files. See the [C-library tutorial](tutorial-wrapping-c-library.md#step-3-configure-the-logos-module) for a complete `CMakeLists.txt`.
 
 ### 1.3 The metadata.json Configuration
 
-The `metadata.json` file is the single source of truth for your module. It is embedded into the plugin binary by Qt's `Q_PLUGIN_METADATA` macro (for runtime metadata), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest. See the scaffolded [`metadata.json`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/metadata.json) in the template.
+The `metadata.json` file is the single source of truth for your module. It is embedded into the generated plugin binary (for runtime metadata, read by `lm`), read by `logos-module-builder` to configure the Nix build, used by CMake to resolve external dependencies and link libraries (via the `nix` section), and used by `nix-bundle-lgx` to generate the LGX manifest. See the scaffolded [`metadata.json`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/metadata.json) in the template.
 
 The full set of available fields:
 
@@ -199,6 +198,7 @@ The full set of available fields:
   "description": "My first Logos module",
   "icon": null,
   "main": "my_module_plugin",
+  "interface": "universal",
   "dependencies": [],
   "include": [],
 
@@ -228,7 +228,8 @@ The full set of available fields:
 | `category`                       | No                                     | `general`          | Category (general, network, chat, wallet, integration)                                                                                                                                                                                                         |
 | `description`                    | No                                     | `"A Logos module"` | Human-readable description                                                                                                                                                                                                                                     |
 | `icon`                           | No                                     | `null`             | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory.                                                                                                                                    |
-| `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension. For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                                                     |
+| `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
+| `interface`                      | No                                     | --                 | Set to `"universal"` for the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. Omit for the older hand-written Qt-plugin pattern.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
 | `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
@@ -242,24 +243,55 @@ The full set of available fields:
 
 ### 1.4 Understanding the Module Code
 
-The scaffolded source files form a standard **Qt plugin**. Browse the full source in the template:
-[`src/`](https://github.com/logos-co/logos-module-builder/tree/master/templates/minimal-module/src) --
-[`minimal_interface.h`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_interface.h) |
-[`minimal_plugin.h`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_plugin.h) |
-[`minimal_plugin.cpp`](https://github.com/logos-co/logos-module-builder/blob/master/templates/minimal-module/src/minimal_plugin.cpp)
+The recommended way to write a core module is the **pure-C++ pattern** (`"interface": "universal"` in `metadata.json`). You write a single plain C++ class — `src/<name>_impl.h` and `src/<name>_impl.cpp` — with **no Qt, no `Q_OBJECT`, no `Q_PLUGIN_METADATA`, no interface header**. At build time `logos-cpp-generator --from-header` parses your header and generates the Qt plugin wrapper, the interface, and the inter-module glue into `generated_code/`. You never see or edit that generated code.
 
-Every Logos module must:
+A minimal impl class looks like this:
 
-1. **Inherit from `QObject` and implement `PluginInterface`** -- the interface header declares pure-virtual methods; the plugin class implements them.
-2. **Declare `Q_INTERFACES` and `Q_PLUGIN_METADATA`** -- this is how Qt discovers the plugin and embeds `metadata.json`.
-3. **Mark callable methods with `Q_INVOKABLE`** -- any `Q_INVOKABLE` method is automatically discoverable by `lm`, callable by `logoscore -c`, and accessible from other modules via `LogosAPI`.
+```cpp
+// src/my_module_impl.h
+#pragma once
 
-**Key rules:**
+#include <cstdint>
+#include <string>
 
-- Every `Q_INVOKABLE` method is discoverable and callable by other modules at runtime
-- `initLogos(LogosAPI*)` is called by the host when your module is loaded -- store the pointer for later use
-- The `eventResponse` signal is used for event forwarding between modules
-- `name()` must match the `name` field in your `metadata.json`
+#include <logos_module_context.h>  // optional: events + inter-module calls
+
+class MyModuleImpl : public LogosModuleContext {
+public:
+    // Every public method is exposed: discoverable by `lm`, callable by
+    // `logoscore call`, and reachable from other modules.
+    std::string greet(const std::string& name);
+    int64_t add(int64_t a, int64_t b);
+
+    // Events are declared like Qt signals. The generator emits the body;
+    // calling the method delivers the typed args to subscribers.
+logos_events:
+    void greeted(const std::string& name);
+};
+```
+
+```cpp
+// src/my_module_impl.cpp
+#include "my_module_impl.h"
+
+std::string MyModuleImpl::greet(const std::string& name) {
+    greeted(name);                       // emit the event
+    return "Hello, " + name + "!";
+}
+
+int64_t MyModuleImpl::add(int64_t a, int64_t b) { return a + b; }
+```
+
+**How it works:**
+
+1. **Any `public` method is exposed** — discoverable by `lm`, callable by `logoscore call`, and accessible from other modules. `private` members are not.
+2. **Use the supported types** so the generator can translate them onto the wire: `void`, `bool`, `int64_t`, `uint64_t`, `double`, `std::string`, `std::vector<std::string>`, `std::vector<uint8_t>`, `LogosMap`/`LogosList` (from `<logos_json.h>`), and `StdLogosResult` (from `<logos_result.h>`). Use `int64_t` for integers, not `int`.
+3. **Events** are declared in a `logos_events:` section (the class must inherit `LogosModuleContext`). Calling the event method routes the typed args to subscribers via the host's `eventResponse` channel — outside a host (unit tests) it's a safe no-op.
+4. **Inter-module calls** also go through `LogosModuleContext`: from a method body, `modules().other_module.someMethod(arg)` calls another module using std types, with no raw `LogosAPI` and no Qt. Declare the dependency in `metadata.json`'s `dependencies` and as a flake input.
+
+You do **not** write `initLogos`, `name()`/`version()` (read from `metadata.json`), `Q_INVOKABLE`, or the `eventResponse` signal — all are generated. `name()` is taken from `metadata.json`'s `name`, so they can never drift out of sync.
+
+> **Older Qt-plugin pattern.** As of this writing the scaffolding templates still emit a hand-written Qt plugin (`*_interface.h` + `*_plugin.h` + `*_plugin.cpp` with `QObject`, `Q_PLUGIN_METADATA`, `Q_INVOKABLE`, and an `initLogos(LogosAPI*)` you store). That pattern still builds and is what `ui_qml` C++ backends use (see [Building a C++ UI Module](tutorial-cpp-ui-app.md)). For a new core module, prefer the pure-C++ pattern above — replace the template's `src/` files with your `*_impl.h`/`*_impl.cpp` and add `"interface": "universal"` to `metadata.json`. The [C-library tutorial](tutorial-wrapping-c-library.md) walks through this end to end.
 
 ### 1.5 Building Your Module
 

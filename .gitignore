@@ -7,6 +7,9 @@ logos
 pm
 modules/
 plugins/
+basecamp-result
+basecamp-portable
+basecamp-data
 
 # Compiled libraries (keep sources, ignore build outputs)
 logos-calc-module/lib/libcalc.so

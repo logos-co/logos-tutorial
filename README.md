@@ -22,29 +22,31 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 ## Executable Tutorials
 
-Tutorials have YAML specs in `tests/` that can be both **executed** (to verify they work) and used to **generate** the `.md` files. See [docs/spec.md](docs/spec.md) for the full format reference.
+Tutorials have YAML specs in `tests/` that can be both **executed** (to verify they work) and used to **generate** the `.md` files. They run through the shared [doctest](https://github.com/logos-co/logos-doctest) CLI, invoked directly via its flake (`nix run github:logos-co/logos-doctest -- …`). See [docs/spec.md](docs/spec.md) for the full format reference.
 
 ```bash
 # Run a tutorial end-to-end (temp dir, deleted afterwards)
-python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --verbose
+nix run github:logos-co/logos-doctest -- run tests/tutorial-wrapping-c-library.test.yaml --verbose
 
 # Keep the build results in a directory of your choice (created if missing,
 # never deleted). For a chained tutorial each part lands in its own subdir.
-python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml \
+nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml \
   --output-dir ./outputs --continue-on-fail
 
 # Write a two-column HTML report: rendered tutorial on the left, the commands
 # actually run and their output on the right. Open the file in a browser.
-python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml \
+nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml \
   --report ./tutorial-report.html --continue-on-fail
 
 # Generate the .md tutorial from the YAML spec
-python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml
+nix run github:logos-co/logos-doctest -- generate tests/tutorial-wrapping-c-library.test.yaml
 
 # Pin all GitHub URLs to a specific release tag
-python3 tools/tutorial_runner.py run tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
-python3 tools/tutorial_runner.py generate tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
+nix run github:logos-co/logos-doctest -- run tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
+nix run github:logos-co/logos-doctest -- generate tests/tutorial-wrapping-c-library.test.yaml --release tutorial-v2
 ```
+
+> **Tip:** developing against a local `logos-doctest` checkout? Swap `github:logos-co/logos-doctest` for `path:../logos-doctest` (or wherever your checkout lives) to run your local changes.
 
 ### Where the results go
 
@@ -78,13 +80,13 @@ It covers every step type (file writes, shell commands, `check_file`, and headle
 
 ```bash
 # Auto-advancing: steps run one after another
-python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml --tui
+nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml --tui
 
 # Iterative: press the down/right arrow (or space) to execute each next step
-python3 tools/tutorial_runner.py run tests/tutorial-cpp-ui-app.test.yaml --tui --iterative
+nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml --tui --iterative
 ```
 
-Press `q` to quit at any time. `--tui` needs an interactive terminal and the [`rich`](https://github.com/Textualize/rich) package (`pip3 install rich`) — it's the only optional dependency; everything else needs just `pyyaml`.
+Press `q` to quit at any time. `--tui` needs an interactive terminal and the [`rich`](https://github.com/Textualize/rich) package — both are bundled in the doctest flake, so no extra install is needed when using `nix`.
 
 The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/tutorial-v2#output`. Set it to `""` or omit it for latest.
 

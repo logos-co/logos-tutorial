@@ -52,15 +52,15 @@ jobs:
           name: logos-co
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
-      - name: Install PyYAML
-        run: pip3 install --break-system-packages pyyaml
-
+      # The runner is the shared `doctest` CLI, invoked directly via its flake
+      # (github:logos-co/logos-doctest). The flake bundles Python + PyYAML
+      # (+ rich), so no pip install step is needed.
       - name: Test - QML UI App (includes C Library tutorial via requires)
         run: |
           # --continue-on-fail so the run walks the whole Part 1 -> 2 -> 3 chain
           # and the published report is complete. The job still fails (non-zero
           # exit) if any step failed; this only changes whether we stop early.
-          python3 tools/tutorial_runner.py run \
+          nix run github:logos-co/logos-doctest -- run \
             tests/tutorial-cpp-ui-app.test.yaml \
             --verbose \
             --continue-on-fail \
@@ -88,10 +88,10 @@ jobs:
 
       - name: Verify markdown generation
         run: |
-          python3 tools/tutorial_runner.py generate \
+          nix run github:logos-co/logos-doctest -- generate \
             tests/tutorial-wrapping-c-library.test.yaml \
             -o /tmp/gen-part1.md
-          python3 tools/tutorial_runner.py generate \
+          nix run github:logos-co/logos-doctest -- generate \
             tests/tutorial-qml-ui-app.test.yaml \
             -o /tmp/gen-part2.md
           echo "Generated markdown successfully"

@@ -313,7 +313,9 @@ The UI demonstrates two communication patterns:
 
 - **Green section (direct calls):** `logos.callModule("calc_module", "libVersion", [])` sends a request to `calc_module` and returns the result synchronously. Simple request/response.
 
-- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event via `eventResponse`, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+
+On the `calc_module` side (Part 1), that event is just the `versionReady(...)` method declared in its `logos_events:` block — the module's `libVersionNotify()` calls it. Nothing about the QML changes regardless of how the backend module is written; the bridge only sees the event name and its arguments.
 
 The `logos` object is injected by the host at runtime.
 
@@ -567,63 +569,69 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 
 > **Re-locking note:** earlier steps rebuilt `calc_module` and dropped `result-lgx` links inside its directory, so its on-disk contents changed since you first locked it. Because `calc_module` is a local `path:` input, re-run `nix flake update --override-input calc_module path:../logos-calc-module` before building so the lock matches the current contents (a stricter Nix otherwise rejects the stale hash).
 
-### 8.2 Build and run logos-basecamp
+### 8.2 Build logos-basecamp
 
-Build logos-basecamp, launch it once to preinstall its bundled modules, then install your modules.
-
-> **Note:** `logos-basecamp` does not accept `--modules-dir` or `--ui-plugins-dir` CLI flags. It manages its own data directory and preinstalls bundled modules (main_ui, package_manager, etc.) on first launch.
+Build the basecamp desktop shell:
 
 ```bash
 nix build 'github:logos-co/logos-basecamp' -o basecamp-result
 ```
 
-```bash
-# Launch once to preinstall bundled modules, then close it
-./basecamp-result/bin/logos-basecamp
-```
+Basecamp manages its own per-user data directory and preinstalls its bundled modules (`main_ui`, `package_manager`, …) from the build. It does **not** accept `--modules-dir` / `--ui-plugins-dir` flags; instead you point it at a data directory with `--user-dir` (or the `LOGOS_USER_DIR` env var), and it reads installed core modules from `<dir>/modules` and UI plugins from `<dir>/plugins` — exactly the directories `lgpm` writes to.
 
-Basecamp creates its data directory on first launch. To find where it is, check the log output for `plugins directory` or look for the directory that contains `modules/` and `plugins/` subdirectories:
+For this tutorial we use an explicit data directory, `basecamp-data`, so the install location is deterministic (no `~/Library/Application Support/Logos/LogosBasecampDev` or `~/.local/share/Logos/LogosBasecampDev` platform-path guessing).
 
-```bash
-# macOS (typical path, may vary):
-ls ~/Library/Application\ Support/Logos/
+### 8.3 Build the `lgpm` package manager CLI
 
-# Linux (typical path, may vary):
-ls ~/.local/share/Logos/
-```
-
-The dev build directory is named `LogosBasecampDev` (portable builds use `LogosBasecamp`).
-
-### 8.3 Install modules with lgpm
-
-Install your modules using `lgpm`. First, set `BASECAMP_DIR` to your platform's path:
-
-```bash
-# macOS:
-BASECAMP_DIR="$HOME/Library/Application Support/Logos/LogosBasecampDev"
-
-# Linux:
-BASECAMP_DIR="$HOME/.local/share/Logos/LogosBasecampDev"
-```
+`lgpm` installs `.lgx` packages into a modules/plugins directory:
 
 ```bash
 nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ```
 
+### 8.4 Create the data directory
+
+Make a fresh, isolated data directory with the `modules/` and `plugins/` subdirectories basecamp expects:
+
 ```bash
-# Install core module
-./pm/bin/lgpm --modules-dir "$BASECAMP_DIR/modules" \
-  install --file ../logos-calc-module/result-lgx/*.lgx
-
-# Install UI plugin
-./pm/bin/lgpm --ui-plugins-dir "$BASECAMP_DIR/plugins" \
-  install --file result-lgx/*.lgx
-
-# Launch basecamp -- your modules appear alongside the built-in ones
-./basecamp-result/bin/logos-basecamp
+rm -rf basecamp-data && mkdir -p basecamp-data/modules basecamp-data/plugins
 ```
 
-### 8.4 Portable basecamp build (optional)
+### 8.5 Install the core module
+
+Install `calc_module` (the LGX you built above) into the data directory's `modules/`:
+
+```bash
+./pm/bin/lgpm --modules-dir basecamp-data/modules install --file ../logos-calc-module/result-lgx/*.lgx
+```
+
+### 8.6 Install the UI plugin
+
+Install `calc_ui` into the data directory's `plugins/`:
+
+```bash
+./pm/bin/lgpm --ui-plugins-dir basecamp-data/plugins install --file result-lgx/*.lgx
+```
+
+### 8.7 Launch basecamp and use the calculator
+
+Launch basecamp pointed at that data directory. The `calc_ui` plugin appears in the sidebar alongside the built-in modules — open it, enter two numbers, and press **Add** to call `calc_module` through basecamp:
+
+```bash
+./basecamp-result/bin/LogosBasecamp --user-dir $PWD/basecamp-data
+```
+
+![Basecamp shell loads](images/basecamp-load.png)
+
+![Calculator view renders](images/basecamp-load-calculator.png)
+
+![calc_module returns 3 + 5 = 8](images/basecamp-calc-installed.png)
+
+The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
+
+The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
+
+### 8.8 Portable basecamp build (optional)
 
 The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
 
@@ -633,7 +641,7 @@ nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
 
 ```bash
 # Launch once to preinstall bundled modules
-./basecamp-portable/bin/logos-basecamp
+./basecamp-portable/bin/LogosBasecamp
 ```
 
 The portable build uses a different data directory (`LogosBasecamp` instead of `LogosBasecampDev`). Set `BASECAMP_DIR` to your platform's path:
@@ -658,12 +666,12 @@ Install your modules using the **portable** `.lgx` variants:
   install --file result-lgx-portable/*.lgx
 
 # Launch
-./basecamp-portable/bin/logos-basecamp
+./basecamp-portable/bin/LogosBasecamp
 ```
 
 > **Important:** Portable basecamp requires portable `.lgx` variants (`result-lgx-portable`), and the dev build requires dev variants (`result-lgx`). Mixing them will cause loading failures.
 
-### 8.5 Install via logos-basecamp UI
+### 8.9 Install via logos-basecamp UI
 
 Instead of using `lgpm` on the command line, you can install modules through the basecamp UI:
 
@@ -673,9 +681,9 @@ Instead of using `lgpm` on the command line, you can install modules through the
 4. Select `../logos-calc-module/result-lgx/*.lgx` — installs `calc_module`
 5. Repeat for `result-lgx/*.lgx` — installs `calc_ui`
 
-The "Calculator UI" tab appears in the sidebar. Clicking it loads your `Main.qml`.
+A `calc_ui` tab appears in the sidebar (UI plugins are labelled by their `name` from `metadata.json`). Clicking it loads your `Main.qml`.
 
-### 8.6 Live reloading with `logos-standalone-app`
+### 8.10 Live reloading with `logos-standalone-app`
 
 For QML iteration, set `DEV_QML_PATH` to the directory that contains your view entry file (the basename from `metadata.json` `view` must exist under that directory). For this tutorial's layout (`view`: `Main.qml` at repo root):
 
@@ -708,7 +716,7 @@ DEV_QML_PATH=$PWD ./result/bin/run-logos-standalone-ui
 
 > This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so changes to your source files are not reflected until you rebuild and reinstall the `.lgx` package.
 
-### 8.7 Testing without any runtime
+### 8.11 Testing without any runtime
 
 You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layout.
 
@@ -812,13 +820,14 @@ node tests/ui-tests.mjs  # in another terminal
 
 ### QML-to-C++ type coercion
 
-When calling C++ module methods from QML via `logos.callModule()`, arguments are passed through IPC as `QVariant` values. The runtime automatically coerces mismatched types to match the target method signature — for example, a `double` sent from QML will be converted to `int` if the method expects `int`, and numeric strings will be converted to their numeric types.
+When calling C++ module methods from QML via `logos.callModule()`, arguments are passed through IPC as `QVariant` values. The runtime automatically coerces mismatched types to match the target method signature — for example, a `double` sent from QML will be converted to `int` if the method expects an integer, and numeric strings will be converted to their numeric types.
 
-This means you can define methods with their natural parameter types (`int`, `bool`, `double`, etc.) and calls from QML will work without manual conversion:
+This means you can define your module methods with their natural parameter types and calls from QML will work without manual conversion. In the pure-C++ (`universal`) module from Part 1 that looks like:
 
 ```cpp
-// This works — the runtime coerces arguments automatically
-Q_INVOKABLE int add(int a, int b) { return a + b; }
+// In calc_module_impl.h — plain C++, no Qt. The generator maps
+// int64_t onto the wire as int; the runtime coerces QML args to match.
+int64_t add(int64_t a, int64_t b);
 ```
 
 > **Note:** Type coercion uses `QVariant::convert()`, which rounds (not truncates) when converting `double` to `int` — e.g., `3.7` becomes `4`.
@@ -828,7 +837,7 @@ Q_INVOKABLE int add(int a, int b) { return a + b; }
 Qt caches compiled QML on disk. If you update your `Main.qml`, rebuild and reinstall the `.lgx`, but the old UI still appears, the cache is stale. Fix by disabling the cache before launching:
 
 ```bash
-QML_DISABLE_DISK_CACHE=1 ./basecamp-result/bin/logos-basecamp
+QML_DISABLE_DISK_CACHE=1 ./basecamp-result/bin/LogosBasecamp
 ```
 
 ### UI module not loading or basecamp behaving unexpectedly
@@ -844,21 +853,21 @@ rm -rf ~/Library/Application\ Support/Logos/LogosBasecampDev
 rm -rf ~/.local/share/Logos/LogosBasecampDev
 
 # Relaunch — basecamp will re-preinstall its bundled modules
-./basecamp-result/bin/logos-basecamp
+./basecamp-result/bin/LogosBasecamp
 ```
 
 Then reinstall your custom modules.
 
 ## Recap
 
-|                     | Core Module (Part 1)                            | QML UI Plugin (Part 2)        |
-| ------------------- | ----------------------------------------------- | ----------------------------- |
-| Language            | C++                                             | QML / JavaScript              |
-| Files               | `.cpp`, `.h`, `CMakeLists.txt`, `metadata.json` | `Main.qml`, `metadata.json`   |
-| Compilation         | Yes (CMake → `.so`)                             | No (file copy)                |
-| `metadata.type`     | `"core"`                                        | `"ui_qml"`                    |
-| Test command        | `logoscore -m ./result/lib -l calc_module`      | `nix run .`                   |
-| Calls other modules | Via `LogosAPI*` (C++)                           | Via `logos.callModule()` (JS) |
+|                     | Core Module (Part 1)                                   | QML UI Plugin (Part 2)        |
+| ------------------- | ------------------------------------------------------ | ----------------------------- |
+| Language            | C++ (plain `*_impl` class)                             | QML / JavaScript              |
+| Files               | `*_impl.h/.cpp`, `CMakeLists.txt`, `metadata.json`     | `Main.qml`, `metadata.json`   |
+| Compilation         | Yes (CMake → `.so`)                                    | No (file copy)                |
+| `metadata.type`     | `"core"` (`interface: "universal"`)                    | `"ui_qml"`                    |
+| Test command        | `logoscore -D -m ./modules` + `call`                   | `nix run .`                   |
+| Calls other modules | Via `LogosModuleContext` `modules()` (C++)             | Via `logos.callModule()` (JS) |
 
 ## What's Next
 

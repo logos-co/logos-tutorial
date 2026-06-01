@@ -5,6 +5,7 @@
   "category": "general",
   "description": "Calculator module wrapping libcalc C library",
   "main": "calc_module_plugin",
+  "interface": "universal",
   "dependencies": [],
 
   "nix": {

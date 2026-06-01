@@ -11,11 +11,29 @@ Item {
     // Typed replica of the backend running in ui-host (generated from calc_ui_cpp.rep).
     readonly property var backend: logos.module("calc_ui_cpp")
 
+    // The ui-host backend connects asynchronously, so the replica isn't
+    // immediately usable. Track readiness reactively: isViewModuleReady()
+    // is a Q_INVOKABLE (not a property), so we re-check it on the
+    // onViewModuleReadyChanged signal and once at startup — never via a
+    // plain property binding, which would not re-evaluate.
+    property bool ready: false
+
+    Connections {
+        target: logos
+        function onViewModuleReadyChanged(moduleName, isReady) {
+            if (moduleName === "calc_ui_cpp")
+                root.ready = isReady && root.backend !== null
+        }
+    }
+    Component.onCompleted: {
+        root.ready = root.backend !== null && logos.isViewModuleReady("calc_ui_cpp")
+    }
+
     // logos.watch() delivers the result of a replica slot call via callbacks.
     // No QtRemoteObjects import needed — the bridge handles it.
     function callCalc(method, args) {
-        if (!backend) {
-            root.errorText = "Backend not available"
+        if (!root.ready) {
+            root.errorText = "Backend not ready"
             return
         }
         root.errorText = ""
@@ -35,6 +53,14 @@ Item {
             text: "Logos Calculator (C++ backend)"
             font.pixelSize: 20
             color: "#ffffff"
+            Layout.alignment: Qt.AlignHCenter
+        }
+
+        // Reactive backend-connection indicator.
+        Text {
+            text: root.ready ? "Connected" : "Connecting to backend..."
+            color: root.ready ? "#56d364" : "#f0883e"
+            font.pixelSize: 12
             Layout.alignment: Qt.AlignHCenter
         }
 
@@ -58,11 +84,13 @@ Item {
 
             Button {
                 text: "Add"
+                enabled: root.ready
                 onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
             }
 
             Button {
                 text: "Multiply"
+                enabled: root.ready
                 onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
             }
         }
@@ -80,16 +108,19 @@ Item {
 
             Button {
                 text: "Factorial"
+                enabled: root.ready
                 onClicked: root.callCalc("factorial", [parseInt(inputN.text) || 0])
             }
 
             Button {
                 text: "Fibonacci"
+                enabled: root.ready
                 onClicked: root.callCalc("fibonacci", [parseInt(inputN.text) || 0])
             }
 
             Button {
                 text: "libcalc version"
+                enabled: root.ready
                 onClicked: root.callCalc("libVersion", [])
             }
         }
