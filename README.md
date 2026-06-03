@@ -114,4 +114,26 @@ This:
 2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/` (`tutorial-wrapping-c-library.md`, `tutorial-qml-ui-app.md`, `tutorial-cpp-ui-app.md`).
 3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), and compiled libraries (`*.dylib`, `*.so`).
 
+### Pinning to a release tag
+
+By default `run.sh` resolves every `{release}` placeholder to the latest commit on each repo. Pass `--release TAG` to pin them all to a git tag, so the executed commands and the generated Markdown both reference that tag:
+
+```bash
+./run.sh --release tutorial-v3
+```
+
+Any further arguments are forwarded verbatim to the underlying `doctest run`/`generate` calls, so you can override a single repo's ref with `--release-for`:
+
+```bash
+./run.sh --release tutorial-v3 --release-for logos-basecamp=main
+```
+
+The `TAG` must exist on each referenced repo, or the `nix build`/`nix flake init` steps will fail to resolve it. Pinning expands each `{release}` placeholder so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`; omitting `--release` leaves them at latest.
+
+To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
+
+```bash
+DOCTEST="nix run path:../logos-doctest --" ./run.sh --release tutorial-v3
+```
+
 > **Note:** the run requires [Nix with flakes](https://nixos.org/download.html) and pulls/builds real dependencies (Qt, the Logos SDK), so the first run is slow. On Linux, add `--continue-on-fail` to the `run` command in `run.sh` if a known-failing prerequisite step would otherwise stop the chain early.
