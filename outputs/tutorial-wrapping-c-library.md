@@ -370,14 +370,29 @@ public:
     // ── Public API — every method here is callable over IPC ──────────
     // The generator maps C++ types onto the wire automatically:
     //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
+    //
+    // A `///` doc comment directly above a method becomes that method's
+    // `description` in getMethods() — surfaced by `lm`, `logoscore
+    // module-info`, and Basecamp's Methods list. (Plain `//` comments
+    // like this block are ignored, so they never leak into the API.)
+
+    /// Adds two integers and returns the sum.
     int64_t add(int64_t a, int64_t b);
+
+    /// Multiplies two integers and returns the product.
     int64_t multiply(int64_t a, int64_t b);
+
+    /// Computes the factorial n! of a non-negative integer.
     int64_t factorial(int64_t n);
+
+    /// Returns the nth Fibonacci number (0-indexed).
     int64_t fibonacci(int64_t n);
+
+    /// Returns the version string of the wrapped libcalc C library.
     std::string libVersion();
 
-    // Fire-and-forget: looks up the version, then emits it as an event
-    // instead of returning it. Used by the QML tutorial (Part 2).
+    /// Looks up the library version and emits it as a `versionReady`
+    /// event instead of returning it. Used by the QML tutorial (Part 2).
     void libVersionNotify();
 
     // ── Events ───────────────────────────────────────────────────────
@@ -409,6 +424,7 @@ logos_events:
   | `StdLogosResult`            | `LogosResult` (from `<logos_result.h>`) — `{ success, value, error }` |
 
 - Use `int64_t` for integers (not `int`) — that's the type the parser recognizes.
+- **Document methods with `///`.** A doc comment (`///` or `/** … */`) directly above a method becomes its `description` in the module's introspection, surfaced by `lm`, `logoscore module-info`, and Basecamp. Plain `//` comments are ignored, so only intentional docs are exposed — you'll see this in action in Step 5.
 - Events are declared in a `logos_events:` section. The token is recognized by the generator before preprocessing; under a normal compile it just expands to `public`.
 
 ### 3.5 `src/calc_module_impl.cpp` — Implementation
@@ -585,48 +601,48 @@ Dependencies: (none)
 ./lm/bin/lm methods result/lib/calc_module_plugin.dylib
 ```
 
-Output:
+Output — each method you declared, with its `///` doc comment shown on a
+`Description:` line:
 
 ```
 Plugin Methods:
 ===============
 
-void eventResponse(QString eventName, QVariantList args)
-  Signature: eventResponse(QString,QVariantList)
-  Invokable: no
-
-void initLogos(LogosAPI* api)
-  Signature: initLogos(LogosAPI*)
-  Invokable: yes
-
 int add(int a, int b)
   Signature: add(int,int)
   Invokable: yes
+  Description: Adds two integers and returns the sum.
 
 int multiply(int a, int b)
   Signature: multiply(int,int)
   Invokable: yes
+  Description: Multiplies two integers and returns the product.
 
 int factorial(int n)
   Signature: factorial(int)
   Invokable: yes
+  Description: Computes the factorial n! of a non-negative integer.
 
 int fibonacci(int n)
   Signature: fibonacci(int)
   Invokable: yes
+  Description: Returns the nth Fibonacci number (0-indexed).
 
 QString libVersion()
   Signature: libVersion()
   Invokable: yes
+  Description: Returns the version string of the wrapped libcalc C library.
 
 void libVersionNotify()
   Signature: libVersionNotify()
   Invokable: yes
+  Description: Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
 ```
 
-Notice the signatures are **Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue at work: `lm` is inspecting the synthesized Qt plugin, not your impl class. Your `int64_t add(int64_t, int64_t)` shows up on the wire as `add(int,int)`.
+Two things to notice:
 
-The `eventResponse` signal and `initLogos` method are also part of the generated wrapper — you didn't write them. `initLogos` is how the host hands the module its `LogosAPI`; `eventResponse` is the channel your `versionReady` event travels over. Both come for free with `interface: universal`.
+- **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
+- **Each `Description:` line is your `///` doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits the line. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
 ### 5.4 JSON output
 
@@ -643,6 +659,7 @@ For scripting and CI, use `--json`:
 ```json
 [
     {
+        "description": "Adds two integers and returns the sum.",
         "isInvokable": true,
         "name": "add",
         "parameters": [
@@ -655,6 +672,9 @@ For scripting and CI, use `--json`:
     ...
 ]
 ```
+
+The `description` field is the method's `///` doc comment. Methods
+without a doc comment omit it.
 
 ---
 
@@ -696,9 +716,9 @@ modules/calc_module/
 └── variant                    # Platform variant identifier
 ```
 
-### 6.3 Call methods
+### 6.3 Start the daemon and load the module
 
-Start the daemon and call methods:
+Start the daemon and load `calc_module`:
 
 ```bash
 ./logos/bin/logoscore -D -m ./modules &
@@ -711,6 +731,43 @@ sleep 3
 ```bash
 ./logos/bin/logoscore load-module calc_module
 ```
+
+### 6.4 Inspect methods and their docs
+
+`module-info` lists each method with its signature and the `///` description you wrote — the same docs `lm` showed, here straight from the module's `getPluginMethods` introspection:
+
+```bash
+./logos/bin/logoscore module-info calc_module
+```
+
+```
+Name:          calc_module
+Version:       v1.0.0
+Status:        loaded
+PID:           48213
+Uptime:        3s
+
+Methods:
+  add(a: int, b: int) -> int
+      Adds two integers and returns the sum.
+  multiply(a: int, b: int) -> int
+      Multiplies two integers and returns the product.
+  factorial(n: int) -> int
+      Computes the factorial n! of a non-negative integer.
+  fibonacci(n: int) -> int
+      Returns the nth Fibonacci number (0-indexed).
+  libVersion() -> QString
+      Returns the version string of the wrapped libcalc C library.
+  libVersionNotify() -> void
+      Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
+```
+
+An undocumented method would still appear, just without the indented
+description line.
+
+### 6.5 Call methods
+
+Now call them:
 
 ```bash
 ./logos/bin/logoscore call calc_module add 3 5
