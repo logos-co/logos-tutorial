@@ -374,9 +374,9 @@ public:
     // A doc comment directly above a method becomes that method's
     // `description` in getMethods() — surfaced by `lm`, `logoscore
     // module-info`, and Basecamp's Methods list. Use `///` (one or
-    // more lines) or a `/** ... */` block; a multi-line comment is
-    // joined into a single description. (Plain `//` comments like this
-    // block are ignored, so they never leak into the API.)
+    // more lines) or a `/** ... */` block; the comment's line breaks
+    // are preserved. (Plain `//` comments like this block are
+    // ignored, so they never leak into the API.)
 
     /// Adds two integers and returns the sum.
     int64_t add(int64_t a, int64_t b);
@@ -384,7 +384,7 @@ public:
     /// Multiplies two integers and returns the product.
     int64_t multiply(int64_t a, int64_t b);
 
-    // A multi-line description: consecutive `///` lines are joined.
+    // A multi-line description: consecutive `///` lines keep their breaks.
     /// Computes the factorial n! of a non-negative integer.
     /// Defined as n * (n-1) * ... * 1, with 0! = 1.
     int64_t factorial(int64_t n);
@@ -392,7 +392,7 @@ public:
     /// Returns the nth Fibonacci number (0-indexed).
     int64_t fibonacci(int64_t n);
 
-    // A `/** ... */` block comment works too (also joined to one line).
+    // A `/** ... */` block comment works too (line breaks preserved).
     /**
      * Returns the version string of the wrapped libcalc C library.
      * Read straight from the linked native library, not metadata.json.
@@ -609,9 +609,10 @@ Dependencies: (none)
 ./lm/bin/lm methods result/lib/calc_module_plugin.dylib
 ```
 
-Output — each method you declared, with its doc comment shown on a
-`Description:` line. Note `factorial` (two `///` lines) and `libVersion`
-(a `/** ... */` block) are each joined into a single description:
+Output — each method you declared, with its doc comment as a
+`Description`. A single-line comment renders inline; a multi-line
+comment (`factorial`'s two `///` lines, `libVersion`'s `/** ... */`
+block, and `libVersionNotify`'s two `///` lines) keeps its line breaks:
 
 ```
 Plugin Methods:
@@ -630,7 +631,9 @@ int multiply(int a, int b)
 int factorial(int n)
   Signature: factorial(int)
   Invokable: yes
-  Description: Computes the factorial n! of a non-negative integer. Defined as n * (n-1) * ... * 1, with 0! = 1.
+  Description:
+    Computes the factorial n! of a non-negative integer.
+    Defined as n * (n-1) * ... * 1, with 0! = 1.
 
 int fibonacci(int n)
   Signature: fibonacci(int)
@@ -640,19 +643,23 @@ int fibonacci(int n)
 QString libVersion()
   Signature: libVersion()
   Invokable: yes
-  Description: Returns the version string of the wrapped libcalc C library. Read straight from the linked native library, not metadata.json.
+  Description:
+    Returns the version string of the wrapped libcalc C library.
+    Read straight from the linked native library, not metadata.json.
 
 void libVersionNotify()
   Signature: libVersionNotify()
   Invokable: yes
-  Description: Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
+  Description:
+    Looks up the library version and emits it as a `versionReady`
+    event instead of returning it. Used by the QML tutorial (Part 2).
 ```
 
 Three things to notice:
 
 - **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
-- **Each `Description:` line is your doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits the line.
-- **Multi-line comments are joined into one line** — `factorial`'s two `///` lines and `libVersion`'s `/** ... */` block each become a single `description`. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
+- **Each `Description` is your doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
+- **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
 ### 5.4 JSON output
 
@@ -683,8 +690,11 @@ For scripting and CI, use `--json`:
 ]
 ```
 
-The `description` field is the method's `///` doc comment. Methods
-without a doc comment omit it.
+The `description` field is the method's doc comment. A multi-line
+comment is carried verbatim with embedded `\n` (e.g. `factorial`:
+`"Computes the factorial n! of a non-negative integer.\nDefined as
+n * (n-1) * ... * 1, with 0! = 1."`). Methods without a doc comment
+omit the field.
 
 ---
 
@@ -763,19 +773,22 @@ Methods:
   multiply(a: int, b: int) -> int
       Multiplies two integers and returns the product.
   factorial(n: int) -> int
-      Computes the factorial n! of a non-negative integer. Defined as n * (n-1) * ... * 1, with 0! = 1.
+      Computes the factorial n! of a non-negative integer.
+      Defined as n * (n-1) * ... * 1, with 0! = 1.
   fibonacci(n: int) -> int
       Returns the nth Fibonacci number (0-indexed).
   libVersion() -> QString
-      Returns the version string of the wrapped libcalc C library. Read straight from the linked native library, not metadata.json.
+      Returns the version string of the wrapped libcalc C library.
+      Read straight from the linked native library, not metadata.json.
   libVersionNotify() -> void
-      Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
+      Looks up the library version and emits it as a `versionReady`
+      event instead of returning it. Used by the QML tutorial (Part 2).
 ```
 
-The `factorial` and `libVersion` descriptions show how a multi-line doc
-comment (multiple `///` lines or a `/** ... */` block) is joined into one
-line. An undocumented method would still appear, just without the
-indented description line.
+`factorial`, `libVersion`, and `libVersionNotify` show how a multi-line
+doc comment (multiple `///` lines or a `/** ... */` block) keeps its line
+breaks. An undocumented method would still appear, just without the
+indented description.
 
 ### 6.5 Call methods
 
