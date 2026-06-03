@@ -371,10 +371,12 @@ public:
     // The generator maps C++ types onto the wire automatically:
     //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
     //
-    // A `///` doc comment directly above a method becomes that method's
+    // A doc comment directly above a method becomes that method's
     // `description` in getMethods() — surfaced by `lm`, `logoscore
-    // module-info`, and Basecamp's Methods list. (Plain `//` comments
-    // like this block are ignored, so they never leak into the API.)
+    // module-info`, and Basecamp's Methods list. Use `///` (one or
+    // more lines) or a `/** ... */` block; a multi-line comment is
+    // joined into a single description. (Plain `//` comments like this
+    // block are ignored, so they never leak into the API.)
 
     /// Adds two integers and returns the sum.
     int64_t add(int64_t a, int64_t b);
@@ -382,13 +384,19 @@ public:
     /// Multiplies two integers and returns the product.
     int64_t multiply(int64_t a, int64_t b);
 
+    // A multi-line description: consecutive `///` lines are joined.
     /// Computes the factorial n! of a non-negative integer.
+    /// Defined as n * (n-1) * ... * 1, with 0! = 1.
     int64_t factorial(int64_t n);
 
     /// Returns the nth Fibonacci number (0-indexed).
     int64_t fibonacci(int64_t n);
 
-    /// Returns the version string of the wrapped libcalc C library.
+    // A `/** ... */` block comment works too (also joined to one line).
+    /**
+     * Returns the version string of the wrapped libcalc C library.
+     * Read straight from the linked native library, not metadata.json.
+     */
     std::string libVersion();
 
     /// Looks up the library version and emits it as a `versionReady`
@@ -601,8 +609,9 @@ Dependencies: (none)
 ./lm/bin/lm methods result/lib/calc_module_plugin.dylib
 ```
 
-Output — each method you declared, with its `///` doc comment shown on a
-`Description:` line:
+Output — each method you declared, with its doc comment shown on a
+`Description:` line. Note `factorial` (two `///` lines) and `libVersion`
+(a `/** ... */` block) are each joined into a single description:
 
 ```
 Plugin Methods:
@@ -621,7 +630,7 @@ int multiply(int a, int b)
 int factorial(int n)
   Signature: factorial(int)
   Invokable: yes
-  Description: Computes the factorial n! of a non-negative integer.
+  Description: Computes the factorial n! of a non-negative integer. Defined as n * (n-1) * ... * 1, with 0! = 1.
 
 int fibonacci(int n)
   Signature: fibonacci(int)
@@ -631,7 +640,7 @@ int fibonacci(int n)
 QString libVersion()
   Signature: libVersion()
   Invokable: yes
-  Description: Returns the version string of the wrapped libcalc C library.
+  Description: Returns the version string of the wrapped libcalc C library. Read straight from the linked native library, not metadata.json.
 
 void libVersionNotify()
   Signature: libVersionNotify()
@@ -639,10 +648,11 @@ void libVersionNotify()
   Description: Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
 ```
 
-Two things to notice:
+Three things to notice:
 
 - **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
-- **Each `Description:` line is your `///` doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits the line. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
+- **Each `Description:` line is your doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits the line.
+- **Multi-line comments are joined into one line** — `factorial`'s two `///` lines and `libVersion`'s `/** ... */` block each become a single `description`. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
 ### 5.4 JSON output
 
@@ -734,7 +744,7 @@ sleep 3
 
 ### 6.4 Inspect methods and their docs
 
-`module-info` lists each method with its signature and the `///` description you wrote — the same docs `lm` showed, here straight from the module's `getPluginMethods` introspection:
+`module-info` lists each method with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's `getPluginMethods` introspection:
 
 ```bash
 ./logos/bin/logoscore module-info calc_module
@@ -753,17 +763,19 @@ Methods:
   multiply(a: int, b: int) -> int
       Multiplies two integers and returns the product.
   factorial(n: int) -> int
-      Computes the factorial n! of a non-negative integer.
+      Computes the factorial n! of a non-negative integer. Defined as n * (n-1) * ... * 1, with 0! = 1.
   fibonacci(n: int) -> int
       Returns the nth Fibonacci number (0-indexed).
   libVersion() -> QString
-      Returns the version string of the wrapped libcalc C library.
+      Returns the version string of the wrapped libcalc C library. Read straight from the linked native library, not metadata.json.
   libVersionNotify() -> void
       Looks up the library version and emits it as a `versionReady` event instead of returning it. Used by the QML tutorial (Part 2).
 ```
 
-An undocumented method would still appear, just without the indented
-description line.
+The `factorial` and `libVersion` descriptions show how a multi-line doc
+comment (multiple `///` lines or a `/** ... */` block) is joined into one
+line. An undocumented method would still appear, just without the
+indented description line.
 
 ### 6.5 Call methods
 
