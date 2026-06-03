@@ -3,7 +3,7 @@ output: tutorial-cpp-ui-app.md
 project_name: logos-calc-ui-cpp
 requires:
   - tutorial-qml-ui-app.test.yaml
-release: ""
+release: "tutorial-v3"
 
 intro: |
   This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-app.md) you built a QML-only UI plugin. Now you'll build a **ui_qml module with a C++ backend** — the backend runs in a separate `ui-host` process while the QML view loads in the host app (basecamp / standalone).

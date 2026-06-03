@@ -3,7 +3,7 @@ output: tutorial-qml-ui-app.md
 project_name: logos-calc-ui
 requires:
   - tutorial-wrapping-c-library.test.yaml
-release: ""
+release: "tutorial-v3"
 
 intro: |
   This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrapping-c-library.md) you wrapped a C library as a Logos core module. Now you'll build a **QML user interface** that calls that module — first isolated with `nix run`, then packaged and loaded into `logos-basecamp`.
