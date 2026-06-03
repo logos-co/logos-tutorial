@@ -3,7 +3,7 @@ output: tutorial-qml-ui-app.md
 project_name: logos-calc-ui
 requires:
   - tutorial-wrapping-c-library.test.yaml
-release: ""
+release: "tutorial-v3"
 
 intro: |
   This is Part 2 of the Logos module tutorial series. In [Part 1](tutorial-wrapping-c-library.md) you wrapped a C library as a Logos core module. Now you'll build a **QML user interface** that calls that module — first isolated with `nix run`, then packaged and loaded into `logos-basecamp`.
@@ -629,8 +629,10 @@ sections:
       - title: "Launch basecamp and use the calculator"
         text: |
           Launch basecamp pointed at that data directory. The `calc_ui` plugin appears in the sidebar alongside the built-in modules — open it, enter two numbers, and press **Add** to call `calc_module` through basecamp:
+
+          On macOS, the `TMPDIR=/tmp/` prefix keeps older `tutorial-v3` builds on a short, stable token-socket path. Newer `liblogos` releases fix this internally, and the prefix is harmless on Linux.
         ui_test:
-          launch: "./basecamp-result/bin/LogosBasecamp --user-dir $PWD/basecamp-data"
+          launch: "env TMPDIR=/tmp/ ./basecamp-result/bin/LogosBasecamp --user-dir $PWD/basecamp-data"
           setup:
             # The QML inspector (built into the default basecamp build) is what
             # lets us drive the UI; build the test framework it talks to.

@@ -2,7 +2,7 @@
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v3";
 
     # Points at your local calc_module checkout. This is a placeholder —
     # you lock it to your actual path in the next step with

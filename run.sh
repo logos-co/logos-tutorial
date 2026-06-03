@@ -29,6 +29,13 @@ set -euo pipefail
 # Run from the repo root regardless of where the script is invoked from.
 cd "$(dirname "$0")"
 
+# logos-basecamp tutorial-v3 locks a liblogos version whose subprocess token
+# sockets are sensitive to Darwin temp-dir differences and AF_UNIX path length.
+# Force a short, stable temp dir so the old sender/receiver code agrees.
+if [ "$(uname -s)" = "Darwin" ]; then
+  export TMPDIR="/tmp/"
+fi
+
 # Collect pass-through args for run/generate (--release, --release-for, etc.).
 DOCTEST_ARGS=()
 while [ "$#" -gt 0 ]; do

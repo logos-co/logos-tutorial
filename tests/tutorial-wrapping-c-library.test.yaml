@@ -1,7 +1,7 @@
 name: "Tutorial: Wrapping a C Library as a Logos Module"
 output: tutorial-wrapping-c-library.md
 project_name: logos-calc-module
-release: ""
+release: "tutorial-v3"
 
 intro: |
   This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.dylib` on macOS) as a Logos module. By the end, you will have a module that compiles, loads, and responds to method calls via `logoscore`.

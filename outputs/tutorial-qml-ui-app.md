@@ -47,7 +47,7 @@ Create a new directory and initialise it from the QML module template:
 `mkdir logos-calc-ui && cd logos-calc-ui`
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder#ui-qml
+nix flake init -t github:logos-co/logos-module-builder/tutorial-v3#ui-qml
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 4](#step-4-update-flakenix) to ensure reproducible builds.
@@ -330,7 +330,7 @@ The template already has everything wired up. Update the description and add `ca
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/tutorial-v3";
 
     # Points at your local calc_module checkout. This is a placeholder —
     # you lock it to your actual path in the next step with
@@ -574,7 +574,7 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 Build the basecamp desktop shell:
 
 ```bash
-nix build 'github:logos-co/logos-basecamp' -o basecamp-result
+nix build 'github:logos-co/logos-basecamp/tutorial-v3' -o basecamp-result
 ```
 
 Basecamp manages its own per-user data directory and preinstalls its bundled modules (`main_ui`, `package_manager`, …) from the build. It does **not** accept `--modules-dir` / `--ui-plugins-dir` flags; instead you point it at a data directory with `--user-dir` (or the `LOGOS_USER_DIR` env var), and it reads installed core modules from `<dir>/modules` and UI plugins from `<dir>/plugins` — exactly the directories `lgpm` writes to.
@@ -586,7 +586,7 @@ For this tutorial we use an explicit data directory, `basecamp-data`, so the ins
 `lgpm` installs `.lgx` packages into a modules/plugins directory:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/tutorial-v3#cli' --out-link ./pm
 ```
 
 ### 8.4 Create the data directory
@@ -617,8 +617,10 @@ Install `calc_ui` into the data directory's `plugins/`:
 
 Launch basecamp pointed at that data directory. The `calc_ui` plugin appears in the sidebar alongside the built-in modules — open it, enter two numbers, and press **Add** to call `calc_module` through basecamp:
 
+On macOS, the `TMPDIR=/tmp/` prefix keeps older `tutorial-v3` builds on a short, stable token-socket path. Newer `liblogos` releases fix this internally, and the prefix is harmless on Linux.
+
 ```bash
-./basecamp-result/bin/LogosBasecamp --user-dir $PWD/basecamp-data
+env TMPDIR=/tmp/ ./basecamp-result/bin/LogosBasecamp --user-dir $PWD/basecamp-data
 ```
 
 ![Basecamp shell loads](images/basecamp-load.png)
@@ -636,7 +638,7 @@ The sidebar labels each UI plugin by its `name` from `metadata.json`, which is w
 The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
 
 ```bash
-nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
+nix build 'github:logos-co/logos-basecamp/tutorial-v3#bin-bundle-dir' -o basecamp-portable
 ```
 
 ```bash
