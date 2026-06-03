@@ -372,11 +372,11 @@ public:
     //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
     //
     // A doc comment directly above a method becomes that method's
-    // `description` in getMethods() — surfaced by `lm`, `logoscore
-    // module-info`, and Basecamp's Methods list. Use `///` (one or
-    // more lines) or a `/** ... */` block; the comment's line breaks
-    // are preserved. (Plain `//` comments like this block are
-    // ignored, so they never leak into the API.)
+    // `description` in the module's method introspection — surfaced
+    // by `lm`, `logoscore module-info`, and Basecamp's Methods list.
+    // Use `///` (one or more lines) or a `/** ... */` block; the
+    // comment's line breaks are preserved. (Plain `//` comments like
+    // this block are ignored, so they never leak into the API.)
 
     /// Adds two integers and returns the sum.
     int64_t add(int64_t a, int64_t b);
@@ -658,7 +658,7 @@ void libVersionNotify()
 Three things to notice:
 
 - **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
-- **Each `Description` is your doc comment**, carried through the module's `getMethods()` introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
+- **Each `Description` is your doc comment**, carried through the module's method introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
 - **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
 ### 5.4 JSON output
@@ -754,7 +754,7 @@ sleep 3
 
 ### 6.4 Inspect methods and their docs
 
-`module-info` lists each method with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's `getPluginMethods` introspection:
+`module-info` lists each method with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's method introspection:
 
 ```bash
 ./logos/bin/logoscore module-info calc_module
