@@ -1,0 +1,91 @@
+LogosBasecamp version 0.1.2 (dev build)
+Build commits:
+  - logos-basecamp 63b35e8a0e826789ba15a46766df9fedc6794bc8
+  - logos-nix e637a1f5e871244d1c2df1e3c52a067f2eb406f2
+  - logos-cpp-sdk ecd369d48bffda2ad3c5233687603ef07d8b76a6
+  - logos-module 194778491ef4dd36967ac40cc2fec6b8a8b1d660
+  - logos-liblogos 87b5c2e3379bd413ad5e3934ed91b0234c5fead0
+  - logos-package-manager 9101875bc103214855bc6217834e22e66802ed86
+  - logos-package-manager-module aead48cefdb1f9980c660677f9ffdb1e389271be
+  - logos-package-downloader-module f8c9b660ae8cb00dc3cf9d74d7bddb29bcd7742f
+  - logos-capability-module 0655be68e0078bede0682bb6a5b53330dac37a72
+  - logos-package ff93a0df15ceab255f27687d22d962ea2737efbe
+  - logos-package-manager-ui fe5ac75882434a66230b70d005b48ec3e5258c0e
+  - logos-webview-app b5d1bb40da6ba550076069a10cf9beaac45aa515
+  - logos-design-system 6176f0d7a5dfeb64a7f0f98e7ca2bf71a4804772
+  - logos-counter-qml 8029a894f4221f9284efabbedcee7d9d18929777
+  - logos-counter 204ec0d3f0ccffc5d40269db9e7253cba7c330d6
+  - logos-view-module-runtime a00a2500ba8ef95bd89db26bcd860223dd1768c9
+  - logos-qt-mcp c5223b4b640add09e461983b8fddbd12c8b31f4f
+  - nix-bundle-logos-module-install 89cc9ea91275396d589c767d76926459ac77ef20
+  - nix-bundle-dir 4937262f55cf8be942263255dd0801e3e3878bc9
+  - nix-bundle-appimage 8fcc56b5afcc313ca917cf3487be082ae2f0184c
+  - nix-bundle-macos-app 900aa578506949a1e04d7dfc0b976140a96cbfc9
+Base data directory: /Users/iurimatias/Projects/Logos/logos-workspace/repos/logos-tutorial/outputs/logos-calc-ui/basecamp-data
+[SubprocessManager] Failed to connect to token socket for: capability_module
+[2026-06-03 15:32:28.181] [warning] Failed to load capability module
+Logos Core started successfully!
+[SubprocessManager] Failed to connect to token socket for: package_manager
+Failed to load package_manager module by default.
+No modules loaded.
+LogosAPI: printing keys
+MainUIPlugin created
+-----> MainUIPlugin::createWidget: logosAPI: LogosAPI(0x16f545b90)
+RemoteTransportConnection: Connecting to registry: "local:logos_package_manager_dfd551bb4cef" at "15:32:33.285"
+RemoteTransportConnection: Successfully connected to registry: "local:logos_package_manager_dfd551bb4cef"
+RemoteTransportConnection: Connected to registry at "15:32:33.286"
+RemoteTransportConnection: Connecting to registry: "local:logos_core_manager_dfd551bb4cef" at "15:32:33.286"
+RemoteTransportConnection: Successfully connected to registry: "local:logos_core_manager_dfd551bb4cef"
+RemoteTransportConnection: Connected to registry at "15:32:33.286"
+LogosAPIClient: invoking remote method "package_manager" "setEmbeddedModulesDirectory" args_count: 1
+LogosAPIClient: getToken for module: "package_manager"
+LogosAPIClient: No token found for module: "package_manager"
+LogosAPIClient: calling requestModule for "package_manager"
+RemoteTransportConnection: Connecting to registry: "local:logos_capability_module_dfd551bb4cef" at "15:32:33.287"
+RemoteTransportConnection: Successfully connected to registry: "local:logos_capability_module_dfd551bb4cef"
+RemoteTransportConnection: Connected to registry at "15:32:33.287"
+LogosAPIClient: getToken for module: "capability_module"
+LogosAPIClient: No token found for module: "capability_module"
+LogosAPIConsumer: Calling invokeRemoteMethod: "capability_module" "requestModule" args_count: 2 timeout: 20000
+RemoteTransportConnection: Requesting object: "capability_module" at "15:32:33.288"
+RemoteTransportConnection: Timeout waiting for replica: "capability_module"
+LogosAPIConsumer: Failed to acquire plugin/replica for object: "capability_module"
+LogosAPIClient: requestModule result for "package_manager" : ""
+LogosAPIConsumer: Calling invokeRemoteMethod: "package_manager" "setEmbeddedModulesDirectory" args_count: 1 timeout: 20000
+RemoteTransportConnection: Requesting object: "package_manager" at "15:32:53.377"
+RemoteTransportConnection: Timeout waiting for replica: "package_manager"
+LogosAPIConsumer: Failed to acquire plugin/replica for object: "package_manager"
+LogosAPIClient: invoking remote method "package_manager" "setUserModulesDirectory" args_count: 1
+LogosAPIClient: getToken for module: "package_manager"
+LogosAPIClient: No token found for module: "package_manager"
+LogosAPIClient: calling requestModule for "package_manager"
+RemoteTransportConnection: Connecting to registry: "local:logos_capability_module_dfd551bb4cef" at "15:33:13.378"
+RemoteTransportConnection: Successfully connected to registry: "local:logos_capability_module_dfd551bb4cef"
+RemoteTransportConnection: Connected to registry at "15:33:13.378"
+LogosAPIClient: getToken for module: "capability_module"
+LogosAPIClient: No token found for module: "capability_module"
+LogosAPIConsumer: Calling invokeRemoteMethod: "capability_module" "requestModule" args_count: 2 timeout: 20000
+RemoteTransportConnection: Requesting object: "capability_module" at "15:33:13.378"
+RemoteTransportConnection: Timeout waiting for replica: "capability_module"
+LogosAPIConsumer: Failed to acquire plugin/replica for object: "capability_module"
+LogosAPIClient: requestModule result for "package_manager" : ""
+LogosAPIConsumer: Calling invokeRemoteMethod: "package_manager" "setUserModulesDirectory" args_count: 1 timeout: 20000
+RemoteTransportConnection: Requesting object: "package_manager" at "15:33:33.382"
+RemoteTransportConnection: Timeout waiting for replica: "package_manager"
+LogosAPIConsumer: Failed to acquire plugin/replica for object: "package_manager"
+LogosAPIClient: invoking remote method "package_manager" "setEmbeddedUiPluginsDirectory" args_count: 1
+LogosAPIClient: getToken for module: "package_manager"
+LogosAPIClient: No token found for module: "package_manager"
+LogosAPIClient: calling requestModule for "package_manager"
+RemoteTransportConnection: Connecting to registry: "local:logos_capability_module_dfd551bb4cef" at "15:33:53.382"
+RemoteTransportConnection: Successfully connected to registry: "local:logos_capability_module_dfd551bb4cef"
+RemoteTransportConnection: Connected to registry at "15:33:53.383"
+LogosAPIClient: getToken for module: "capability_module"
+LogosAPIClient: No token found for module: "capability_module"
+LogosAPIConsumer: Calling invokeRemoteMethod: "capability_module" "requestModule" args_count: 2 timeout: 20000
+RemoteTransportConnection: Requesting object: "capability_module" at "15:33:53.383"
+RemoteTransportConnection: Timeout waiting for replica: "capability_module"
+LogosAPIConsumer: Failed to acquire plugin/replica for object: "capability_module"
+LogosAPIClient: requestModule result for "package_manager" : ""
+LogosAPIConsumer: Calling invokeRemoteMethod: "package_manager" "setEmbeddedUiPluginsDirectory" args_count: 1 timeout: 20000
+RemoteTransportConnection: Requesting object: "package_manager" at "15:34:13.378"
