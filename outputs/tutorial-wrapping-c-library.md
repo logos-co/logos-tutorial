@@ -408,7 +408,13 @@ public:
     // calc_module_events.cpp) that routes the typed args to subscribers
     // via the host's `eventResponse` mechanism. QML subscribes with
     // logos.onModuleEvent("calc_module", "versionReady").
+    //
+    // A `///` doc comment documents the event too — it surfaces as the
+    // event's `description` alongside methods (`lm events`, `logoscore
+    // module-info`, and Basecamp's Interface screen).
 logos_events:
+    /// Emitted by libVersionNotify() once the library version is known.
+    /// Carries the version string read from libcalc.
     void versionReady(const std::string& version);
 };
 ```
@@ -696,6 +702,36 @@ comment is carried verbatim with embedded `\n` (e.g. `factorial`:
 n * (n-1) * ... * 1, with 0! = 1."`). Methods without a doc comment
 omit the field.
 
+### 5.5 List events
+
+Events (your `logos_events:` block) are part of the module's API too, and
+are introspectable the same way — `lm events` lists each event with its
+signature and `///` description:
+
+```bash
+# Linux
+./lm/bin/lm events result/lib/calc_module_plugin.so
+
+# macOS
+./lm/bin/lm events result/lib/calc_module_plugin.dylib
+```
+
+```
+Plugin Events:
+==============
+
+void versionReady(QString version)
+  Signature: versionReady(QString)
+  Description:
+    Emitted by libVersionNotify() once the library version is known.
+    Carries the version string read from libcalc.
+```
+
+Events have no return type (they're fire-and-forget). Running `lm`
+with no subcommand prints metadata, methods, **and** events together.
+The same event docs appear in `logoscore module-info` and Basecamp's
+Interface screen.
+
 ---
 
 ## Step 6: Test with `logoscore`
@@ -752,9 +788,9 @@ sleep 3
 ./logos/bin/logoscore load-module calc_module
 ```
 
-### 6.4 Inspect methods and their docs
+### 6.4 Inspect methods and events
 
-`module-info` lists each method with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's method introspection:
+`module-info` lists each method **and event** with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's introspection:
 
 ```bash
 ./logos/bin/logoscore module-info calc_module
@@ -783,12 +819,16 @@ Methods:
   libVersionNotify() -> void
       Looks up the library version and emits it as a `versionReady`
       event instead of returning it. Used by the QML tutorial (Part 2).
+
+Events:
+  versionReady(version: QString)
+      Emitted by libVersionNotify() once the library version is known.
+      Carries the version string read from libcalc.
 ```
 
-`factorial`, `libVersion`, and `libVersionNotify` show how a multi-line
-doc comment (multiple `///` lines or a `/** ... */` block) keeps its line
-breaks. An undocumented method would still appear, just without the
-indented description.
+Methods and events both show their doc comments (multi-line ones keep
+their line breaks). An undocumented method or event still appears, just
+without the indented description.
 
 ### 6.5 Call methods
 
