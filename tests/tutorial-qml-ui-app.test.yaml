@@ -674,12 +674,13 @@ sections:
               texts: ["8"]
               timeout: 10000
               screenshot: "basecamp-calc-installed.png"
-            # ── Verify the `///` method docs surface on the Methods screen ──────
+            # ── Verify the `///` method + event docs surface on the Interface screen ──
             - name: "Open the Modules system view"
               text: |
-                The doc comments you wrote on `calc_module`'s methods in Part 1 also
-                surface in basecamp. Open **Modules → Core Modules**, then view
-                `calc_module`'s methods — each method shows its `description`.
+                The doc comments you wrote on `calc_module`'s methods and events in
+                Part 1 also surface in basecamp. Open **Modules → Core Modules**, then
+                open `calc_module`'s **Interface** — each method and event shows its
+                `description`.
               action: click
               target: "Modules"
             - name: "Switch to the Core Modules tab"
@@ -689,26 +690,27 @@ sections:
               action: wait_for
               texts: ["calc_module"]
               timeout: 15000
-            # Every module row's "View Methods" button shares the same label, so
-            # open calc_module's Methods screen by name via the view's
-            # openMethods() helper (equivalent to clicking its button).
-            - name: "Open calc_module's Methods screen"
+            # Every module row's "Interface" button shares the same label, so open
+            # calc_module's Interface screen by name via the view's openInterface()
+            # helper (equivalent to clicking its button).
+            - name: "Open calc_module's Interface screen"
               action: call_method
               find_by: "objectName"
               find_value: "coreModulesView"
-              method: "openMethods"
+              method: "openInterface"
               args: ["calc_module"]
-            - name: "Per-method descriptions render (single- and multi-line)"
+            - name: "Method and event descriptions render (single- and multi-line)"
               action: wait_for
               texts:
                 - "Adds two integers and returns the sum."
                 - "Computes the factorial n! of a non-negative integer.\nDefined as n * (n-1) * ... * 1, with 0! = 1."
+                - "Emitted by libVersionNotify() once the library version is known.\nCarries the version string read from libcalc."
               timeout: 15000
-              screenshot: "basecamp-method-docs.png"
+              screenshot: "basecamp-interface-docs.png"
         post_text: |
           The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-          The **Methods** screen (Modules → Core Modules → *View Methods*) lists each method with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. `factorial`'s two `///` lines render as two lines, exactly as written.
+          The **Interface** screen (Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
           The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 
