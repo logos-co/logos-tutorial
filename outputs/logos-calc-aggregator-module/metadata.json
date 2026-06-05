@@ -1,0 +1,24 @@
+{
+  "name": "calc_aggregator",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "general",
+  "description": "Composes calc_module and showcases LogosModuleContext",
+  "main": "calc_aggregator_plugin",
+  "interface": "universal",
+  "dependencies": ["calc_module"],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}

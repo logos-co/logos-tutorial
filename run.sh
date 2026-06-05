@@ -67,6 +67,20 @@ echo "==> Running tutorial chain into ${OUTPUT_DIR}/"
   --output-dir "${OUTPUT_DIR}/" \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Composing Modules tutorial is a separate leaf that needs only Part 1's
+# calc_module, which the chain above already built into outputs/logos-calc-module.
+# --output-dir runs a single spec/chain, so we slot this one in beside the others
+# with --workdir: it runs standalone (its requires: chain is skipped) into a fresh
+# empty subdir and reuses ../logos-calc-module — no second calc_module build.
+echo "==> Running Composing Modules tutorial into ${OUTPUT_DIR}/logos-calc-aggregator-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-aggregator-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-aggregator-module"
+"${DOCTEST[@]}" run tests/tutorial-composing-modules.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-aggregator-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do
@@ -82,6 +96,8 @@ if [ ! -d "${OUTPUT_DIR}" ]; then
 fi
 
 echo "==> Cleaning build artifacts from ${OUTPUT_DIR}/"
-"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --verbose
+# --also calc-data: the Composing Modules tutorial creates a calc-data/ persistence
+# directory (logoscore --persistence-path) that the default clean rules don't cover.
+"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --also calc-data --verbose
 
 echo "==> Done. Cleaned tutorial output is in ${OUTPUT_DIR}/"
