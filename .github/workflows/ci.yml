@@ -67,6 +67,7 @@ jobs:
           nix run github:logos-co/logos-doctest -- run \
             tests/tutorial-cpp-ui-app.test.yaml \
             tests/tutorial-composing-modules.test.yaml \
+            tests/tutorial-interface-dependencies.test.yaml \
             --verbose \
             --continue-on-fail \
             --report "${{ runner.temp }}/tutorial-report.html"
@@ -102,6 +103,9 @@ jobs:
           nix run github:logos-co/logos-doctest -- generate \
             tests/tutorial-composing-modules.test.yaml \
             -o /tmp/gen-composing.md
+          nix run github:logos-co/logos-doctest -- generate \
+            tests/tutorial-interface-dependencies.test.yaml \
+            -o /tmp/gen-interface-deps.md
           echo "Generated markdown successfully"
 
   publish-report:

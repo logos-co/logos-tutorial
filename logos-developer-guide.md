@@ -232,6 +232,7 @@ The full set of available fields:
 | `interface`                      | No                                     | --                 | Set to `"universal"` for the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. Omit for the older hand-written Qt-plugin pattern.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
+| `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
 | `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
 | `nix.packages.runtime`           | No                                     | `[]`               | Nix packages for runtime                                                                                                                                                                                                                                       |
@@ -965,6 +966,54 @@ The generated `LogosModules` struct provides a member for each module, with meth
 
 > **Prefer async wrappers.** Use `doSomethingAsync(...)` instead of `doSomething(...)` to avoid blocking the caller's thread. Synchronous calls can cause hangs if the target module is slow to respond.
 
+### Dependency Interfaces
+
+A regular dependency couples a module to **one concrete provider**: you list `other_module` in `dependencies`, and the generated `modules().other_module` wrapper bakes that name into every call. A **dependency interface** instead lets a module declare a *contract* — a list of methods and events — that **any** module exposing a superset of it can satisfy, and bind that contract to a concrete module **chosen at runtime**.
+
+Declare interfaces in `metadata.json` under `interface_dependencies`, alongside (or instead of) `dependencies`:
+
+```json
+"interface_dependencies": [
+  { "name": "calculator", "file": "interfaces/calculator.h", "impl_class": "ICalculator" }
+]
+```
+
+| Field        | Required        | Meaning                                                                                              |
+| ------------ | --------------- | ---------------------------------------------------------------------------------------------------- |
+| `name`       | Yes             | Interface identifier → bound wrapper class (`Calculator`) and the `bind_<name>` factory               |
+| `file`       | Yes             | Path to the contract: a pure-C++ `.h` (methods + a `logos_events:` block) or a `.lidl` file           |
+| `impl_class` | For `.h` files  | The class inside the header whose signatures define the contract                                      |
+| `input`      | No              | A flake-input name hosting the interface (same wiring as `dependencies`); omit for a local file       |
+
+The contract is written in the module's own language — for a universal module, a plain header:
+
+```cpp
+// interfaces/calculator.h
+class ICalculator {
+public:
+    int64_t add(int64_t a, int64_t b);
+    std::string libVersion();
+logos_events:
+    void versionReady(const std::string& version);
+};
+```
+
+The generator emits a **bound** wrapper whose target module is a constructor argument (not baked in), exposed on `LogosModules` as a `bind_<name>(moduleName)` factory. Bind once, then call as usual:
+
+```cpp
+#include "logos_sdk.h"
+
+// moduleName is chosen at runtime — config, discovery, user pick, etc.
+auto calc = modules().bind_calculator("calc_module");
+int64_t  sum = calc.add(3, 5);                 // synchronous
+calc.fibonacciAsync(20, [](int64_t v){ ... });  // async (generated alongside)
+calc.onVersionReady([](const std::string& v){ ... });  // typed event subscription
+```
+
+Binding is **not validated**: a module that does not satisfy the interface surfaces an ordinary remote-call error (a default-valued result), never a crash — so you can swap providers just by changing the bound name. The provider must be loaded at runtime; declaring it in `dependencies` is one way to ensure that, but the interface itself names no module.
+
+See the [Dependency Interfaces tutorial](tutorial-interface-dependencies.md) for an end-to-end walkthrough, and [Composing Modules](tutorial-composing-modules.md) for the concrete-dependency counterpart.
+
 ### 8.3 LogosResult
 
 Many module methods return `LogosResult` for structured success/error handling:
@@ -1053,6 +1102,67 @@ Declare dependencies in your `metadata.json`:
 Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 When your module is installed via `lgpm`, its dependencies are automatically resolved and installed first. When loaded via `logos-basecamp`, core module dependencies are loaded before your module.
+
+### 9.3 Exposing Prometheus Metrics
+
+Infra operators monitor logos.dev nodes with Prometheus. The
+[`prometheus_metrics`](https://github.com/logos-co/prometheus-metrics-module) module
+serves a `/metrics` HTTP endpoint by querying a configured set of modules — it does
+not discover modules or read platform stats, it only calls the modules you list.
+
+To make your module scrapeable, implement one method by convention:
+
+```
+collectMetrics() -> LogosMap
+```
+
+returning prometheus-like fields:
+
+```json
+{
+  "metrics": [
+    { "name": "storage_blocks_total", "type": "counter", "help": "Total blocks stored", "value": 42 },
+    { "name": "storage_peers_connected", "type": "gauge", "help": "Connected peers", "value": 7, "labels": { "protocol": "libp2p" } }
+  ]
+}
+```
+
+| Field    | Meaning                                                                              |
+| -------- | ----------------------------------------------------------------------------------- |
+| `name`   | Prometheus metric name                                                              |
+| `type`   | `counter`, `gauge`, `histogram`, or `summary` (unknown/missing → `untyped`)         |
+| `help`   | short description                                                                   |
+| `value`  | number (bools map to 1/0; numeric strings pass through)                             |
+| `labels` | optional string→string label pairs                                                  |
+
+The metrics server adds a `module="<name>"` label to every series automatically.
+Modules that don't implement `collectMetrics` (or that error/time out) are skipped, so
+one module never breaks a scrape.
+
+**Universal (plain C++) module:**
+
+```cpp
+// in <module>_impl.h:   LogosMap collectMetrics();
+LogosMap MyModuleImpl::collectMetrics() {
+    LogosMap metrics = LogosMap::array();
+    metrics.push_back({
+        {"name", "storage_blocks_total"}, {"type", "counter"},
+        {"help", "Total blocks stored"},  {"value", m_blockCount}
+    });
+    return {{"metrics", metrics}};
+}
+```
+
+**Legacy (Qt) module** — add `Q_INVOKABLE QVariantMap collectMetrics();` returning the
+same `{ "metrics": [...] }` shape as a `QVariantMap`/`QVariantList`.
+
+Then run the metrics server alongside your module and point it at you:
+
+```bash
+logoscore -m <modules-dir> -l prometheus_metrics,my_module \
+  -c 'prometheus_metrics.start({"port":9090,"modules":["my_module"]})'
+curl http://localhost:9090/metrics
+```
 
 ---
 
