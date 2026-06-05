@@ -85,6 +85,10 @@ sections:
             #include <cstdint>
             #include <string>
 
+            // Defines the `logos_events` token (expands to `public`) so this
+            // header is valid C++ on its own, not only as generator input.
+            #include <logos_module_context.h>
+
             class ICalculator {
             public:
                 int64_t add(int64_t a, int64_t b);
@@ -100,7 +104,7 @@ sections:
         post_text: |
           A few things to notice:
 
-          - The class name (`ICalculator`) and method signatures are all the generator needs. There is no `#include` of any module, no `LogosAPI`, no Qt.
+          - The class name (`ICalculator`) and method signatures are all the generator needs — no `LogosAPI`, no Qt, no reference to any concrete module. The one include (`logos_module_context.h`) just defines the `logos_events` token so the header is valid C++ on its own.
           - `logos_events:` (like Qt's `signals:`) marks event declarations. The generator turns each into a typed `on<Event>(callback)` subscriber on the bound wrapper.
           - You could write the exact same contract as a `.lidl` file instead — `interfaces/calculator.lidl` with `method add(a: int, b: int) -> int` … `event versionReady(version: tstr)`. The `.h` form is shown here because it matches a universal module's own language.
 
