@@ -25,7 +25,6 @@ No Qt, no `LogosAPI`, no plugin boilerplate — one plain C++ class, exactly lik
 - Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module` whose shared library is built (`libcalc.so`/`.dylib` in `logos-calc-module/lib/`). This tutorial only needs `calc_module`; the UI tutorials (Parts 2–3) are not required.
 - Nix with flakes enabled
 - Basic familiarity with C++
-- **Toolchain note for the event step.** The typed event subscriber in [Step 6](#subscribe-to-a-calc_module-event) (`modules().calc_module.onVersionReady(...)`) needs the LIDL-parser fix from [logos-cpp-sdk#72](https://github.com/logos-co/logos-cpp-sdk/pull/72). `calc_module`'s event parameter is named `version`, which collides with a reserved word in the events sidecar grammar — without the fix the consumer-side accessor isn't generated and the build fails on that one line. Until the fix is published and `logos-module-builder` bumps its `logos-cpp-sdk` pin, either pin `logos-module-builder` to a commit that includes it, or simply **skip the event-subscription step** — every other capability (context properties, persistence, sync and async dependency calls) builds and runs on the current released toolchain.
 
 ---
 
@@ -611,8 +610,6 @@ sleep 1
 `startAsyncFibonacci` returned before the answer existed; by the time `asyncResult()` runs, the async callback has fired and stored `6765`. That's the typed **async** caller — same wrapper, `<method>Async(..., callback)`.
 
 ### 6.8 Subscribe to a calc_module event
-
-> **Heads up:** this step needs the LIDL-parser fix from [logos-cpp-sdk#72](https://github.com/logos-co/logos-cpp-sdk/pull/72) (see the toolchain note in [Prerequisites](#prerequisites)). On a toolchain without it, `nix build` back in Step 4 fails to generate `onVersionReady`; skip this step and the rest of the tutorial still works.
 
 The typed event subscription. `subscribeVersion()` registers the callback, `calc_module.libVersionNotify()` makes `calc_module` emit its `versionReady` event, and `lastVersionEvent()` reads what the subscription captured. Because the daemon keeps both modules loaded, the event fires between the calls:
 
