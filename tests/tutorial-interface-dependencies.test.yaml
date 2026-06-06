@@ -496,12 +496,12 @@ sections:
 
       - title: "Bind to a non-satisfying module (the no-validation rule)"
         text: |
-          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind surfaces as an ordinary remote-call failure, not a crash. Bind to a module that doesn't exist and watch the call degrade gracefully to the default value (`0`) instead of `8`:
-        run: "./logos/bin/logoscore call calc_via_interface sumVia no_such_module 3 5"
+          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces as an **ordinary remote-call failure** when you call through it — no crash, and the daemon keeps serving. Bind to a module that isn't loaded and the call fails cleanly (we keep going with `|| true` so the tour continues):
+        run: "./logos/bin/logoscore call calc_via_interface sumVia no_such_module 3 5 2>&1 || true"
         expect_contains:
-          - '"result":0'
+          - '"status":"error"'
         post_text: |
-          No crash, no error dialog — the remote call simply could not be resolved, so the typed wrapper returned the default `int` (`0`). Swapping providers is just changing the string: `sumVia calc_module 3 5` works, `sumVia no_such_module 3 5` quietly fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` would satisfy `calculator` and slot in unchanged.
+          `sumVia` returned an error (`RPC_FAILED`) because the bound `no_such_module` couldn't be resolved — exactly like any other call to an absent module. No crash, no conformance check. Swapping providers is just changing the string: `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
       - run: "./logos/bin/logoscore stop"
         post_text: |
           That completes the tour: a single interface, bound at runtime to a concrete module, driven type-safely for sync calls, async calls, and events — with no build-time dependency on the provider.
@@ -545,7 +545,7 @@ sections:
       | Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                  |
       | Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                               |
       | Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                            |
-      | No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `0`         |
+      | No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → RPC error   |
       | Share across repos               | `interface_dependencies[].input` + flake input           | —                                                   |
 
       The interface coupled `calc_via_interface` to a *contract*, never to `calc_module`. Any module exposing that contract can be bound in its place — at runtime, by name.
