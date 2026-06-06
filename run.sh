@@ -81,6 +81,19 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-aggregator-module"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Dependency Interfaces tutorial is another leaf that needs only Part 1's
+# calc_module (as a runtime provider it binds to by name). Same standalone
+# --workdir treatment as Composing Modules: it reuses ../logos-calc-module and
+# builds no second calc_module.
+echo "==> Running Dependency Interfaces tutorial into ${OUTPUT_DIR}/logos-calc-via-interface-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-via-interface-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-via-interface-module"
+"${DOCTEST[@]}" run tests/tutorial-interface-dependencies.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-via-interface-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do

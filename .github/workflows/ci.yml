@@ -55,18 +55,21 @@ jobs:
       # The runner is the shared `doctest` CLI, invoked directly via its flake
       # (github:logos-co/logos-doctest). The flake bundles Python + PyYAML
       # (+ rich), so no pip install step is needed.
-      - name: Test - UI chain + Composing Modules (C Library tutorial pulled in via requires)
+      - name: Test - UI chain + Composing Modules + Dependency Interfaces (C Library tutorial pulled in via requires)
         run: |
-          # Two leaves, run back-to-back into one report:
+          # Three leaves, run back-to-back into one report:
           #   - tutorial-cpp-ui-app: the Part 1 -> 2 -> 3 chain (requires:)
           #   - tutorial-composing-modules: the calc_aggregator core module
           #     (requires Part 1 only)
+          #   - tutorial-interface-dependencies: the calc_via_interface module
+          #     binding a calculator interface at runtime (requires Part 1 only)
           # --continue-on-fail so the run walks every step and the published
           # report is complete. The job still fails (non-zero exit) if any step
           # failed; this only changes whether we stop early.
           nix run github:logos-co/logos-doctest -- run \
             tests/tutorial-cpp-ui-app.test.yaml \
             tests/tutorial-composing-modules.test.yaml \
+            tests/tutorial-interface-dependencies.test.yaml \
             --verbose \
             --continue-on-fail \
             --report "${{ runner.temp }}/tutorial-report.html"
@@ -102,6 +105,9 @@ jobs:
           nix run github:logos-co/logos-doctest -- generate \
             tests/tutorial-composing-modules.test.yaml \
             -o /tmp/gen-composing.md
+          nix run github:logos-co/logos-doctest -- generate \
+            tests/tutorial-interface-dependencies.test.yaml \
+            -o /tmp/gen-interface-deps.md
           echo "Generated markdown successfully"
 
   publish-report:
