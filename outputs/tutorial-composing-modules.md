@@ -58,7 +58,7 @@ Three small config files declare the module, its dependency on `calc_module`, an
 
 ### 2.1 `metadata.json` — declare the dependency
 
-The one field that matters here is `dependencies`: listing `calc_module` tells the builder to fetch `calc_module`'s headers and event metadata and generate a typed wrapper for it. The dependency name **must match** `calc_module`'s own `metadata.json` `name`.
+The one field that matters here is `dependencies`: listing `calc_module` tells the builder to read `calc_module`'s published LIDL interface contract and generate a typed wrapper for it — without building `calc_module` itself. The dependency name **must match** `calc_module`'s own `metadata.json` `name`.
 
 ```json
 {
@@ -427,7 +427,7 @@ nix flake update --override-input calc_module path:../logos-calc-module
 git add flake.lock
 ```
 
-Now build the full package. For a universal module with a dependency, this is where `logos-cpp-generator` runs over both `src/calc_aggregator_impl.h` and `calc_module`'s exported interface, emitting the plugin glue **and** the typed `modules().calc_module` wrapper under `generated_code/`:
+Now build the full package. For a universal module with a dependency, this is where `logos-cpp-generator` runs over both `src/calc_aggregator_impl.h` and `calc_module`'s published LIDL contract, emitting the plugin glue **and** the typed `modules().calc_module` wrapper under `generated_code/` — note `calc_module`'s own plugin is not built here, only its LIDL is read:
 
 ```bash
 nix build

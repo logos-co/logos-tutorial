@@ -1108,6 +1108,8 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 
 Each module publishes a small, language-neutral **LIDL interface contract** as a cheap flake output (`packages.<system>.lidl`), generated from its source with no plugin compile. When you depend on a module, the builder generates the typed `modules().<dep>` wrapper **from that published LIDL** — so building (or packaging) your module **does not build the dependency module**. The only step that still builds and bundles dependency plugins is the standalone-app run (`nix run` / `#run`), which has to, because it loads them.
 
+This is the same `logos-cpp-generator` from [§8.2](#82-the-c-sdk-code-generator), just driven by the dependency's LIDL contract — the same kind of `.lidl`/`.h` contract `interface_dependencies` uses — instead of inspecting a compiled plugin. Inspecting a compiled plugin (as §8.2 describes) is the manual/standalone path; for declared module dependencies the builder uses the contract path, which is why no dependency plugin is built.
+
 Because the contract is LIDL, the dependency's implementation language doesn't matter: the pipeline is `source → LIDL → C++` for a C++ module today, and `Rust → LIDL → C++` for a Rust module tomorrow — the same generated `modules().<dep>` wrapper either way.
 
 > **Transitional fallback.** A dependency built by an older `logos-module-builder` won't expose a `lidl` output yet; for those the builder falls back to the previous behavior (build the dependency and copy its generated headers), so mixed dependency graphs keep working.
