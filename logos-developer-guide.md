@@ -233,6 +233,7 @@ The full set of available fields:
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
+| `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
 | `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
 | `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
 | `nix.packages.runtime`           | No                                     | `[]`               | Nix packages for runtime                                                                                                                                                                                                                                       |
@@ -1102,6 +1103,25 @@ Declare dependencies in your `metadata.json`:
 Each entry in `dependencies` must match the `name` field in that module's own `metadata.json`. When adding a dependency as a flake input, the **input attribute name** must also match the dependency name — e.g., `waku_module.url = "github:logos-co/logos-waku-module"`. The URL can point to any repo, but the attribute name is how the builder resolves dependencies.
 
 When your module is installed via `lgpm`, its dependencies are automatically resolved and installed first. When loaded via `logos-basecamp`, core module dependencies are loaded before your module.
+
+#### How dependencies are consumed — the LIDL contract
+
+Each module publishes a small, language-neutral **LIDL interface contract** as a cheap flake output (`packages.<system>.lidl`), generated from its source with no plugin compile. When you depend on a module, the builder generates the typed `modules().<dep>` wrapper **from that published LIDL** — so building (or packaging) your module **does not build the dependency module**. The only step that still builds and bundles dependency plugins is the standalone-app run (`nix run` / `#run`), which has to, because it loads them.
+
+Because the contract is LIDL, the dependency's implementation language doesn't matter: the pipeline is `source → LIDL → C++` for a C++ module today, and `Rust → LIDL → C++` for a Rust module tomorrow — the same generated `modules().<dep>` wrapper either way.
+
+> **Transitional fallback.** A dependency built by an older `logos-module-builder` won't expose a `lidl` output yet; for those the builder falls back to the previous behavior (build the dependency and copy its generated headers), so mixed dependency graphs keep working.
+
+To force a specific contract source for a dependency — a committed `.lidl`, a header in another repo, etc. — add a `dependency_overrides` entry keyed by the dependency name:
+
+```json
+"dependencies": ["calc_module"],
+"dependency_overrides": {
+  "calc_module": { "file": "interfaces/calc.lidl" }
+}
+```
+
+Each override is `{ file, input?, impl_class? }`: `file` is the `.lidl`/`.h` path (relative to this repo, or to the flake `input` if given), and `impl_class` is required for a `.h` file. Most modules never need this — auto-resolution from the dependency's `lidl` output is the default.
 
 ### 9.3 Exposing Prometheus Metrics
 
