@@ -731,6 +731,9 @@ loaded, call methods with the `call` client command, then stop the daemon:
 # Start a daemon with the module(s) loaded (deps resolved automatically)
 ./logos/bin/logoscore -D -m ./modules -l my_module &
 
+# Wait until the daemon is accepting commands before calling it
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
+
 # Call methods (positional args; @file reads a parameter from a file)
 ./logos/bin/logoscore call my_module doSomething hello
 ./logos/bin/logoscore call my_module init @config.json
@@ -751,6 +754,8 @@ loaded, call methods with the `call` client command, then stop the daemon:
 | `-D`                               | Start the daemon                                     |
 | `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
 | `-l, --load-modules <name1,name2>` | Comma-separated modules to pre-load on startup       |
+| `--persistence-path <dir>`         | Base directory for module instance persistence       |
+| `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
 | `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
 
 **Daemon commands:**
@@ -1177,7 +1182,11 @@ Then run the metrics server alongside your module and point it at you (daemon
 mode passes the JSON arg intact):
 
 ```bash
-logoscore -D -m <modules-dir> --config-dir /tmp/om
+# --config-dir isolates this daemon instance (config/state/tokens) from the
+# default ~/.logoscore, so it can run alongside others. -D runs in the
+# foreground, so background it and wait for it to be ready.
+logoscore -D -m <modules-dir> --config-dir /tmp/om &
+until logoscore --config-dir /tmp/om status >/dev/null 2>&1; do sleep 0.2; done
 logoscore --config-dir /tmp/om load-module my_module
 logoscore --config-dir /tmp/om load-module openmetrics
 logoscore --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
@@ -1311,8 +1320,9 @@ Check that:
 Use `logoscore` to verify your module loads and its methods are callable:
 
 ```bash
-# Start daemon and load the module
+# Start the daemon (runs in the foreground, so background it and wait)
 ./logos/bin/logoscore -D -m ./modules &
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 
 # Check if the module is listed as loaded
 ./logos/bin/logoscore list-modules --loaded

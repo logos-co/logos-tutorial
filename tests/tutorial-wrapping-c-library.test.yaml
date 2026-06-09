@@ -823,7 +823,7 @@ sections:
 
       - run: "./logos/bin/logoscore stop"
         post_text: |
-          > For the full daemon/client workflow and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#51-running-with-logoscore).
+          > For the full daemon/client workflow and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#61-running-with-logoscore).
 
           **What happens under the hood:**
 
