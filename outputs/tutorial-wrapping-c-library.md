@@ -854,7 +854,7 @@ Now call them:
 ./logos/bin/logoscore stop
 ```
 
-> For inline (legacy) mode and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#51-running-with-logoscore).
+> For the full daemon/client workflow and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#51-running-with-logoscore).
 
 **What happens under the hood:**
 
