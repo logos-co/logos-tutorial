@@ -722,42 +722,44 @@ Once the daemon is running, use commands from another terminal:
 ./logos/bin/logoscore stop
 ```
 
-#### Inline Mode (Legacy)
+#### One-shot execution
 
-For one-shot execution (load, call, exit), use the legacy inline flags:
+There is no separate single-process mode — start a clean daemon, load the
+module(s) with `load-module`, call methods with `call`, then stop the daemon:
 
 ```bash
-# Load a module and call a method
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules my_module \
-  -c "my_module.doSomething(hello)"
+# Start a clean daemon (loads nothing on its own)
+./logos/bin/logoscore -D -m ./modules &
 
-# Multiple sequential calls
-./logos/bin/logoscore \
-  -m ./modules \
-  -l my_module \
-  -c "my_module.init(@config.json)" \
-  -c "my_module.start()"
+# Wait until the daemon is accepting commands
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 
-# Exit immediately after calls complete
-./logos/bin/logoscore \
-  -m ./modules -l my_module \
-  -c "my_module.doSomething(hello)" \
-  --quit-on-finish
+# Load the module(s) you need (dependencies resolved automatically)
+./logos/bin/logoscore load-module my_module
+
+# Call methods (positional args; @file reads a parameter from a file)
+./logos/bin/logoscore call my_module doSomething hello
+./logos/bin/logoscore call my_module init @config.json
+./logos/bin/logoscore call my_module start
+
+# Stop the daemon when done
+./logos/bin/logoscore stop
 ```
 
-> **Note:** Without `-c` or `--quit-on-finish`, logoscore enters the Qt event loop and stays running (daemon behavior). Always use `-c` for one-shot execution.
+> **Note:** The legacy inline mode (`-c "module.method(args)"` / `--quit-on-finish`,
+> which ran calls in one short-lived process) has been removed, as has the
+> `-l/--load-modules` autoload flag — the daemon starts clean and modules are
+> loaded with `load-module`. `-m`/`--persistence-path` configure daemon startup (`-D`).
 
-**Inline mode flags:**
+**Daemon startup flags:**
 
 | Flag                               | Description                                          |
 | ---------------------------------- | ---------------------------------------------------- |
+| `-D`                               | Start the daemon                                     |
 | `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
-| `-l, --load-modules <name1,name2>` | Comma-separated list of modules to load              |
-| `-c "<module>.<method>(args)"`     | Call a method after loading (repeatable, sequential) |
-| `--quit-on-finish`                 | Exit after all `-c` calls complete                   |
-| `@file.json`                       | Pass a file's contents as a method argument          |
+| `--persistence-path <dir>`         | Base directory for module instance persistence       |
+| `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
+| `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
 
 **Daemon commands:**
 
@@ -1125,12 +1127,13 @@ To force a specific contract source for a dependency — a committed `.lidl`, a 
 
 Each override is `{ file, input?, impl_class? }`: `file` is the `.lidl`/`.h` path (relative to this repo, or to the flake `input` if given), and `impl_class` is required for a `.h` file. Most modules never need this — auto-resolution from the dependency's `lidl` output is the default.
 
-### 9.3 Exposing Prometheus Metrics
+### 9.3 Exposing OpenMetrics / Prometheus Metrics
 
 Infra operators monitor logos.dev nodes with Prometheus. The
-[`prometheus_metrics`](https://github.com/logos-co/prometheus-metrics-module) module
-serves a `/metrics` HTTP endpoint by querying a configured set of modules — it does
-not discover modules or read platform stats, it only calls the modules you list.
+[`openmetrics`](https://github.com/logos-co/openmetrics-module) module serves an
+[OpenMetrics](https://prometheus.io/docs/specs/om/open_metrics_spec/) `/metrics`
+HTTP endpoint by querying a configured set of modules — it does not discover
+modules or read platform stats, it only calls the modules you list.
 
 To make your module scrapeable, implement one method by convention:
 
@@ -1138,7 +1141,7 @@ To make your module scrapeable, implement one method by convention:
 collectMetrics() -> LogosMap
 ```
 
-returning prometheus-like fields:
+returning openmetrics-like fields:
 
 ```json
 {
@@ -1151,8 +1154,8 @@ returning prometheus-like fields:
 
 | Field    | Meaning                                                                              |
 | -------- | ----------------------------------------------------------------------------------- |
-| `name`   | Prometheus metric name                                                              |
-| `type`   | `counter`, `gauge`, `histogram`, or `summary` (unknown/missing → `untyped`)         |
+| `name`   | metric name (for counters, the OpenMetrics `_total` sample suffix is handled)       |
+| `type`   | `counter`, `gauge`, `histogram`, or `summary` (unknown/missing → `unknown`)          |
 | `help`   | short description                                                                   |
 | `value`  | number (bools map to 1/0; numeric strings pass through)                             |
 | `labels` | optional string→string label pairs                                                  |
@@ -1178,11 +1181,18 @@ LogosMap MyModuleImpl::collectMetrics() {
 **Legacy (Qt) module** — add `Q_INVOKABLE QVariantMap collectMetrics();` returning the
 same `{ "metrics": [...] }` shape as a `QVariantMap`/`QVariantList`.
 
-Then run the metrics server alongside your module and point it at you:
+Then run the metrics server alongside your module and point it at you (daemon
+mode passes the JSON arg intact):
 
 ```bash
-logoscore -m <modules-dir> -l prometheus_metrics,my_module \
-  -c 'prometheus_metrics.start({"port":9090,"modules":["my_module"]})'
+# --config-dir isolates this daemon instance (config/state/tokens) from the
+# default ~/.logoscore, so it can run alongside others. -D runs in the
+# foreground, so background it and wait for it to be ready.
+logoscore -D -m <modules-dir> --config-dir /tmp/om &
+until logoscore --config-dir /tmp/om status >/dev/null 2>&1; do sleep 0.2; done
+logoscore --config-dir /tmp/om load-module my_module
+logoscore --config-dir /tmp/om load-module openmetrics
+logoscore --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
 curl http://localhost:9090/metrics
 ```
 
@@ -1224,9 +1234,6 @@ logoscore list-modules [--loaded]             # List modules
 logoscore module-info <name>                  # Show module details
 logoscore status                              # Daemon health
 logoscore stop                                # Stop daemon
-
-# Inline mode (legacy)
-logoscore -m <dir> -l <name> -c "<module>.<method>(args)" [--quit-on-finish]
 ```
 
 ### `lgpm` -- Local Package Manager
@@ -1313,8 +1320,9 @@ Check that:
 Use `logoscore` to verify your module loads and its methods are callable:
 
 ```bash
-# Start daemon and load the module
+# Start the daemon (runs in the foreground, so background it and wait)
 ./logos/bin/logoscore -D -m ./modules &
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 
 # Check if the module is listed as loaded
 ./logos/bin/logoscore list-modules --loaded
@@ -1322,8 +1330,10 @@ Use `logoscore` to verify your module loads and its methods are callable:
 # Inspect the module
 ./logos/bin/logoscore module-info my_module
 
-# Or use inline mode for a quick check
-./logos/bin/logoscore -m ./modules -l my_module -c "my_module.greet(test)" --quit-on-finish
+# Quick check: load the module, call a method, then stop the daemon
+./logos/bin/logoscore load-module my_module
+./logos/bin/logoscore call my_module greet test
+./logos/bin/logoscore stop
 ```
 
 ### UI module `nix run` fails to load dependencies
