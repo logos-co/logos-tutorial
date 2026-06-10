@@ -724,15 +724,18 @@ Once the daemon is running, use commands from another terminal:
 
 #### One-shot execution
 
-There is no separate single-process mode — start a daemon with the module(s)
-loaded, call methods with the `call` client command, then stop the daemon:
+There is no separate single-process mode — start a clean daemon, load the
+module(s) with `load-module`, call methods with `call`, then stop the daemon:
 
 ```bash
-# Start a daemon with the module(s) loaded (deps resolved automatically)
-./logos/bin/logoscore -D -m ./modules -l my_module &
+# Start a clean daemon (loads nothing on its own)
+./logos/bin/logoscore -D -m ./modules &
 
-# Wait until the daemon is accepting commands before calling it
+# Wait until the daemon is accepting commands
 until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
+
+# Load the module(s) you need (dependencies resolved automatically)
+./logos/bin/logoscore load-module my_module
 
 # Call methods (positional args; @file reads a parameter from a file)
 ./logos/bin/logoscore call my_module doSomething hello
@@ -744,8 +747,9 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 ```
 
 > **Note:** The legacy inline mode (`-c "module.method(args)"` / `--quit-on-finish`,
-> which ran calls in one short-lived process) has been removed. `-m`/`-l`/`--persistence-path`
-> now configure daemon startup (`-D`); method calls go through `logoscore call`.
+> which ran calls in one short-lived process) has been removed, as has the
+> `-l/--load-modules` autoload flag — the daemon starts clean and modules are
+> loaded with `load-module`. `-m`/`--persistence-path` configure daemon startup (`-D`).
 
 **Daemon startup flags:**
 
@@ -753,7 +757,6 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 | ---------------------------------- | ---------------------------------------------------- |
 | `-D`                               | Start the daemon                                     |
 | `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
-| `-l, --load-modules <name1,name2>` | Comma-separated modules to pre-load on startup       |
 | `--persistence-path <dir>`         | Base directory for module instance persistence       |
 | `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
 | `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
@@ -1231,9 +1234,6 @@ logoscore list-modules [--loaded]             # List modules
 logoscore module-info <name>                  # Show module details
 logoscore status                              # Daemon health
 logoscore stop                                # Stop daemon
-
-# Start a daemon with modules pre-loaded (deps resolved automatically)
-logoscore -D -m <dir> -l <name1,name2>
 ```
 
 ### `lgpm` -- Local Package Manager
