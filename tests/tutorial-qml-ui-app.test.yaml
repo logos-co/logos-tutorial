@@ -675,12 +675,22 @@ sections:
               timeout: 10000
               screenshot: "basecamp-calc-installed.png"
             # ── Verify the `///` method + event docs surface on the Interface screen ──
-            - name: "Open the Modules system view"
+            # The modules view now lives under Settings: the old top-level "Modules"
+            # sidebar entry was renamed to "Package Manager", so "Modules" is reached
+            # via Settings → Modules → (UI Modules / Core Modules).
+            - name: "Open Settings"
               text: |
                 The doc comments you wrote on `calc_module`'s methods and events in
-                Part 1 also surface in basecamp. Open **Modules → Core Modules**, then
-                open `calc_module`'s **Interface** — each method and event shows its
-                `description`.
+                Part 1 also surface in basecamp. Open **Settings → Modules → Core
+                Modules**, then open `calc_module`'s **Interface** — each method and
+                event shows its `description`.
+              action: click
+              target: "Settings"
+            - name: "Settings view loads"
+              action: wait_for
+              texts: ["Sections", "Modules"]
+              timeout: 30000
+            - name: "Open the Modules sub-tab"
               action: click
               target: "Modules"
             - name: "Switch to the Core Modules tab"
@@ -710,7 +720,7 @@ sections:
         post_text: |
           The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-          The **Interface** screen (Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
+          The **Interface** screen (Settings → Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
           The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 
