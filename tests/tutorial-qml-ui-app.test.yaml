@@ -675,6 +675,14 @@ sections:
               timeout: 10000
               screenshot: "basecamp-calc-installed.png"
             # ── Verify the `///` method + event docs surface on the Interface screen ──
+            # Gate the click on the entry actually existing: right after the
+            # calculator round-trip the shell is still settling, and on a busy
+            # CI runner the Modules entry can take longer than the click
+            # action's own retry budget to materialize.
+            - name: "Modules entry is available"
+              action: wait_for
+              texts: ["Modules"]
+              timeout: 60000
             - name: "Open the Modules system view"
               text: |
                 The doc comments you wrote on `calc_module`'s methods and events in
