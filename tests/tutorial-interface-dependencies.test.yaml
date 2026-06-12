@@ -285,8 +285,15 @@ sections:
             int64_t CalcViaInterfaceImpl::sumVia(const std::string& provider,
                                                  int64_t a, int64_t b) {
                 // Bind once, then call normally — no module name on the call.
+                // Every generated method also takes an optional trailing
+                // logos::CallError* — the explicit way to tell a failed remote
+                // call apart from a legitimate result (without it, a failed
+                // call returns the type's default and only logs a warning).
                 auto calc = modules().bind_calculator(provider);
-                return calc.add(a, b);
+                logos::CallError err;
+                const int64_t sum = calc.add(a, b, &err);
+                if (!err.ok()) return -1;  // e.g. the bound module isn't loaded
+                return sum;
             }
 
             int64_t CalcViaInterfaceImpl::productVia(const std::string& provider,
@@ -496,12 +503,12 @@ sections:
 
       - title: "Bind to a non-satisfying module (the no-validation rule)"
         text: |
-          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. Bind to a module that isn't loaded and the inner remote call fails. What the CLI shows depends on how quickly the failure is detected: a fast resolution failure means the plain-`int` wrapper yields the type's default (`"result":0`), a slow one times out the outer call (`RPC_FAILED` / `"status":"error"`). Either way `calc_module` keeps answering (we keep going with `|| true` so the tour continues):
+          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. `sumVia` checks the wrapper's `logos::CallError` out-parameter (see its implementation above) and returns `-1` when the inner call fails; on a transport that fails slowly the outer call may instead time out (`RPC_FAILED` / `"status":"error"`). Either way `calc_module` keeps answering (we keep going with `|| true` so the tour continues):
         run: "./logos/bin/logoscore call calc_via_interface sumVia no_such_module 3 5 2>&1 || true"
         expect_contains:
           - 'sumVia'
         post_text: |
-          The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Note the limitation this exposes: a plain-`int` method has no error channel, so the typed wrapper can only return the type's default — declare `result`-returning methods where the caller needs to *see* the failure. Swapping providers is just changing the string: `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
+          The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention; a call without the out-parameter would get the type's default value plus a warning in the module log. Swapping providers is just changing the string: `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
       - run: "./logos/bin/logoscore stop"
         post_text: |
           That completes the tour: a single interface, bound at runtime to a concrete module, driven type-safely for sync calls, async calls, and events — with no build-time dependency on the provider.
