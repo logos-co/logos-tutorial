@@ -675,20 +675,23 @@ sections:
               timeout: 10000
               screenshot: "basecamp-calc-installed.png"
             # ── Verify the `///` method + event docs surface on the Interface screen ──
-            # Gate the click on the entry actually existing: right after the
-            # calculator round-trip the shell is still settling, and on a busy
-            # CI runner the Modules entry can take longer than the click
-            # action's own retry budget to materialize.
-            - name: "Modules entry is available"
+            # "Modules" lives in the Settings left rail: open Settings first and
+            # wait for its view to load (the same sequence the basecamp
+            # doctests use). Clicking "Modules" cold relies on incidental tree
+            # state and races the shell on busy CI runners.
+            - name: "Open Settings"
+              action: click
+              target: "Settings"
+            - name: "Settings view loads"
               action: wait_for
-              texts: ["Modules"]
+              texts: ["Sections"]
               timeout: 60000
             - name: "Open the Modules system view"
               text: |
                 The doc comments you wrote on `calc_module`'s methods and events in
-                Part 1 also surface in basecamp. Open **Modules → Core Modules**, then
-                open `calc_module`'s **Interface** — each method and event shows its
-                `description`.
+                Part 1 also surface in basecamp. Open **Settings → Modules → Core
+                Modules**, then open `calc_module`'s **Interface** — each method and
+                event shows its `description`.
               action: click
               target: "Modules"
             - name: "Switch to the Core Modules tab"
