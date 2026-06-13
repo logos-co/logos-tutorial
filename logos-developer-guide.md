@@ -233,6 +233,7 @@ The full set of available fields:
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
+| `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
 | `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
 | `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
 | `nix.packages.runtime`           | No                                     | `[]`               | Nix packages for runtime                                                                                                                                                                                                                                       |
@@ -721,42 +722,44 @@ Once the daemon is running, use commands from another terminal:
 ./logos/bin/logoscore stop
 ```
 
-#### Inline Mode (Legacy)
+#### One-shot execution
 
-For one-shot execution (load, call, exit), use the legacy inline flags:
+There is no separate single-process mode — start a clean daemon, load the
+module(s) with `load-module`, call methods with `call`, then stop the daemon:
 
 ```bash
-# Load a module and call a method
-./logos/bin/logoscore \
-  -m ./modules \
-  --load-modules my_module \
-  -c "my_module.doSomething(hello)"
+# Start a clean daemon (loads nothing on its own)
+./logos/bin/logoscore -D -m ./modules &
 
-# Multiple sequential calls
-./logos/bin/logoscore \
-  -m ./modules \
-  -l my_module \
-  -c "my_module.init(@config.json)" \
-  -c "my_module.start()"
+# Wait until the daemon is accepting commands
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 
-# Exit immediately after calls complete
-./logos/bin/logoscore \
-  -m ./modules -l my_module \
-  -c "my_module.doSomething(hello)" \
-  --quit-on-finish
+# Load the module(s) you need (dependencies resolved automatically)
+./logos/bin/logoscore load-module my_module
+
+# Call methods (positional args; @file reads a parameter from a file)
+./logos/bin/logoscore call my_module doSomething hello
+./logos/bin/logoscore call my_module init @config.json
+./logos/bin/logoscore call my_module start
+
+# Stop the daemon when done
+./logos/bin/logoscore stop
 ```
 
-> **Note:** Without `-c` or `--quit-on-finish`, logoscore enters the Qt event loop and stays running (daemon behavior). Always use `-c` for one-shot execution.
+> **Note:** The legacy inline mode (`-c "module.method(args)"` / `--quit-on-finish`,
+> which ran calls in one short-lived process) has been removed, as has the
+> `-l/--load-modules` autoload flag — the daemon starts clean and modules are
+> loaded with `load-module`. `-m`/`--persistence-path` configure daemon startup (`-D`).
 
-**Inline mode flags:**
+**Daemon startup flags:**
 
 | Flag                               | Description                                          |
 | ---------------------------------- | ---------------------------------------------------- |
+| `-D`                               | Start the daemon                                     |
 | `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
-| `-l, --load-modules <name1,name2>` | Comma-separated list of modules to load              |
-| `-c "<module>.<method>(args)"`     | Call a method after loading (repeatable, sequential) |
-| `--quit-on-finish`                 | Exit after all `-c` calls complete                   |
-| `@file.json`                       | Pass a file's contents as a method argument          |
+| `--persistence-path <dir>`         | Base directory for module instance persistence       |
+| `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
+| `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
 
 **Daemon commands:**
 
@@ -1103,12 +1106,34 @@ Each entry in `dependencies` must match the `name` field in that module's own `m
 
 When your module is installed via `lgpm`, its dependencies are automatically resolved and installed first. When loaded via `logos-basecamp`, core module dependencies are loaded before your module.
 
-### 9.3 Exposing Prometheus Metrics
+#### How dependencies are consumed — the LIDL contract
+
+Each module publishes a small, language-neutral **LIDL interface contract** as a cheap flake output (`packages.<system>.lidl`), generated from its source with no plugin compile. When you depend on a module, the builder generates the typed `modules().<dep>` wrapper **from that published LIDL** — so building (or packaging) your module **does not build the dependency module**. The only step that still builds and bundles dependency plugins is the standalone-app run (`nix run` / `#run`), which has to, because it loads them.
+
+This is the same `logos-cpp-generator` from [§8.2](#82-the-c-sdk-code-generator), just driven by the dependency's LIDL contract — the same kind of `.lidl`/`.h` contract `interface_dependencies` uses — instead of inspecting a compiled plugin. Inspecting a compiled plugin (as §8.2 describes) is the manual/standalone path; for declared module dependencies the builder uses the contract path, which is why no dependency plugin is built.
+
+Because the contract is LIDL, the dependency's implementation language doesn't matter: the pipeline is `source → LIDL → C++` for a C++ module today, and `Rust → LIDL → C++` for a Rust module tomorrow — the same generated `modules().<dep>` wrapper either way.
+
+> **Transitional fallback.** A dependency built by an older `logos-module-builder` won't expose a `lidl` output yet; for those the builder falls back to the previous behavior (build the dependency and copy its generated headers), so mixed dependency graphs keep working.
+
+To force a specific contract source for a dependency — a committed `.lidl`, a header in another repo, etc. — add a `dependency_overrides` entry keyed by the dependency name:
+
+```json
+"dependencies": ["calc_module"],
+"dependency_overrides": {
+  "calc_module": { "file": "interfaces/calc.lidl" }
+}
+```
+
+Each override is `{ file, input?, impl_class? }`: `file` is the `.lidl`/`.h` path (relative to this repo, or to the flake `input` if given), and `impl_class` is required for a `.h` file. Most modules never need this — auto-resolution from the dependency's `lidl` output is the default.
+
+### 9.3 Exposing OpenMetrics / Prometheus Metrics
 
 Infra operators monitor logos.dev nodes with Prometheus. The
-[`prometheus_metrics`](https://github.com/logos-co/prometheus-metrics-module) module
-serves a `/metrics` HTTP endpoint by querying a configured set of modules — it does
-not discover modules or read platform stats, it only calls the modules you list.
+[`openmetrics`](https://github.com/logos-co/openmetrics-module) module serves an
+[OpenMetrics](https://prometheus.io/docs/specs/om/open_metrics_spec/) `/metrics`
+HTTP endpoint by querying a configured set of modules — it does not discover
+modules or read platform stats, it only calls the modules you list.
 
 To make your module scrapeable, implement one method by convention:
 
@@ -1116,7 +1141,7 @@ To make your module scrapeable, implement one method by convention:
 collectMetrics() -> LogosMap
 ```
 
-returning prometheus-like fields:
+returning openmetrics-like fields:
 
 ```json
 {
@@ -1129,8 +1154,8 @@ returning prometheus-like fields:
 
 | Field    | Meaning                                                                              |
 | -------- | ----------------------------------------------------------------------------------- |
-| `name`   | Prometheus metric name                                                              |
-| `type`   | `counter`, `gauge`, `histogram`, or `summary` (unknown/missing → `untyped`)         |
+| `name`   | metric name (for counters, the OpenMetrics `_total` sample suffix is handled)       |
+| `type`   | `counter`, `gauge`, `histogram`, or `summary` (unknown/missing → `unknown`)          |
 | `help`   | short description                                                                   |
 | `value`  | number (bools map to 1/0; numeric strings pass through)                             |
 | `labels` | optional string→string label pairs                                                  |
@@ -1156,11 +1181,18 @@ LogosMap MyModuleImpl::collectMetrics() {
 **Legacy (Qt) module** — add `Q_INVOKABLE QVariantMap collectMetrics();` returning the
 same `{ "metrics": [...] }` shape as a `QVariantMap`/`QVariantList`.
 
-Then run the metrics server alongside your module and point it at you:
+Then run the metrics server alongside your module and point it at you (daemon
+mode passes the JSON arg intact):
 
 ```bash
-logoscore -m <modules-dir> -l prometheus_metrics,my_module \
-  -c 'prometheus_metrics.start({"port":9090,"modules":["my_module"]})'
+# --config-dir isolates this daemon instance (config/state/tokens) from the
+# default ~/.logoscore, so it can run alongside others. -D runs in the
+# foreground, so background it and wait for it to be ready.
+logoscore -D -m <modules-dir> --config-dir /tmp/om &
+until logoscore --config-dir /tmp/om status >/dev/null 2>&1; do sleep 0.2; done
+logoscore --config-dir /tmp/om load-module my_module
+logoscore --config-dir /tmp/om load-module openmetrics
+logoscore --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
 curl http://localhost:9090/metrics
 ```
 
@@ -1202,9 +1234,6 @@ logoscore list-modules [--loaded]             # List modules
 logoscore module-info <name>                  # Show module details
 logoscore status                              # Daemon health
 logoscore stop                                # Stop daemon
-
-# Inline mode (legacy)
-logoscore -m <dir> -l <name> -c "<module>.<method>(args)" [--quit-on-finish]
 ```
 
 ### `lgpm` -- Local Package Manager
@@ -1291,8 +1320,9 @@ Check that:
 Use `logoscore` to verify your module loads and its methods are callable:
 
 ```bash
-# Start daemon and load the module
+# Start the daemon (runs in the foreground, so background it and wait)
 ./logos/bin/logoscore -D -m ./modules &
+until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 
 # Check if the module is listed as loaded
 ./logos/bin/logoscore list-modules --loaded
@@ -1300,8 +1330,10 @@ Use `logoscore` to verify your module loads and its methods are callable:
 # Inspect the module
 ./logos/bin/logoscore module-info my_module
 
-# Or use inline mode for a quick check
-./logos/bin/logoscore -m ./modules -l my_module -c "my_module.greet(test)" --quit-on-finish
+# Quick check: load the module, call a method, then stop the daemon
+./logos/bin/logoscore load-module my_module
+./logos/bin/logoscore call my_module greet test
+./logos/bin/logoscore stop
 ```
 
 ### UI module `nix run` fails to load dependencies

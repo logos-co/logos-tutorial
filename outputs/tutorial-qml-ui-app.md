@@ -628,15 +628,15 @@ Launch basecamp pointed at that data directory. The `calc_ui` plugin appears in 
 ![calc_module returns 3 + 5 = 8](images/basecamp-calc-installed.png)
 
 The doc comments you wrote on `calc_module`'s methods and events in
-Part 1 also surface in basecamp. Open **Modules → Core Modules**, then
-open `calc_module`'s **Interface** — each method and event shows its
-`description`.
+Part 1 also surface in basecamp. Open **Settings → Modules → Core
+Modules**, then open `calc_module`'s **Interface** — each method and
+event shows its `description`.
 
 ![Method and event descriptions render (single- and multi-line)](images/basecamp-interface-docs.png)
 
 The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-The **Interface** screen (Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
+The **Interface** screen (Settings → Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
 The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 

@@ -678,7 +678,8 @@ sections:
             # "Modules" lives in the Settings left rail: open Settings first and
             # wait for its view to load (the same sequence the basecamp
             # doctests use). Clicking "Modules" cold relies on incidental tree
-            # state and races the shell on busy CI runners.
+            # state and races the shell on busy CI runners. (The old top-level
+            # "Modules" sidebar entry was renamed to "Package Manager".)
             - name: "Open Settings"
               action: click
               target: "Settings"
@@ -721,7 +722,7 @@ sections:
         post_text: |
           The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-          The **Interface** screen (Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
+          The **Interface** screen (Settings → Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
           The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 
