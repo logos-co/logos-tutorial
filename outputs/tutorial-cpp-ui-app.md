@@ -2,23 +2,28 @@
 
 This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-app.md) you built a QML-only UI plugin. Now you'll build a **ui_qml module with a C++ backend** — the backend runs in a separate `ui-host` process while the QML view loads in the host app (basecamp / standalone).
 
+You'll use the **universal authoring model**: set `"interface": "universal"` in `metadata.json` and write exactly two things — the `.rep` (your view contract) and a `*Backend` class that implements it. The `*Plugin` and `*Interface` classes, the `initLogos(LogosAPI*)` wiring, and the typed-SDK construction are all generated for you. This is the same model Part 1 used for the `calc_module` core module (`interface: universal`), now applied to a UI module.
+
 **What you'll build:** A `calc_ui_cpp` module with:
 
-- A `.rep` file defining the remote interface (slots)
-- A C++ backend plugin that inherits from the generated `SimpleSource` base class
+- A `.rep` file defining the remote interface (slots) — the one Qt-typed contract you author
+- A C++ `*Backend` class that derives the generated `SimpleSource` (implements the `.rep`) and `LogosModuleContext` (gives `modules()` typed callers, event subscriptions, and `onContextReady()`)
 - A QML view that calls the backend via a typed replica using `logos.watch()`
 - Process isolation: backend crashes can't bring down the host app
 
+You write only the `.rep` and the `Backend`. The `*Plugin`/`*Interface` classes, the `initLogos`/`setBackend` wiring, and the typed SDK are generated.
+
 **Why C++ backend over QML-only?**
 
-|                   | QML-only (Part 2)                                                 | C++ backend (Part 3)                    |
-| ----------------- | ----------------------------------------------------------------- | --------------------------------------- |
-| Compilation       | None                                                              | CMake + Qt                              |
-| Process isolation | No (QML runs in-process)                                          | Yes (C++ in separate `ui-host` process) |
-| Backend calls     | `logos.callModule()` / `logos.callModuleAsync()` to other modules | `LogosModules` typed SDK in C++         |
-| Type safety       | Args travel as `QVariant`                                         | C++ types preserved                     |
-| QML ↔ backend     | Direct bridge                                                     | Qt Remote Objects (typed replica)       |
-| `.rep` file       | Not needed                                                        | Required — defines the remote interface |
+|                   | QML-only (Part 2)                                                 | C++ backend (Part 3)                                  |
+| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| Compilation       | None                                                              | CMake + Qt                                            |
+| Process isolation | No (QML runs in-process)                                          | Yes (C++ in separate `ui-host` process)               |
+| Backend calls     | `logos.callModule()` / `logos.callModuleAsync()` to other modules | `modules()` typed SDK in C++ (type-safe, no QVariant) |
+| Type safety       | Args travel as `QVariant`                                         | C++ types preserved                                   |
+| QML ↔ backend     | Direct bridge                                                     | Qt Remote Objects (typed replica)                     |
+| `.rep` file       | Not needed                                                        | Required — your view contract, the one file you author |
+| C++ you write     | None                                                              | One `*Backend` class — no hand-written plugin/interface |
 
 ## Prerequisites
 
@@ -44,24 +49,33 @@ This is Part 3 of the Logos module tutorial series. In [Part 2](tutorial-qml-ui-
   ui-host process (separate)
   ┌──────────┼──────────────────────────────────┐
   │          ▼                                  │
-  │   CalcUiCppPlugin (backend)                 │
-  │     : CalcUiCppSimpleSource                 │
-  │     : CalcUiCppViewPluginBase               │
-  │     int add(int a, int b) {                 │
-  │       return m_logos->calc_module.add(a,b); │
+  │   CalcUiCppBackend (you write this)         │
+  │     : CalcUiCppSimpleSource  (impl .rep)    │
+  │     : LogosModuleContext     (modules())    │
+  │     int add(int a, int b) override {        │
+  │       return modules().calc_module.add(a,b);│
   │     }                                       │
   │          │                                  │
-  │          │  LogosModules typed SDK           │
+  │          │  modules() typed SDK             │
   │          ▼                                  │
   │   calc_module (loaded in ui-host)           │
   └─────────────────────────────────────────────┘
 ```
 
+You author two files: the `.rep` (your view contract) and the `*Backend` class. Everything else is generated.
+
 The `.rep` file declares the interface. At build time, Qt's `repc` compiler generates:
 
-- **`CalcUiCppSimpleSource`** — base class the backend inherits from
+- **`CalcUiCppSimpleSource`** — base class the backend implements
 - **`CalcUiCppReplica`** — typed replica the QML view uses
 - **`calc_ui_cpp_replica_factory`** — separate plugin that the host loads to create typed replicas
+
+And because `metadata.json` sets `"interface": "universal"`, the builder also generates the plumbing a classic plugin made you hand-write:
+
+- **`CalcUiCppInterface`** — the Logos plugin interface (`name()`, `version()`)
+- **`CalcUiCppPlugin`** — the `Q_OBJECT` plugin with `Q_PLUGIN_METADATA`, `initLogos(LogosAPI*)`, and the `setBackend()` / `enableRemoting()` wiring — built around your `*Backend`
+
+Your `*Backend` derives `LogosModuleContext`, which gives it the same surface a universal **core** module impl gets: `modules()` typed method callers for your `dependencies`, typed **event subscriptions** (`modules().dep.on<Event>(...)`), and `onContextReady()` (fires when the backend is wired, so subscriptions are live before the view's first call). `calc_module` here is call-only, but for an event-driven PROP fed from a typed subscription see the worked [ui-typed-backend doc-test](https://github.com/logos-co/logos-module-builder/blob/main/doctests/ui-typed-backend.test.yaml).
 
 ## Step 1: Scaffold
 
@@ -73,7 +87,13 @@ Create a new directory and initialise it from the C++ backend UI template:
 nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 ```
 
-This creates the template. We'll customize it for our calculator.
+This scaffolds the **universal** UI backend template: a `metadata.json` with `"interface": "universal"`, an example `.rep` (`src/ui_example.rep`), and a single `*Backend` class (`src/ui_example_backend.h` / `.cpp`) — no hand-written interface or plugin files. We'll replace the `ui_example` files with our calculator's `.rep` + backend.
+
+```bash
+rm -f src/ui_example.rep src/ui_example_backend.h src/ui_example_backend.cpp
+```
+
+Remove the example `.rep` and backend — we replace them with the `calc_ui_cpp` equivalents in the steps below. (There are no `*_interface.h` / `*_plugin.{h,cpp}` files to remove: in the universal model those are generated, not authored.)
 
 ```bash
 git init && git add -A
@@ -90,12 +110,14 @@ Replace the template contents with your plugin's details:
   "name": "calc_ui_cpp",
   "version": "1.0.0",
   "type": "ui_qml",
+  "interface": "universal",
   "category": "tools",
   "description": "Calculator C++ UI — QML view with process-isolated backend for calc_module",
   "main": "calc_ui_cpp_plugin",
   "view": "qml/Main.qml",
   "icon": "icons/calc.png",
   "dependencies": ["calc_module"],
+  "codegen": { "rep": "src/calc_ui_cpp.rep" },
 
   "nix": {
     "packages": {
@@ -124,9 +146,11 @@ echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3
 Key fields:
 
 - `"type": "ui_qml"` — tells the builder this is a QML view module
-- `"main": "calc_ui_cpp_plugin"` — the backend Qt plugin library (without extension)
+- `"interface": "universal"` — selects the universal authoring model: you write the `.rep` + a `*Backend` class, and the `*Plugin`/`*Interface` glue is generated. Without this key, the builder expects the classic hand-written `initLogos(LogosAPI*)` plugin.
+- `"codegen": { "rep": "src/calc_ui_cpp.rep" }` — names your view contract. (`backend_class` / `backend_header` are also overridable, defaulting to `CalcUiCppBackend` / `calc_ui_cpp_backend.h`.)
+- `"main": "calc_ui_cpp_plugin"` — the generated backend Qt plugin library (without extension)
 - `"view": "qml/Main.qml"` — the QML entry point
-- `"dependencies": ["calc_module"]` — core modules the backend calls
+- `"dependencies": ["calc_module"]` — core modules the backend calls via `modules()`
 
 ---
 
@@ -145,55 +169,16 @@ class CalcUiCpp
 }
 ```
 
-This is the **single source of truth** for the remote interface. `repc` generates:
+This is the **single source of truth** for the remote interface, and the one Qt-typed file you author — the `.rep` uses Qt types (`QString`) because that's the Qt Remote Objects wire contract. `repc` generates:
 
-- `rep_calc_ui_cpp_source.h` — `CalcUiCppSimpleSource` with virtual slots the backend overrides
-- `rep_calc_ui_cpp_replica.h` — `CalcUiCppReplica` with typed methods
+- `rep_calc_ui_cpp_source.h` — `CalcUiCppSimpleSource` with virtual slots your `*Backend` overrides
+- `rep_calc_ui_cpp_replica.h` — `CalcUiCppReplica` with typed methods the QML view calls
 
-**SLOT** return values are delivered as `QRemoteObjectPendingReply` — use `logos.watch()` in QML to get them as JS Promises. You can also declare **PROP** entries (e.g. `PROP(QString status READWRITE)`) which auto-sync from the backend to the QML replica.
-
----
-
-## Step 4: Interface header
-
-The scaffolded template creates a set of `ui_example` files (`src/ui_example.rep`, `src/ui_example_interface.h`, `src/ui_example_plugin.{h,cpp}`). We replace them with `calc_ui_cpp` equivalents, so remove the example sources first — leaving them around with mismatched class/IID names just invites build errors or plugin-load failures at runtime:
-
-```bash
-rm -f src/ui_example.rep src/ui_example_interface.h src/ui_example_plugin.h src/ui_example_plugin.cpp
-```
-
-Now create `src/calc_ui_cpp_interface.h`:
-
-```cpp
-#ifndef CALC_UI_CPP_INTERFACE_H
-#define CALC_UI_CPP_INTERFACE_H
-
-#include <QObject>
-#include <QString>
-#include "interface.h"
-
-class CalcUiCppInterface : public PluginInterface
-{
-public:
-    virtual ~CalcUiCppInterface() = default;
-};
-
-#define CalcUiCppInterface_iid "org.logos.CalcUiCppInterface"
-Q_DECLARE_INTERFACE(CalcUiCppInterface, CalcUiCppInterface_iid)
-
-#endif // CALC_UI_CPP_INTERFACE_H
-```
-
-Your plugin header should then include `calc_ui_cpp_interface.h` and use:
-
-- `Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")`
-- `Q_INTERFACES(CalcUiCppInterface)`
-
-If the interface filename or IID symbol doesn't match, you'll typically get build errors (missing header/symbol) or plugin-load failures at runtime.
+**SLOT** return values are delivered as `QRemoteObjectPendingReply` — use `logos.watch()` in QML to get them as JS Promises. You can also declare **PROP** entries (e.g. `PROP(QString status READWRITE)`) which auto-sync from the backend to the QML replica — see the [ui-typed-backend doc-test](https://github.com/logos-co/logos-module-builder/blob/main/doctests/ui-typed-backend.test.yaml) for a PROP fed from a typed module-event subscription.
 
 ---
 
-## Step 5: `CMakeLists.txt`
+## Step 4: `CMakeLists.txt`
 
 ```cmake
 cmake_minimum_required(VERSION 3.14)
@@ -205,142 +190,117 @@ else()
     message(FATAL_ERROR "LogosModule.cmake not found. Set LOGOS_MODULE_BUILDER_ROOT.")
 endif()
 
+# Derive the module name from metadata.json — single source of truth.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/metadata.json" METADATA_JSON)
+string(JSON MODULE_NAME GET ${METADATA_JSON} name)
+
 logos_module(
-    NAME calc_ui_cpp
+    NAME ${MODULE_NAME}
     REP_FILE src/calc_ui_cpp.rep
     SOURCES
-        src/calc_ui_cpp_interface.h
-        src/calc_ui_cpp_plugin.h
-        src/calc_ui_cpp_plugin.cpp
+        src/calc_ui_cpp_backend.h
+        src/calc_ui_cpp_backend.cpp
+    INCLUDE_DIRS
+        src
 )
 ```
 
-`REP_FILE` tells `logos_module()` to:
+You list only your two authored sources — the `*Backend` header and implementation. `REP_FILE` points at **your** `.rep`; the generated `*Plugin` glue in `generated_code/` is compiled automatically. `REP_FILE` tells `logos_module()` to:
 
-1. Run `repc` to generate source/replica headers
-2. Generate `CalcUiCppViewPluginBase` (typed remoting base class)
+1. Run `repc` to generate the source/replica headers
+2. Generate the `*Plugin` / `*Interface` wrapper around your `*Backend` (because `metadata.json` sets `"interface": "universal"`)
 3. Build a separate `calc_ui_cpp_replica_factory` shared library
 
 ---
 
-## Step 6: C++ Backend Plugin
+## Step 5: C++ Backend
 
-### 6.1 `src/calc_ui_cpp_plugin.h`
+Now write the backend — the **only** C++ you author. It's a single class that derives:
+
+- **`CalcUiCppSimpleSource`** — generated by `repc` from your `.rep`; you override its slots. The QML replica receives each return value via Qt Remote Objects.
+- **`LogosModuleContext`** — gives `modules()` (typed callers + event subscriptions for your `dependencies`) and `onContextReady()`, exactly like a universal core module impl.
+
+There is no `*_interface.h` and no `*_plugin.{h,cpp}` to write — the builder generates the `*Plugin` (`Q_OBJECT`, `Q_PLUGIN_METADATA`, `initLogos`, `setBackend()`/`enableRemoting()`) and `*Interface` (`name()`, `version()`) around this class.
+
+### 5.1 `src/calc_ui_cpp_backend.h`
 
 ```cpp
-#ifndef CALC_UI_CPP_PLUGIN_H
-#define CALC_UI_CPP_PLUGIN_H
+#pragma once
 
-#include <QString>
-#include <QVariantList>
-#include "calc_ui_cpp_interface.h"
-#include "LogosViewPluginBase.h"
 #include "rep_calc_ui_cpp_source.h"
+#include "logos_module_context.h"
 
-class LogosAPI;
-class LogosModules;
-
-// Inherits CalcUiCppSimpleSource (generated from calc_ui_cpp.rep) so
-// enableRemoting() can publish the typed source and QML replicas get
-// auto-synced properties + callable slots.
-class CalcUiCppPlugin : public CalcUiCppSimpleSource,
-                        public CalcUiCppInterface,
-                        public CalcUiCppViewPluginBase
+// The whole hand-written backend. Derives:
+//   - CalcUiCppSimpleSource — generated from calc_ui_cpp.rep; override its
+//     slots (the QML replica gets each return value via Qt Remote Objects).
+//   - LogosModuleContext — supplies modules() (typed callers + typed event
+//     subscriptions for "dependencies") and onContextReady().
+// The *Plugin / *Interface classes (Q_PLUGIN_METADATA, initLogos wiring,
+// QtRO registration) are generated around it.
+class CalcUiCppBackend : public CalcUiCppSimpleSource,
+                         public LogosModuleContext
 {
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID CalcUiCppInterface_iid FILE "metadata.json")
-    Q_INTERFACES(CalcUiCppInterface)
-
 public:
-    explicit CalcUiCppPlugin(QObject* parent = nullptr);
-    ~CalcUiCppPlugin() override;
-
-    QString name()    const override { return "calc_ui_cpp"; }
-    QString version() const override { return "1.0.0"; }
-
-    Q_INVOKABLE void initLogos(LogosAPI* api);
-
-    // Slots from calc_ui_cpp.rep — return values directly. The QML replica
-    // receives QRemoteObjectPendingReply; use logos.watch() in QML to get the value.
+    // Slots from calc_ui_cpp.rep — each delegates to calc_module.
     int add(int a, int b) override;
     int multiply(int a, int b) override;
     int factorial(int n) override;
     int fibonacci(int n) override;
     QString libVersion() override;
-
-signals:
-    void eventResponse(const QString& eventName, const QVariantList& args);
-
-private:
-    LogosAPI* m_logosAPI = nullptr;
-    LogosModules* m_logos = nullptr;
 };
-
-#endif // CALC_UI_CPP_PLUGIN_H
 ```
 
-Three base classes:
+No `Q_OBJECT`, no `Q_PLUGIN_METADATA`, no `initLogos`, no `name()`/`version()` — the universal builder generates all of that. You only declare the `.rep` slot overrides.
 
-- **`CalcUiCppSimpleSource`** — generated from `.rep`, provides the typed source for Qt Remote Objects
-- **`CalcUiCppInterface`** — standard Logos plugin interface (`name()`, `version()`)
-- **`CalcUiCppViewPluginBase`** — generated, provides `setBackend()` and `enableRemoting()`
+`LogosModuleContext` also gives this backend typed **event subscriptions** (`modules().dep.on<Event>(...)`) and `onContextReady()` — arm subscriptions there so they're live before the view's first call. `calc_module` is call-only here, but the [ui-typed-backend doc-test](https://github.com/logos-co/logos-module-builder/blob/main/doctests/ui-typed-backend.test.yaml) shows a `.rep` PROP fed from a typed module-event subscription registered in `onContextReady()`.
 
-### 6.2 `src/calc_ui_cpp_plugin.cpp`
+### 5.2 `src/calc_ui_cpp_backend.cpp`
 
 ```cpp
-#include "calc_ui_cpp_plugin.h"
-#include "logos_api.h"
+#include "calc_ui_cpp_backend.h"
+
+// Generated umbrella: LogosModules (behind modules()) from
+// metadata.json#dependencies — typed wrappers + typed event accessors.
 #include "logos_sdk.h"
 
-CalcUiCppPlugin::CalcUiCppPlugin(QObject* parent) : CalcUiCppSimpleSource(parent) {}
-CalcUiCppPlugin::~CalcUiCppPlugin() { delete m_logos; }
-
-void CalcUiCppPlugin::initLogos(LogosAPI* api)
+int CalcUiCppBackend::add(int a, int b)
 {
-    if (m_logos) return;
-    m_logosAPI = api;
-    m_logos = new LogosModules(api);
-    // Register this object as the Remote Objects source so the QML replica
-    // can see its properties and call its slots.
-    setBackend(this);
+    return modules().calc_module.add(a, b);
 }
 
-int CalcUiCppPlugin::add(int a, int b)
+int CalcUiCppBackend::multiply(int a, int b)
 {
-    return m_logos->calc_module.add(a, b);
+    return modules().calc_module.multiply(a, b);
 }
 
-int CalcUiCppPlugin::multiply(int a, int b)
+int CalcUiCppBackend::factorial(int n)
 {
-    return m_logos->calc_module.multiply(a, b);
+    return modules().calc_module.factorial(n);
 }
 
-int CalcUiCppPlugin::factorial(int n)
+int CalcUiCppBackend::fibonacci(int n)
 {
-    return m_logos->calc_module.factorial(n);
+    return modules().calc_module.fibonacci(n);
 }
 
-int CalcUiCppPlugin::fibonacci(int n)
+QString CalcUiCppBackend::libVersion()
 {
-    return m_logos->calc_module.fibonacci(n);
-}
-
-QString CalcUiCppPlugin::libVersion()
-{
-    return m_logos->calc_module.libVersion();
+    // calc_module is itself a universal (std-typed) module, so its typed
+    // wrapper returns std::string. The .rep slot is QString, so convert.
+    return QString::fromStdString(modules().calc_module.libVersion());
 }
 ```
 
 Key points:
 
-- Constructor calls `CalcUiCppSimpleSource(parent)` — not `QObject(parent)`
-- `initLogos()` calls `setBackend(this)` to register with the Remote Objects host
-- Slots return values directly — they travel back to the QML replica via Qt Remote Objects
-- `m_logos->calc_module.add(a, b)` uses the generated typed SDK (type-safe, no QVariant)
+- Each slot delegates straight to `calc_module` via `modules().calc_module.<method>(...)` — the generated typed SDK, type-safe with no `QVariant`.
+- Slots return values directly; they travel back to the QML replica via Qt Remote Objects.
+- `modules().calc_module.libVersion()` returns `std::string` because Part 1's `calc_module` is also a universal (std-typed) module — its `libVersion()` is declared `std::string`. The `.rep` slot is `QString libVersion()` (the QtRO wire type), so wrap with `QString::fromStdString(...)`. The `int` methods need no conversion: `int` ↔ `int64_t` on the wire.
+- No `initLogos`, no manual `LogosModules` construction — `modules()` is wired by the generated plugin before any slot runs.
 
 ---
 
-## Step 7: QML View
+## Step 6: QML View
 
 Create `src/qml/Main.qml`:
 
@@ -501,7 +461,7 @@ Key patterns:
 
 ---
 
-## Step 8: Use the Logos Design System in your QML
+## Step 7: Use the Logos Design System in your QML
 
 The QML you load above runs inside the host (`logos-basecamp` / `logos-standalone-app`), which already has `logos-design-system` on the QML import path. Use its themed components rather than rolling your own visuals — your module gets the polished look automatically as the design system evolves.
 
@@ -552,7 +512,7 @@ Feel free to report bugs, file feature requests, or contribute components / them
 
 ---
 
-## Step 9: `flake.nix`
+## Step 8: `flake.nix`
 
 The template already wires everything up. Update the description and point `calc_module` at your dependency:
 
@@ -591,11 +551,11 @@ The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited b
 
 ---
 
-## Step 10: Build and Run
+## Step 9: Build and Run
 
 First, make sure your local `calc_module` is built and its shared library is present in `lib/` (see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
 
-### 10.1 Ensure `calc_module` is built
+### 9.1 Ensure `calc_module` is built
 
 ```bash
 ls ../logos-calc-module/lib/libcalc.so    # Linux
@@ -611,7 +571,7 @@ gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
 cd ../../logos-calc-ui-cpp
 ```
 
-### 10.2 Lock and build
+### 9.2 Lock and build
 
 Stage your files, then lock `calc_module` to your local Part 1 checkout. The `--override-input` resolves `../logos-calc-module` to an absolute path and records it in `flake.lock`, replacing the placeholder from `flake.nix`:
 
@@ -633,7 +593,7 @@ Now that the lock pins the real path, plain `nix run` works — no override need
 nix run
 ```
 
-### 10.3 Launch and verify the UI
+### 9.3 Launch and verify the UI
 
 Launch the app and confirm the view loads with all of its controls. The backend runs in a separate `ui-host` process; clicking **Add** sends the call over Qt Remote Objects and the result comes back through `logos.watch()`.
 
@@ -649,7 +609,7 @@ The result `8` comes from `calc_module.add(3, 5)` executed in the C++ backend �
 
 ---
 
-## Step 11: Live reloading QML with `DEV_QML_PATH`
+## Step 10: Live reloading QML with `DEV_QML_PATH`
 
 For QML iteration, point `DEV_QML_PATH` at the directory that contains your view entry's **basename** (from `metadata.json` `"view"`). This tutorial sets `"view": "qml/Main.qml"`, so the directory must contain `Main.qml` (here: `src/qml/`):
 
@@ -684,27 +644,27 @@ DEV_QML_PATH=$PWD/src/qml ./result/bin/run-logos-standalone-ui
 
 ---
 
-## Step 12: How the Pieces Connect
+## Step 11: How the Pieces Connect
 
-1. `nix build` → compiles the C++ plugin + replica factory, bundles QML view
+1. `nix build` → generates the `*Plugin`/`*Interface` glue around your `CalcUiCppBackend`, compiles the C++ plugin + replica factory, bundles QML view
 2. `nix run` → launches `logos-standalone-app` which:
    - Loads `calc_module` (dependency)
    - Spawns a `ui-host` child process with `calc_ui_cpp_plugin.so`
-   - `ui-host` calls `initLogos()` → `setBackend(this)` → `enableRemoting(host)`
+   - The generated plugin calls `initLogos()` → wires `modules()` and `onContextReady()` → `setBackend(<your CalcUiCppBackend>)` → `enableRemoting(host)`
    - Backend is now accessible over a local socket
 3. Host app loads `calc_ui_cpp_replica_factory.dylib` → creates a typed replica
 4. QML gets the replica via `logos.module("calc_ui_cpp")`
-5. `backend.add(1, 2)` → Qt Remote Objects sends call to ui-host → backend runs → returns result
+5. `backend.add(1, 2)` → Qt Remote Objects sends call to ui-host → your backend's `add()` runs `modules().calc_module.add(1, 2)` → returns result
 
 ---
 
-## Step 13: UI Integration Tests
+## Step 12: UI Integration Tests
 
 Add automated UI tests using the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework. Just create `.mjs` files in `tests/` and `logos-module-builder` auto-wires `nix build .#integration-test`.
 
 Tests connect to the QML inspector inside `logos-standalone-app` and can find elements, click buttons, verify text, and take screenshots.
 
-### 13.1 Create a test file
+### 12.1 Create a test file
 
 Create `tests/ui-tests.mjs`:
 
@@ -735,7 +695,7 @@ test("calc_ui_cpp: operation buttons visible", async (app) => {
 run();
 ```
 
-### 13.2 Run the tests
+### 12.2 Run the tests
 
 ```bash
 git add tests/
@@ -760,17 +720,22 @@ node tests/ui-tests.mjs       # in another terminal
 
 ## Comparison: .rep Interface Patterns
 
-| Pattern          | .rep declaration                     | Backend C++                                 | QML usage                                                              |
-| ---------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------- |
-| **Return value** | `SLOT(int add(int a, int b))`        | `int add(...) override { return ...; }`     | `logos.watch(backend.add(1,2), cb)`                                    |
-| **Property**     | `PROP(QString status READWRITE)`     | `setStatus("Ready")` (inherited)            | `backend.status` (auto-syncs)                                          |
-| **Signal**       | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")`                | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
-| **Model**        | (use Q_PROPERTY on backend)          | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")`                                  |
+You declare each pattern in the `.rep` and implement it in your `*Backend` (which derives the generated `SimpleSource` + `LogosModuleContext`). There is no hand-written plugin — the `*Plugin`/`*Interface` glue is generated.
+
+| Pattern             | .rep declaration                     | Backend C++ (`CalcUiCppBackend`)            | QML usage                                                              |
+| ------------------- | ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------------------- |
+| **Return value**    | `SLOT(int add(int a, int b))`        | `int add(...) override { return ...; }`     | `logos.watch(backend.add(1,2), cb)`                                    |
+| **Property**        | `PROP(QString status READWRITE)`     | `setStatus("Ready")` (inherited from SimpleSource) | `backend.status` (auto-syncs)                                   |
+| **Signal**          | `SIGNAL(errorOccurred(QString msg))` | `emit errorOccurred("fail")`                | `Connections { target: backend; function onErrorOccurred(msg) {...} }` |
+| **Model**           | (use Q_PROPERTY on backend)          | `Q_PROPERTY(QAbstractItemModel* items ...)` | `logos.model("calc_ui_cpp", "items")`                                  |
+| **Event-fed PROP**  | `PROP(QString last READONLY)`        | `onContextReady()`: `modules().dep.on<Event>([this](...){ setLast(...); })` | `backend.last` (auto-syncs, no polling) |
+
+The last row uses the `LogosModuleContext` surface — typed `modules()` callers and event subscriptions armed in `onContextReady()`. `calc_module` is call-only here; see the [ui-typed-backend doc-test](https://github.com/logos-co/logos-module-builder/blob/main/doctests/ui-typed-backend.test.yaml) for a worked event-driven PROP.
 
 ## Next Steps
 
 - Add more `.rep` properties/signals for richer UI state
 - Use `logos.model()` for list views backed by `QAbstractItemModel`
 - Package as `.lgx` for distribution: `nix build .#lgx`
-- **Use the Logos Design System** in your QML — see [Step 8](#step-8-use-the-logos-design-system-in-your-qml). Browse components in the storybook (`cd repos/logos-design-system && nix run`); file issues at `logos-co/logos-design-system`.
+- **Use the Logos Design System** in your QML — see [the design system step](#use-the-logos-design-system-in-your-qml). Browse components in the storybook (`cd repos/logos-design-system && nix run`); file issues at `logos-co/logos-design-system`.
 - See [logos-package-manager-ui](https://github.com/logos-co/logos-package-manager-ui) for a production example

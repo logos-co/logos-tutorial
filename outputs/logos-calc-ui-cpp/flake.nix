@@ -2,7 +2,7 @@
   description = "Calculator C++ UI plugin for Logos - QML view with process-isolated backend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/de0c4c53712bd4171163c111b9387ee9035b9721";
 
     # Points at your local calc_module checkout. This is a placeholder —
     # you lock it to your actual path in the next step with
