@@ -2,12 +2,14 @@
   "name": "calc_ui_cpp",
   "version": "1.0.0",
   "type": "ui_qml",
+  "interface": "universal",
   "category": "tools",
   "description": "Calculator C++ UI — QML view with process-isolated backend for calc_module",
   "main": "calc_ui_cpp_plugin",
   "view": "qml/Main.qml",
   "icon": "icons/calc.png",
   "dependencies": ["calc_module"],
+  "codegen": { "rep": "src/calc_ui_cpp.rep" },
 
   "nix": {
     "packages": {

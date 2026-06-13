@@ -11,7 +11,8 @@ logos_module(
     NAME calc_ui_cpp
     REP_FILE src/calc_ui_cpp.rep
     SOURCES
-        src/calc_ui_cpp_interface.h
-        src/calc_ui_cpp_plugin.h
-        src/calc_ui_cpp_plugin.cpp
+        src/calc_ui_cpp_backend.h
+        src/calc_ui_cpp_backend.cpp
+    INCLUDE_DIRS
+        src
 )
