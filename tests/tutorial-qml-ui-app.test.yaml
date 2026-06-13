@@ -675,22 +675,24 @@ sections:
               timeout: 10000
               screenshot: "basecamp-calc-installed.png"
             # ── Verify the `///` method + event docs surface on the Interface screen ──
-            # The modules view now lives under Settings: the old top-level "Modules"
-            # sidebar entry was renamed to "Package Manager", so "Modules" is reached
-            # via Settings → Modules → (UI Modules / Core Modules).
+            # "Modules" lives in the Settings left rail: open Settings first and
+            # wait for its view to load (the same sequence the basecamp
+            # doctests use). Clicking "Modules" cold relies on incidental tree
+            # state and races the shell on busy CI runners. (The old top-level
+            # "Modules" sidebar entry was renamed to "Package Manager".)
             - name: "Open Settings"
+              action: click
+              target: "Settings"
+            - name: "Settings view loads"
+              action: wait_for
+              texts: ["Sections"]
+              timeout: 60000
+            - name: "Open the Modules system view"
               text: |
                 The doc comments you wrote on `calc_module`'s methods and events in
                 Part 1 also surface in basecamp. Open **Settings → Modules → Core
                 Modules**, then open `calc_module`'s **Interface** — each method and
                 event shows its `description`.
-              action: click
-              target: "Settings"
-            - name: "Settings view loads"
-              action: wait_for
-              texts: ["Sections", "Modules"]
-              timeout: 30000
-            - name: "Open the Modules sub-tab"
               action: click
               target: "Modules"
             - name: "Switch to the Core Modules tab"
