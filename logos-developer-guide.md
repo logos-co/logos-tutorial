@@ -310,6 +310,11 @@ nix build .#lib
 # Build just the generated SDK headers (for other modules to use)
 nix build .#include
 
+# Emit a ready-to-build codebase: runs every code generator that is part of the
+# build and writes the module source + a fully-populated generated_code/ to
+# result/. Build it from `nix develop` without re-running any generator.
+nix build .#generate
+
 # Enter the dev shell for manual CMake builds (see: https://nix.dev/tutorials/first-steps/dev-environment)
 # The shell provides cmake, ninja, Qt, the Logos SDK, and all build dependencies.
 nix develop
