@@ -26,7 +26,7 @@ int CalcUiCppBackend::fibonacci(int n)
 
 QString CalcUiCppBackend::libVersion()
 {
-    // calc_module is itself a universal (std-typed) module, so its typed
-    // wrapper returns std::string. The .rep slot is QString, so convert.
-    return QString::fromStdString(modules().calc_module.libVersion());
+    // A UI plugin is Qt-typed: modules().calc_module's wrapper returns QString
+    // (api-style qt), matching the .rep slot — no conversion needed.
+    return modules().calc_module.libVersion();
 }
