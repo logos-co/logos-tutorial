@@ -192,6 +192,7 @@ The full set of available fields:
 ```json
 {
   "name": "my_module",
+  "display_name": "My Module",
   "version": "1.0.0",
   "type": "core",
   "category": "general",
@@ -223,6 +224,7 @@ The full set of available fields:
 | Field                            | Required                               | Default            | Description                                                                                                                                                                                                                                                    |
 | -------------------------------- | -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers)                                                                                                                                                                                                               |
+| `display_name`                   | No                                     | `name`             | Human-readable label shown in UIs (Package Manager, App Manager, `lm metadata`, `lgx manifest`). Consumers fall back to `name` when unset, so older packages keep working.                                                                                     |
 | `version`                        | No                                     | `1.0.0`            | Semantic version                                                                                                                                                                                                                                               |
 | `type`                           | No                                     | `core`             | Module type (`core`, `ui`, `ui_qml`)                                                                                                                                                                                                                           |
 | `category`                       | No                                     | `general`          | Category (general, network, chat, wallet, integration)                                                                                                                                                                                                         |
@@ -361,6 +363,7 @@ Example JSON output:
 ```json
 {
   "name": "my_module",
+  "display_name": "My Module",
   "version": "1.0.0",
   "description": "My first Logos module",
   "author": "",
@@ -368,6 +371,8 @@ Example JSON output:
   "dependencies": []
 }
 ```
+
+`display_name` is omitted when unset; consumers fall back to `name`.
 
 #### Viewing Methods
 
