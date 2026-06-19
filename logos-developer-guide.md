@@ -232,6 +232,7 @@ The full set of available fields:
 | `icon`                           | No                                     | `null`             | Relative path to the module icon (used by UI modules). The build system includes it in the standalone app plugin directory.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
 | `interface`                      | No                                     | --                 | Set to `"universal"` for the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. Omit for the older hand-written Qt-plugin pattern.                            |
+| `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
@@ -333,6 +334,63 @@ result/
     ├── my_module_api.h           # Generated type-safe wrapper header
     └── my_module_api.cpp         # Generated wrapper implementation
 ```
+
+---
+
+### 1.6 Concurrent dispatch
+
+By default every call to a module is dispatched **one at a time** — the module's
+methods run on a single thread (the event loop), so you never have to think about
+thread-safety. This is the right default and stays the default. The downside: a
+handler that **blocks** — a download that runs for minutes, a slow RPC — stalls
+*every other caller* of that module until it returns.
+
+Set **`"concurrency": "multi"`** in `metadata.json` to opt that module into
+**concurrent dispatch**: each incoming call runs on its own worker, so a blocking
+handler no longer holds up the others (e.g. a downloader can serve two downloads
+at once). In exchange, **you own thread-safety** — your handlers run in parallel,
+so any state they share must be synchronized.
+
+The generated code enforces the contract differently per language:
+
+- **Rust** (`interface: "cdylib"`, rust-first). In `multi` mode the generated
+  trait takes **`&self`** (not `&mut self`) and is **`Send + Sync`**, and the
+  instance is shared behind an `Arc`. The compiler makes the rule unavoidable: a
+  handler that mutates a plain field won't build — wrap mutated state in interior
+  mutability (`Mutex`, `RwLock`, `Atomic*`, `DashMap`, …). `on_context_ready`
+  also becomes `&self`.
+
+  ```rust
+  pub trait Downloader: Send + Sync + 'static {
+      fn fetch(&self, url: String) -> String;   // &self — runs concurrently
+  }
+  #[derive(Default)]
+  struct Impl { jobs: std::sync::Mutex<Vec<String>> }   // guard shared state
+  ```
+
+- **C++** (`interface: "universal"` / `"cdylib"`). In `multi` mode each call runs
+  on a worker thread, so your impl's methods may execute concurrently — treat them
+  as re-entrant and guard any shared members (`std::atomic`, `std::mutex`). The
+  `LogosModuleContext` accessors and the event-emit path are already thread-safe.
+
+**How it works (and its limits).** `multi` is realized **entirely by the code
+generator** — there is no new transport and, crucially, **no change to the
+provider/host ABI**. A `multi` module's generated glue does not block in its
+dispatch entry point: it hands the handler to a worker and immediately returns a
+small *pending* marker, then pushes the real result back as a completion event
+once the worker finishes. The consumer side awaits that completion transparently,
+so generated clients are unchanged. The decomposition is *serialized dispatch +
+concurrent processing + serialized responses*, and it works over the default
+transport (QtRO) as well as the plain transport. Because the host merely forwards
+the marker and the completion, **an existing (older) daemon or app loads and runs
+a `multi` module unmodified** — this is logos-protocol **0.2**, an additive,
+backward-compatible minor bump (same MAJOR ⇒ still compatible). Caveats: (1) a
+`single` module is unchanged and pays zero overhead; (2) events your handlers emit
+are delivered safely but their order **relative to method replies is not
+guaranteed** — don't rely on "event X always arrives before method Y returns";
+(3) a *caller* built against logos-protocol < 0.2 will see the raw pending marker
+instead of the result — rebuild callers against ≥ 0.2 (still compatible with every
+existing module) to consume a `multi` module concurrently.
 
 ---
 
