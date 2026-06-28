@@ -72,6 +72,7 @@ jobs:
             tests/tutorial-interface-dependencies.test.yaml \
             --verbose \
             --continue-on-fail \
+            --release 0.2.0 \
             --report "${{ runner.temp }}/tutorial-report.html"
 
       - name: Stage report for upload
