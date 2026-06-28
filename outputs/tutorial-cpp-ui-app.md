@@ -86,7 +86,7 @@ Create a new directory and initialise it from the C++ backend UI template:
 `mkdir logos-calc-ui-cpp && cd logos-calc-ui-cpp`
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
+nix flake init -t github:logos-co/logos-module-builder/0.2.0#ui-qml-backend
 ```
 
 This scaffolds the **universal** UI backend template: a `metadata.json` with `"interface": "universal"`, an example `.rep` (`src/ui_example.rep`), and a single `*Backend` class (`src/ui_example_backend.h` / `.cpp`) — no hand-written interface or plugin files. We'll replace the `ui_example` files with our calculator's `.rep` + backend.
@@ -698,7 +698,7 @@ The template already wires everything up. Update the description and point `calc
   description = "Calculator C++ UI plugin for Logos - QML view with process-isolated backend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
 
     # Points at your local calc_module checkout. This is a placeholder —
     # you lock it to your actual path in the next step with

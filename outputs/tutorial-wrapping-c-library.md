@@ -40,10 +40,10 @@ For a module that wraps an external C library:
 `mkdir logos-calc-module && cd logos-calc-module`
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder#with-external-lib
+nix flake init -t github:logos-co/logos-module-builder/0.2.0#with-external-lib
 
 # Or for a plain module (no external library):
-# nix flake init -t github:logos-co/logos-module-builder
+# nix flake init -t github:logos-co/logos-module-builder/0.2.0
 ```
 
 This generates skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` directory) pre-configured for the logos-module-builder. You then customize them for your specific library.
@@ -327,7 +327,7 @@ Change `description`. Add flake inputs here if your module depends on other modu
   description = "Calculator module - wraps libcalc C library for Logos";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -579,7 +579,7 @@ Use the `lm` CLI tool (from `logos-module`) to inspect the compiled module binar
 The `lm` CLI inspects compiled module binaries. Build it from the `logos-module` repo:
 
 ```bash
-nix build 'github:logos-co/logos-module#lm' --out-link ./lm
+nix build 'github:logos-co/logos-module/0.2.0#lm' --out-link ./lm
 ```
 
 ### 5.2 View metadata
@@ -739,7 +739,7 @@ Interface screen.
 ### 6.1 Build logoscore
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli/0.2.0' --out-link ./logos
 ```
 
 ### 6.2 Set up the modules directory
@@ -751,7 +751,7 @@ nix build '.#lgx'
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/0.2.0#cli' --out-link ./pm
 ```
 
 ```bash
@@ -897,7 +897,7 @@ Add a `tests` block to the `mkLogosModule` call. `mockCLibs` lists the external 
   description = "Calculator module - wraps libcalc C library for Logos";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -1098,7 +1098,7 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 To install a portable package on another machine:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager/0.2.0#cli' --out-link ./pm
 ./pm/bin/lgpm --modules-dir ./modules install --file result-lgx-portable/*.lgx
 ```
 
@@ -1217,7 +1217,7 @@ Instead of pre-building the library and placing it in `lib/`, you can have Nix f
   description = "Module wrapping libfoo from GitHub";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
 
     # Fetch the library source (non-flake)
     libfoo-src = {

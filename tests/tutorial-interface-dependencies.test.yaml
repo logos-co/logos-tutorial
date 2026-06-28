@@ -531,7 +531,7 @@ sections:
 
       ```nix
       inputs = {
-        logos-module-builder.url = "github:logos-co/logos-module-builder";
+        logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
         calc_interfaces.url      = "github:your-org/logos-calc-interfaces";
       };
       ```

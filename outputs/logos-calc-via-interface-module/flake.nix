@@ -1,5 +1,5 @@
 {
-  description = "Calculator module - wraps libcalc C library for Logos";
+  description = "Core module that binds a calculator interface at runtime";
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
@@ -10,9 +10,5 @@
       src = ./.;
       configFile = ./metadata.json;
       flakeInputs = inputs;
-      tests = {
-        dir = ./tests;
-        mockCLibs = [ "calc" ];
-      };
     };
 }

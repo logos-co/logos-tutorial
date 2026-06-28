@@ -1189,7 +1189,7 @@ sections:
         description = "Module wrapping libfoo from GitHub";
 
         inputs = {
-          logos-module-builder.url = "github:logos-co/logos-module-builder";
+          logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
 
           # Fetch the library source (non-flake)
           libfoo-src = {

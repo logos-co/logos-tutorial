@@ -2,7 +2,7 @@
   description = "Aggregator core module - composes calc_module and showcases LogosModuleContext";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder";
+    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
 
     # The module this one depends on. Placeholder path — locked to your
     # real checkout in the build step via `--override-input`.

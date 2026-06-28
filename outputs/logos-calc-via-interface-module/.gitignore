@@ -1,0 +1,6 @@
+# Nix build output
+result
+result-*
+
+# CMake build directory
+build/

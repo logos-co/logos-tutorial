@@ -1,0 +1,27 @@
+{
+  "name": "calc_via_interface",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "general",
+  "description": "Binds a calculator interface to a module chosen at runtime",
+  "main": "calc_via_interface_plugin",
+  "interface": "universal",
+  "dependencies": [],
+  "interface_dependencies": [
+    { "name": "calculator", "file": "interfaces/calculator.h", "impl_class": "ICalculator" }
+  ],
+
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}

@@ -21,8 +21,8 @@
 # that git tag (passed to both `run` and `generate` so the executed commands and
 # the generated Markdown agree). Any further args are forwarded verbatim to the
 # `run` and `generate` invocations, so e.g. `--release-for REPO=REF` also works:
-#   ./run.sh --release tutorial-v3
-#   ./run.sh --release tutorial-v3 --release-for logos-basecamp=main
+#   ./run.sh --release 0.2.0
+#   ./run.sh --release 0.2.0 --release-for logos-basecamp=main
 #
 set -euo pipefail
 
@@ -109,8 +109,9 @@ if [ ! -d "${OUTPUT_DIR}" ]; then
 fi
 
 echo "==> Cleaning build artifacts from ${OUTPUT_DIR}/"
-# --also calc-data: the Composing Modules tutorial creates a calc-data/ persistence
-# directory (logoscore --persistence-path) that the default clean rules don't cover.
-"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --also calc-data --verbose
+# --also calc-data / .logoscore: tutorials create per-instance persistence dirs
+# (logoscore --persistence-path and the default .logoscore store) that the default
+# clean rules don't cover.
+"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --also calc-data --also .logoscore --verbose
 
 echo "==> Done. Cleaned tutorial output is in ${OUTPUT_DIR}/"
