@@ -1,8 +1,33 @@
 class CalcUiCpp
 {
+    // ── SLOTs — call-and-return; each reply reaches QML via logos.watch() ──
     SLOT(int add(int a, int b))
     SLOT(int multiply(int a, int b))
     SLOT(int factorial(int n))
     SLOT(int fibonacci(int n))
     SLOT(QString libVersion())
+
+    // Void slot — fire-and-forget. Asks calc_module to (re-)announce
+    // its version as a `versionReady` event; there's no return value
+    // to await, the answer comes back through the PROP below.
+    SLOT(void announceVersion())
+
+    // ── PROPs — auto-synced backend → every QML replica, no polling ──
+    // QString, event-fed: the typed `versionReady` subscription the
+    // backend arms in onContextReady() writes it. Starts empty.
+    PROP(QString versionEvent="" READONLY)
+
+    // int, slot-driven: the backend bumps it after each calculation,
+    // so the view shows a live tally without ever polling.
+    PROP(int computeCount=0 READONLY)
+
+    // int, READWRITE: a memory register the QML view both *reads* and
+    // *writes* (Store / Clear buttons), and the backend may set too.
+    // A write round-trips QML → replica → source → back to every replica.
+    PROP(int memory=0 READWRITE)
+
+    // ── SIGNAL — backend → view push, distinct from a return value ──
+    // Emitted after each calculation. QML catches it with a
+    // Connections block (not logos.watch(), not a PROP read).
+    SIGNAL(computed(QString op, int result))
 }

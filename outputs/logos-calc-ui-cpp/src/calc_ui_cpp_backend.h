@@ -21,4 +21,19 @@ public:
     int factorial(int n) override;
     int fibonacci(int n) override;
     QString libVersion() override;
+
+    // Tells calc_module to emit its `versionReady` event.
+    void announceVersion() override;
+
+    // Fires once when ui-host hands the plugin its LogosAPI — the
+    // typed dependency surface is live, so we arm the event
+    // subscription here (before the view's first call).
+    void onContextReady() override;
+
+private:
+    // Feeds the non-slot surfaces of the .rep after each calculation:
+    // bumps the computeCount PROP (setComputeCount, generated) and
+    // emits the `computed` SIGNAL. The READWRITE `memory` PROP is
+    // driven from QML, so the backend doesn't have to touch it.
+    void record(const QString& op, int result);
 };
