@@ -787,6 +787,10 @@ sections:
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
           qt_mcp: "result-mcp"
+          # `nix build .` (the runner's warm-up) builds the UI plugin, not
+          # `apps.default`'s standalone-app closure, so that still compiles
+          # during launch and can blow past the default 120s inspector wait.
+          launch_timeout: 900
           tests:
             - name: "App window opens with title"
               action: wait_for

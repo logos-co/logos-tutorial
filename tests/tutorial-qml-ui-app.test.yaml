@@ -378,6 +378,13 @@ sections:
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
           qt_mcp: "result-mcp"
+          # The runner pre-builds `nix build .` — that is `packages.default`
+          # (the UI plugin). But `nix run .` launches `apps.default`, the
+          # standalone app, whose closure (logos-standalone-app + the bundled
+          # backend modules) is NOT covered by that warm build, so it compiles
+          # during launch. On a cold cache that exceeds the default 120s
+          # inspector wait and the app never boots before we give up.
+          launch_timeout: 900
           tests:
             - name: "App window opens with title"
               action: wait_for
@@ -446,6 +453,9 @@ sections:
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
           qt_mcp: "result-mcp"
+          # Overriding calc_module rebuilds the standalone app closure, which
+          # the `nix build` warm-up does not cover — see the note in Step 5.
+          launch_timeout: 900
           tests:
             - name: "App title visible"
               action: wait_for
