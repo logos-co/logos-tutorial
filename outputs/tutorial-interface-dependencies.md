@@ -37,7 +37,7 @@ Create a new directory and initialise it from the minimal module template:
 ### 1.1 Create the project from the template
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder/0.2.0
+nix flake init -t github:logos-co/logos-module-builder
 ```
 
 This scaffolds a `flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` directory pre-wired for `logos-module-builder`. As in Part 1 we use the **pure-C++ (`interface: universal`) pattern**, so we replace the template's example `src/` files with our own plain `*_impl.h` / `*_impl.cpp`.
@@ -188,7 +188,7 @@ Because there is no concrete dependency, the only input is the builder itself. (
   description = "Core module that binds a calculator interface at runtime";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
   };
 
   outputs = inputs@{ logos-module-builder, ... }:
@@ -384,7 +384,7 @@ Use `lm` to confirm the public API made it into the binary — and, tellingly, t
 ### 6.1 Build `lm`
 
 ```bash
-nix build 'github:logos-co/logos-module/0.2.0#lm' --out-link ./lm
+nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 ```
 
 ### 6.2 View metadata — note the empty dependency list
@@ -426,11 +426,11 @@ Now the payoff: run `calc_via_interface` and bind its `calculator` interface to 
 Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory. `calc_via_interface` comes from this project; `calc_module` from your Part 1 checkout — it is the *provider* we bind to, even though this module never declared it:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli/0.2.0' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager/0.2.0#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ```
 
 ```bash
@@ -575,7 +575,7 @@ and declare the matching input in `flake.nix` (the input attribute name must equ
 
 ```nix
 inputs = {
-  logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
+  logos-module-builder.url = "github:logos-co/logos-module-builder";
   calc_interfaces.url      = "github:your-org/logos-calc-interfaces";
 };
 ```

@@ -2,7 +2,7 @@
 
 > **Status: shipped in Logos Basecamp.** The QML surface described here is frozen — `logos.request`,
 > `logos.respond`, `intentRequested`, the six error codes and the payload rules will not change.
-> The shell-side machinery around it (chooser, remembered defaults, install suggestions) is
+> The shell-side machinery around it (chooser, install suggestions) is
 > deliberately replaceable and will.
 >
 > Nothing is signed yet, so a provider's name and label are claims rather than identity. See
@@ -178,9 +178,8 @@ The shell raises a chooser. You get no say in it, and that is the point.
 - The list is **drawn by the shell**, with the same names and icons as the sidebar. You cannot
   influence how a provider appears, and a provider cannot dress itself up.
 - It is **sorted**, so the order is stable.
-- **"Always use this app"** remembers the pick for your (app, intent) pair. It is re-checked each
-  time, so an upgrade does not lose it, and if the remembered app stops providing the intent the
-  chooser quietly returns.
+- It is raised **every time**. There is no "always use this app" yet, so do not assume a repeat
+  request will run without the user seeing a dialog.
 - **Dismissing gives you `cancelled`**, not `unavailable` — so you can tell "the user said no" from
   "there was nobody to ask". Treat it as a normal outcome, not an error to report.
 

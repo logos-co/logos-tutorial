@@ -47,7 +47,7 @@ Create a new directory and initialise it from the QML module template:
 `mkdir logos-calc-ui && cd logos-calc-ui`
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder/0.2.0#ui-qml
+nix flake init -t github:logos-co/logos-module-builder#ui-qml
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in [Step 4](#step-4-update-flakenix) to ensure reproducible builds.
@@ -330,7 +330,7 @@ The template already has everything wired up. Update the description and add `ca
   description = "Calculator QML UI Plugin for Logos - frontend for calc_module";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
 
     # Points at your local calc_module checkout. This is a placeholder —
     # you lock it to your actual path in the next step with
@@ -574,7 +574,7 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 Build the basecamp desktop shell:
 
 ```bash
-nix build 'github:logos-co/logos-basecamp/0.2.0' -o basecamp-result
+nix build 'github:logos-co/logos-basecamp' -o basecamp-result
 ```
 
 Basecamp manages its own per-user data directory and preinstalls its bundled modules (`main_ui`, `package_manager`, …) from the build. It does **not** accept `--modules-dir` / `--ui-plugins-dir` flags; instead you point it at a data directory with `--user-dir` (or the `LOGOS_USER_DIR` env var), and it reads installed core modules from `<dir>/modules` and UI plugins from `<dir>/plugins` — exactly the directories `lgpm` writes to.
@@ -586,7 +586,7 @@ For this tutorial we use an explicit data directory, `basecamp-data`, so the ins
 `lgpm` installs `.lgx` packages into a modules/plugins directory:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager/0.2.0#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ```
 
 ### 8.4 Create the data directory
@@ -645,7 +645,7 @@ The sidebar labels each UI plugin by its `name` from `metadata.json`, which is w
 The dev build above depends on nix store paths at runtime. For a self-contained portable build that works without nix:
 
 ```bash
-nix build 'github:logos-co/logos-basecamp/0.2.0#bin-bundle-dir' -o basecamp-portable
+nix build 'github:logos-co/logos-basecamp#bin-bundle-dir' -o basecamp-portable
 ```
 
 ```bash
@@ -692,38 +692,37 @@ Instead of using `lgpm` on the command line, you can install modules through the
 
 A `calc_ui` tab appears in the sidebar (UI plugins are labelled by their `name` from `metadata.json`). Clicking it loads your `Main.qml`.
 
-### 8.10 Live reloading with `logos-standalone-app`
+### 8.10 Hot-reloading QML with `nix build .#ui-dev`
 
-For QML iteration, set `DEV_QML_PATH` to the directory that contains your view entry file (the basename from `metadata.json` `view` must exist under that directory). For this tutorial's layout (`view`: `Main.qml` at repo root):
-
-```bash
-DEV_QML_PATH=$PWD nix run .
-```
-
-When `DEV_QML_PATH` is set, `logos-standalone-app` loads QML from your source tree at runtime instead of the installed copy — so edits in `Main.qml` are picked up on the next relaunch without you having to manually re-sync files.
-
-**Important — what this does *not* skip.** `nix run` always re-evaluates the flake and rehashes the source tree before launching. By default `src = ./.` includes every tracked file, including `*.qml` — so:
-
-- **Any source change, including QML edits, rebuilds the plugin** before the app starts. `DEV_QML_PATH` only kicks in *after* the build is done; it doesn't shortcut the rebuild itself.
-- **C++ / `.rep` / `metadata.json` / CMake changes** rebuild as normal.
-- The flake-evaluation overhead on each `nix run` is fixed and unavoidable while invoking through nix.
-
-For the absolute fastest loop (no nix involvement after the first build), do the build once and run the resulting binary directly:
+For QML iteration, build the dev launcher once. After that, QML edits need no rebuild at all:
 
 ```bash
-# Build once — populates result/ in the nix store
-nix build .
-
-# Subsequent runs: invoke the bundled standalone wrapper directly,
-# skipping nix entirely. DEV_QML_PATH still redirects QML loading.
-DEV_QML_PATH=$PWD ./result/bin/run-logos-standalone-ui
+nix build .#ui-dev
+./result/bin/run-logos-standalone-ui
 ```
 
-(Adjust the binary name to whatever `ls result/bin/` shows on your build.)
+Run from the repo root and the launcher finds your QML source automatically, then watches it. Edit a `.qml` file, save, and the view re-renders in about 200 ms. It reports what it picked up on startup:
 
-> **Naming:** Only `DEV_QML_PATH` is honored. See `repos/logos-standalone-app/README.md`.
+```
+run-logos-standalone-ui: hot-reloading QML from /path/to/logos-calc-ui
+  (export DEV_QML_PATH to override, or LOGOS_QML_HOT_RELOAD=0 to disable)
+```
 
-> This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so changes to your source files are not reflected until you rebuild and reinstall the `.lgx` package.
+`ui-dev` is the same wrapper `nix run .` uses — dependency modules bundled and loaded identically — exposed as a package so it lands in `./result/bin`. It is a development target and is never bundled into `.lgx` packages.
+
+**What reloads, and what doesn't.**
+
+- **Any `.qml`/`.js` under your view directory**, including files and folders created after launching.
+- **The backend keeps running.** A module's C++ backend lives in a separate `ui-host` process, so its state and connections survive a reload.
+- **QML-side state resets** — scroll position, text fields, current tab.
+- **A syntax error is recoverable.** It's logged with a line number and the view blanks; the next save that compiles restores it.
+- **C++, `.rep`, `metadata.json` and CMake changes still need a rebuild.** Re-run `nix build .#ui-dev` and relaunch.
+
+**Why not `nix run .`?** It re-evaluates the flake and rehashes the source tree on every invocation. Since `src = ./.` covers every tracked file including `*.qml`, even a one-character QML edit rebuilds the plugin before the app starts. Building `ui-dev` once avoids that entirely.
+
+> **Custom layouts:** the launcher looks for the `view` entry from `metadata.json` under `src/<viewDir>/`, then `<viewDir>/`. If your tree differs, set `DEV_QML_PATH` to the directory holding the entry file and it takes precedence.
+
+> This does not work with `logos-basecamp`. Basecamp loads QML plugins from its own data directory, so source edits are not reflected until you rebuild and reinstall the `.lgx` package.
 
 ### 8.11 Testing without any runtime
 

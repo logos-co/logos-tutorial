@@ -37,7 +37,7 @@ Create a new directory and initialise it from the minimal module template:
 ### 1.1 Create the project from the template
 
 ```bash
-nix flake init -t github:logos-co/logos-module-builder/0.2.0
+nix flake init -t github:logos-co/logos-module-builder
 ```
 
 This scaffolds a `flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` directory pre-wired for `logos-module-builder`. As in Part 1 we use the newer **pure-C++ (`interface: universal`) pattern**, so we replace the template's example `src/` files with a single plain `*_impl.h` / `*_impl.cpp` class.
@@ -130,7 +130,7 @@ Declare `calc_module` as a flake input. The input attribute name **must match** 
   description = "Aggregator core module - composes calc_module and showcases LogosModuleContext";
 
   inputs = {
-    logos-module-builder.url = "github:logos-co/logos-module-builder/0.2.0";
+    logos-module-builder.url = "github:logos-co/logos-module-builder";
 
     # The module this one depends on. Placeholder path — locked to your
     # real checkout in the build step via `--override-input`.
@@ -455,7 +455,7 @@ Use `lm` to confirm the dependency and the public API made it into the binary.
 ### 5.1 Build `lm`
 
 ```bash
-nix build 'github:logos-co/logos-module/0.2.0#lm' --out-link ./lm
+nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 ```
 
 ### 5.2 View metadata — note the dependency
@@ -498,11 +498,11 @@ Now the payoff: run `calc_aggregator` **and** its `calc_module` dependency under
 Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory `logoscore` can scan. The aggregator comes from this project; `calc_module` from your Part 1 checkout:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli/0.2.0' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager/0.2.0#cli' --out-link ./pm
+nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
 ```
 
 ```bash
