@@ -653,8 +653,11 @@ This produces a `my_module-<version>.lgx` file in the current directory.
 | `x86_64-darwin`  | `darwin-amd64-dev` | `darwin-amd64`   |
 | `aarch64-linux`  | `linux-arm64-dev`  | `linux-arm64`    |
 | `x86_64-linux`   | `linux-amd64-dev`  | `linux-amd64`    |
+| `x86_64-windows` | `windows-x86_64-dev` | `windows-x86_64` |
 
 > **Important:** The variant type matters when installing into `logos-basecamp`. A dev build of basecamp expects dev variants, and a portable build expects portable variants. Use the `dual` bundler to produce packages that work with both.
+
+> **Windows is cross-built only.** `x86_64-windows` is a pseudo-system: there is no Nix daemon for Windows, so the package is produced on a Linux (or macOS) machine targeting `x86_64-w64-mingw32` and copied across. Note the variant is spelled `windows-x86_64`, not `windows-amd64` — unlike Linux, it has no alias, so a package labelled `windows-amd64` will not install.
 
 ---
 
@@ -695,7 +698,38 @@ nix build 'github:logos-co/logos-package-manager#cli' --out-link ./package-manag
 | `--modules-dir <path>`    | Target directory for installed core modules |
 | `--ui-plugins-dir <path>` | Target directory for UI plugins             |
 | `--json`                  | Output in JSON format                       |
+| `--platform <variant>`    | Install for a platform other than this machine (see below) |
 | `-h, --help`              | Show help                                   |
+
+#### Installing for another platform
+
+By default `lgpm` derives the variant from the machine it is running on, and
+**refuses** a package that does not provide it:
+
+```
+Error: Package does not contain variant for platform: linux-x86_64-dev
+       (package provides: windows-x86_64-dev)
+```
+
+That refusal is the protection against installing a package built for one
+platform onto another, so it is deliberately fail-closed. Cross-building needs an
+explicit opt-out — the Nix install bundler, for instance, runs `lgpm` on a Linux
+builder to lay out a Windows package:
+
+```bash
+lgpm --modules-dir ./modules install --platform windows-x86_64 --file ./my_module.lgx
+```
+
+`--platform` applies to `install`, `list` and `info` alike, so all three agree on
+which platform is being managed, and `lgpm` prints the override to stderr when it
+is in effect — a silent platform switch would defeat the very check it bypasses.
+
+> **Do not reach for `--platform` to resolve a dev/portable variant mismatch.**
+> If a package provides `darwin-arm64` and your basecamp wants
+> `darwin-arm64-dev`, the fix is to build the right variant (or use the `dual`
+> bundler), not to override the platform — forcing it installs a package the
+> runtime cannot load, turning a clear install-time error into a confusing
+> load-time one.
 
 ### 5.2 Installing from Local Files
 
@@ -1513,3 +1547,19 @@ nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib
 # Then merge platform-specific .lgx files into one:
 ./lgx/bin/lgx merge my_module-linux.lgx my_module-macos.lgx -o my_module.lgx
 ```
+
+**Windows is the exception: it is cross-built, never built natively.** There is no
+Nix daemon for Windows, so "build on the target platform" does not apply. Build
+the `x86_64-windows` target from a Linux machine instead:
+
+```bash
+nix build .#packages.x86_64-windows.lgx-portable
+```
+
+Two consequences worth knowing before you try it:
+
+- The resulting package declares `windows-x86_64`. Because `lgpm` on the builder
+  is a Linux binary, laying that package out on the builder needs the explicit
+  `--platform windows-x86_64` opt-out described in [5.1](#51-the-lgpm-cli).
+- A Windows developer runs the same cross-build inside WSL2 and copies the
+  artifacts out to a Windows path — the toolchain is Linux either way.
