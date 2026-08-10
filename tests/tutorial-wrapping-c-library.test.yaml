@@ -595,10 +595,10 @@ sections:
           # macOS
           ./lm/bin/lm methods result/lib/calc_module_plugin.dylib
         expect_contains:
-          - "int add(int a, int b)"
-          - "int multiply(int a, int b)"
-          - "int factorial(int n)"
-          - "int fibonacci(int n)"
+          - "qlonglong add(qlonglong a, qlonglong b)"
+          - "qlonglong multiply(qlonglong a, qlonglong b)"
+          - "qlonglong factorial(qlonglong n)"
+          - "qlonglong fibonacci(qlonglong n)"
           - "QString libVersion()"
           - "Description: Adds two integers and returns the sum."
           - "Defined as n * (n-1) * ... * 1, with 0! = 1."
@@ -613,25 +613,25 @@ sections:
           Plugin Methods:
           ===============
 
-          int add(int a, int b)
-            Signature: add(int,int)
+          qlonglong add(qlonglong a, qlonglong b)
+            Signature: add(qlonglong,qlonglong)
             Invokable: yes
             Description: Adds two integers and returns the sum.
 
-          int multiply(int a, int b)
-            Signature: multiply(int,int)
+          qlonglong multiply(qlonglong a, qlonglong b)
+            Signature: multiply(qlonglong,qlonglong)
             Invokable: yes
             Description: Multiplies two integers and returns the product.
 
-          int factorial(int n)
-            Signature: factorial(int)
+          qlonglong factorial(qlonglong n)
+            Signature: factorial(qlonglong)
             Invokable: yes
             Description:
               Computes the factorial n! of a non-negative integer.
               Defined as n * (n-1) * ... * 1, with 0! = 1.
 
-          int fibonacci(int n)
-            Signature: fibonacci(int)
+          qlonglong fibonacci(qlonglong n)
+            Signature: fibonacci(qlonglong)
             Invokable: yes
             Description: Returns the nth Fibonacci number (0-indexed).
 
@@ -652,7 +652,7 @@ sections:
 
           Three things to notice:
 
-          - **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
+          - **Signatures are Qt-typed** (`qlonglong`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(qlonglong,qlonglong)`. Note the width is **preserved** — `qlonglong` is Qt's 64-bit integer, not `int`. Each type in the contract maps to exactly one type per language, and integers are 64-bit throughout, so a value that fits your `int64_t` cannot be silently truncated on the way across.
           - **Each `Description` is your doc comment**, carried through the module's method introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
           - **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
