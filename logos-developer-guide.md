@@ -1033,8 +1033,9 @@ The generator is bundled with `logos-cpp-sdk`. It is automatically available:
 # Generate wrappers for a single module
 logos-cpp-generator /path/to/my_module_plugin.so --output-dir ./generated
 
-# Generate wrappers for all dependencies listed in metadata.json
-logos-cpp-generator --metadata metadata.json --module-dir /path/to/modules --output-dir ./generated
+# Generate a wrapper per dependency, each from that dependency's LIDL contract
+logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated \
+  --dep waku_module=/path/to/waku_module.lidl
 
 # Generate only module files (no umbrella headers)
 logos-cpp-generator /path/to/plugin.so --module-only --output-dir ./generated
@@ -1363,7 +1364,7 @@ logoscore stop                                # Stop daemon
 
 ```bash
 logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only]
-logos-cpp-generator --metadata <metadata.json> --module-dir <dir> [--output-dir <dir>]
+logos-cpp-generator --metadata <metadata.json> --general-only --dep <name>=<name>.lidl [--output-dir <dir>]
 logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir>]
 ```
 
