@@ -276,8 +276,8 @@ logos_module(
     SOURCES
         src/calc_wrap_impl.h
         src/calc_wrap_impl.cpp
-        generated_code/calc_wrap_qt_glue.h
-        generated_code/calc_wrap_dispatch.cpp
+        generated_code/calc_wrap_cdylib_glue.h
+        generated_code/calc_wrap_cdylib_glue.cpp
         lib/libcalc.c                          # C source compiled directly
     INCLUDE_DIRS
         ${CMAKE_CURRENT_SOURCE_DIR}/generated_code
