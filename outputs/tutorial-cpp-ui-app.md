@@ -137,12 +137,12 @@ Replace the template contents with your plugin's details:
 }
 ```
 
-Create the icon directory and add a placeholder icon (displayed in the `logos-basecamp` sidebar when the module is loaded):
+Create the icon directory and add a placeholder icon — a PNG that is exactly 256×256, the only size LGX packaging accepts (displayed in the `logos-basecamp` sidebar when the module is loaded):
 
 ```bash
 mkdir -p icons
-# Copy any PNG here — or generate a 64×64 placeholder:
-echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3ziCWRkoEP2XmedfX82OkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAO0BN/SiO/PatoIAAAAASUVORK5CYII=" | base64 -d > icons/calc.png
+# Copy any PNG here — or generate a 256×256 placeholder:
+echo "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAABlBMVEUuzHEuzHEVOa2oAAAAH0lEQVR42u3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAvg0hAAABYOSdlwAAAABJRU5ErkJggg==" | base64 -d > icons/calc.png
 ```
 
 Key fields:

@@ -102,12 +102,12 @@ Replace the template contents with your plugin's details. The template may gener
 }
 ```
 
-Create the icon directory and add a placeholder icon. The icon is displayed in the `logos-basecamp` sidebar when the module is loaded:
+Create the icon directory and add a placeholder icon. It must be a PNG that is exactly 256×256 — LGX packaging rejects any other size. The icon is displayed in the `logos-basecamp` sidebar when the module is loaded:
 
 ```bash
 mkdir -p icons
-# Copy any PNG here — or generate a 64×64 placeholder:
-echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAmElEQVR4nO3QMREAIBDAsFeEN3ziCWRkoEP2XmedfX82OkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAK0BOkBrgA7QGqADtAboAO0BN/SiO/PatoIAAAAASUVORK5CYII=" | base64 -d > icons/calc.png
+# Copy any PNG here — or generate a 256×256 placeholder:
+echo "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEAAQMAAABmvDolAAAABlBMVEUuzHEuzHEVOa2oAAAAH0lEQVR42u3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAvg0hAAABYOSdlwAAAABJRU5ErkJggg==" | base64 -d > icons/calc.png
 ```
 
 The `view` field tells the host which QML file to load for the UI. The `dependencies` field tells the host to load `calc_module` before showing your UI.
