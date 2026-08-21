@@ -442,17 +442,49 @@ Example JSON output:
 ./lm/bin/lm methods ./result/lib/my_module_plugin.so --json
 ```
 
-Example JSON output:
+**The type names depend on which kind of module you are inspecting**, because
+two different things publish this JSON:
+
+- A **universal / cdylib module** (`"interface": "universal"`, the style used
+  throughout this guide and in the tutorials) publishes its **LIDL contract**
+  types — `tstr`, `int`, `uint`, `bstr`, `[tstr]`, `{tstr: any}`, `? uint`,
+  `result`, and a record's declared name. The module is Qt-free, so the
+  contract is the only vocabulary in which the question has one answer, and
+  a Rust module implementing the same contract answers identically.
+- A **handwritten Qt plugin** publishes what its `QMetaObject` says — `QString`,
+  `QVariantList`, `QVariantMap` — because there the metaobject *is* the
+  contract.
+
+Example JSON output, for a universal module with
+`method doSomething(input: tstr) -> tstr`:
 
 ```json
 [
   {
-    "name": "initLogos",
-    "signature": "initLogos(LogosAPI*)",
-    "returnType": "void",
+    "name": "doSomething",
+    "signature": "doSomething(tstr)",
+    "returnType": "tstr",
     "isInvokable": true,
-    "parameters": [{ "name": "logosAPIInstance", "type": "LogosAPI*" }]
+    "parameters": [{ "name": "input", "type": "tstr" }]
   },
+  {
+    "name": "name",
+    "signature": "name()",
+    "returnType": "tstr",
+    "isInvokable": true,
+    "description": "The module's name, as declared in its metadata."
+  }
+]
+```
+
+`name` and `version` are **derived**: the generator emits them from
+`metadata.json`, so every module answers them without the author writing them,
+and they appear in every listing.
+
+The same listing from a handwritten Qt plugin would instead read:
+
+```json
+[
   {
     "name": "doSomething",
     "signature": "doSomething(QString)",

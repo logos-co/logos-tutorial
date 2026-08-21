@@ -485,7 +485,7 @@ Dependencies: calc_module
 ./lm/bin/lm methods result/lib/calc_aggregator_plugin.dylib  # macOS
 ```
 
-Every `public` method on the impl is here — `int64_t` shows up as `int`, `std::string` as `QString`, and `LogosMap` (from `computeReport`) as `QVariantMap`, because `lm` reports the wire types the generated glue exposes.
+Every `public` method on the impl is here, published in the **LIDL contract** vocabulary rather than in C++ or Qt names: `int64_t` shows up as `int`, `std::string` as `tstr`, and `LogosMap` (from `computeReport`) as `{tstr: any}`. `lm` is reporting what the module says about itself, and what a module publishes is its contract — the same words the generated `.lidl` uses, and the same words a Rust or Nim module implementing this contract would answer with.
 
 ---
 
