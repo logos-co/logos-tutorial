@@ -1062,19 +1062,38 @@ The generator is bundled with `logos-cpp-sdk`. It is automatically available:
 #### Generating Wrappers
 
 ```bash
-# Generate wrappers for a single module
-logos-cpp-generator /path/to/my_module_plugin.so --output-dir ./generated
+# Generate wrappers for a single module, from the CONTRACT it ships beside its
+# plugin. `--events-from` names that contract, and the wrapper's typed methods,
+# record structs and typed on<Event>() accessors all come from it.
+logos-cpp-generator /path/to/my_module_plugin.so --output-dir ./generated \
+  --events-from /path/to/share/logos/my_module.lidl
+
+# A handcrafted Qt module publishes no contract; omit the flag and the wrapper
+# comes from the plugin's Qt metaobject, which is then the only description of
+# its API that exists.
+logos-cpp-generator /path/to/handcrafted_plugin.so --output-dir ./generated
 
 # Generate a wrapper per dependency, each from that dependency's LIDL contract
 logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated \
   --dep waku_module=/path/to/waku_module.lidl
 
 # Generate only module files (no umbrella headers)
-logos-cpp-generator /path/to/plugin.so --module-only --output-dir ./generated
+logos-cpp-generator /path/to/plugin.so --module-only --output-dir ./generated \
+  --events-from /path/to/share/logos/my_module.lidl
 
 # Generate only umbrella SDK files (assumes module files exist)
 logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated
 ```
+
+> **Why `--events-from` is not optional for a module that has a contract.** A
+> module built with `interface: "universal"` or `"cdylib"` publishes its
+> `getMethods()` metadata in the LIDL contract vocabulary (`tstr`, `[uint]`,
+> `result`) — that listing is what `lm` and `logoscore` show a human, and Qt
+> type names would be the wrong answer for a Qt-free module. The wrapper
+> emitter reads Qt type names, so generating from that listing would silently
+> produce a wrapper of `QVariant` / `LogosMap`. It refuses instead, naming the
+> contract to pass. Nix builds pass it for you: `buildHeaders.nix` finds
+> `<module>/share/logos/<name>.lidl`, which `buildPlugin.nix` installed.
 
 #### Using Generated Wrappers
 
@@ -1395,7 +1414,7 @@ logoscore stop                                # Stop daemon
 ### `logos-cpp-generator` -- SDK Code Generator
 
 ```bash
-logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only]
+logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only] [--events-from <name>.lidl]
 logos-cpp-generator --metadata <metadata.json> --general-only --dep <name>=<name>.lidl [--output-dir <dir>]
 logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir>]
 ```
