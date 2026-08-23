@@ -442,17 +442,49 @@ Example JSON output:
 ./lm/bin/lm methods ./result/lib/my_module_plugin.so --json
 ```
 
-Example JSON output:
+**The type names depend on which kind of module you are inspecting**, because
+two different things publish this JSON:
+
+- A **universal / cdylib module** (`"interface": "universal"`, the style used
+  throughout this guide and in the tutorials) publishes its **LIDL contract**
+  types — `tstr`, `int`, `uint`, `bstr`, `[tstr]`, `{tstr: any}`, `? uint`,
+  `result`, and a record's declared name. The module is Qt-free, so the
+  contract is the only vocabulary in which the question has one answer, and
+  a Rust module implementing the same contract answers identically.
+- A **handwritten Qt plugin** publishes what its `QMetaObject` says — `QString`,
+  `QVariantList`, `QVariantMap` — because there the metaobject *is* the
+  contract.
+
+Example JSON output, for a universal module with
+`method doSomething(input: tstr) -> tstr`:
 
 ```json
 [
   {
-    "name": "initLogos",
-    "signature": "initLogos(LogosAPI*)",
-    "returnType": "void",
+    "name": "doSomething",
+    "signature": "doSomething(tstr)",
+    "returnType": "tstr",
     "isInvokable": true,
-    "parameters": [{ "name": "logosAPIInstance", "type": "LogosAPI*" }]
+    "parameters": [{ "name": "input", "type": "tstr" }]
   },
+  {
+    "name": "name",
+    "signature": "name()",
+    "returnType": "tstr",
+    "isInvokable": true,
+    "description": "The module's name, as declared in its metadata."
+  }
+]
+```
+
+`name` and `version` are **derived**: the generator emits them from
+`metadata.json`, so every module answers them without the author writing them,
+and they appear in every listing.
+
+The same listing from a handwritten Qt plugin would instead read:
+
+```json
+[
   {
     "name": "doSomething",
     "signature": "doSomething(QString)",
@@ -1030,19 +1062,38 @@ The generator is bundled with `logos-cpp-sdk`. It is automatically available:
 #### Generating Wrappers
 
 ```bash
-# Generate wrappers for a single module
-logos-cpp-generator /path/to/my_module_plugin.so --output-dir ./generated
+# Generate wrappers for a single module, from the CONTRACT it ships beside its
+# plugin. `--events-from` names that contract, and the wrapper's typed methods,
+# record structs and typed on<Event>() accessors all come from it.
+logos-cpp-generator /path/to/my_module_plugin.so --output-dir ./generated \
+  --events-from /path/to/share/logos/my_module.lidl
+
+# A handcrafted Qt module publishes no contract; omit the flag and the wrapper
+# comes from the plugin's Qt metaobject, which is then the only description of
+# its API that exists.
+logos-cpp-generator /path/to/handcrafted_plugin.so --output-dir ./generated
 
 # Generate a wrapper per dependency, each from that dependency's LIDL contract
 logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated \
   --dep waku_module=/path/to/waku_module.lidl
 
 # Generate only module files (no umbrella headers)
-logos-cpp-generator /path/to/plugin.so --module-only --output-dir ./generated
+logos-cpp-generator /path/to/plugin.so --module-only --output-dir ./generated \
+  --events-from /path/to/share/logos/my_module.lidl
 
 # Generate only umbrella SDK files (assumes module files exist)
 logos-cpp-generator --metadata metadata.json --general-only --output-dir ./generated
 ```
+
+> **Why `--events-from` is not optional for a module that has a contract.** A
+> module built with `interface: "universal"` or `"cdylib"` publishes its
+> `getMethods()` metadata in the LIDL contract vocabulary (`tstr`, `[uint]`,
+> `result`) — that listing is what `lm` and `logoscore` show a human, and Qt
+> type names would be the wrong answer for a Qt-free module. The wrapper
+> emitter reads Qt type names, so generating from that listing would silently
+> produce a wrapper of `QVariant` / `LogosMap`. It refuses instead, naming the
+> contract to pass. Nix builds pass it for you: `buildHeaders.nix` finds
+> `<module>/share/logos/<name>.lidl`, which `buildPlugin.nix` installed.
 
 #### Using Generated Wrappers
 
@@ -1363,7 +1414,7 @@ logoscore stop                                # Stop daemon
 ### `logos-cpp-generator` -- SDK Code Generator
 
 ```bash
-logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only]
+logos-cpp-generator <plugin-file> [--output-dir <dir>] [--module-only] [--events-from <name>.lidl]
 logos-cpp-generator --metadata <metadata.json> --general-only --dep <name>=<name>.lidl [--output-dir <dir>]
 logos-cpp-generator --metadata <metadata.json> --general-only [--output-dir <dir>]
 ```
