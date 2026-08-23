@@ -368,8 +368,8 @@ public:
     ~CalcModuleImpl() = default;
 
     // ── Public API — every method here is callable over IPC ──────────
-    // The generator maps C++ types onto the wire automatically:
-    //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
+    // The generator maps C++ types onto the contract automatically:
+    //   int64_t  ↔ int      std::string ↔ tstr      bool ↔ bool
     //
     // A doc comment directly above a method becomes that method's
     // `description` in the module's method introspection — surfaced
@@ -424,18 +424,24 @@ logos_events:
 - It's a normal C++ class. Any `public` method is exposed; `private` members and helpers are not.
 - **Supported parameter/return types** (what the generator can translate):
 
-  | C++ type                    | On the wire (Qt)   |
-  | --------------------------- | ------------------ |
-  | `void`                      | `void`             |
-  | `bool`                      | `bool`             |
-  | `int64_t`                   | `int`              |
-  | `uint64_t`                  | `uint`             |
-  | `double`                    | `double`           |
-  | `std::string`               | `QString`          |
-  | `std::vector<std::string>`  | `QStringList`      |
-  | `std::vector<uint8_t>`      | `QByteArray`       |
-  | `LogosMap` / `LogosList`    | `QVariantMap` / `QVariantList` (from `<logos_json.h>`) |
-  | `StdLogosResult`            | `LogosResult` (from `<logos_result.h>`) — `{ success, value, error }` |
+  | C++ type                    | LIDL contract type | A Qt consumer sees |
+  | --------------------------- | ------------------ | ------------------ |
+  | `void`                      | `void`             | `void`             |
+  | `bool`                      | `bool`             | `bool`             |
+  | `int64_t`                   | `int`              | `qlonglong`        |
+  | `uint64_t`                  | `uint`             | `qulonglong`       |
+  | `double`                    | `float64`          | `double`           |
+  | `std::string`               | `tstr`             | `QString`          |
+  | `std::vector<std::string>`  | `[tstr]`           | `QStringList`      |
+  | `std::vector<uint8_t>`      | `bstr`             | `QByteArray`       |
+  | `LogosMap` / `LogosList`    | `{tstr: any}` / `[any]` (from `<logos_json.h>`) | `QVariantMap` / `QVariantList` |
+  | `StdLogosResult`            | `result`           | `LogosResult` (from `<logos_result.h>`) — `{ success, value, error }` |
+
+  The **middle** column is the one your module publishes about itself —
+  it is what `lm` prints in Step 5, and what any other language's
+  binding of this contract sees. The right column is what a *C++/Qt*
+  caller of this module compiles against; a Rust or Nim caller gets
+  that language's spelling of the same middle column.
 
 - Use `int64_t` for integers (not `int`) — that's the type the parser recognizes.
 - **Document methods with `///`.** A doc comment (`///` or `/** … */`) directly above a method becomes its `description` in the module's introspection, surfaced by `lm`, `logoscore module-info`, and Basecamp. Plain `//` comments are ignored, so only intentional docs are exposed — you'll see this in action in Step 5.
@@ -616,9 +622,12 @@ Dependencies: (none)
 ```
 
 Output — each method you declared, with its doc comment as a
-`Description`. A single-line comment renders inline; a multi-line
-comment (`factorial`'s two `///` lines, `libVersion`'s `/** ... */`
-block, and `libVersionNotify`'s two `///` lines) keeps its line breaks:
+`Description`, plus the two identity methods (`name`, `version`) the
+generator derives from `metadata.json` so every module answers them
+without you writing them. A single-line comment renders inline; a
+multi-line comment (`factorial`'s two `///` lines, `libVersion`'s
+`/** ... */` block, and `libVersionNotify`'s two `///` lines) keeps
+its line breaks:
 
 ```
 Plugin Methods:
@@ -646,7 +655,7 @@ int fibonacci(int n)
   Invokable: yes
   Description: Returns the nth Fibonacci number (0-indexed).
 
-QString libVersion()
+tstr libVersion()
   Signature: libVersion()
   Invokable: yes
   Description:
@@ -659,11 +668,21 @@ void libVersionNotify()
   Description:
     Looks up the library version and emits it as a `versionReady`
     event instead of returning it. Used by the QML tutorial (Part 2).
+
+tstr name()
+  Signature: name()
+  Invokable: yes
+  Description: The module's name, as declared in its metadata.
+
+tstr version()
+  Signature: version()
+  Invokable: yes
+  Description: The module's version, as declared in its metadata.
 ```
 
 Three things to notice:
 
-- **Signatures are Qt-typed** (`int`, `QString`) even though you wrote `int64_t` / `std::string`. That's the generated glue: `lm` reports the wire types the synthesized Qt plugin exposes, so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`.
+- **Signatures are in LIDL, not C++** (`int`, `tstr`) even though you wrote `int64_t` / `std::string`. `lm` reports what the module *publishes about itself*, and a module publishes its **contract** — so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`. That is the same vocabulary as the `.lidl` the build derived from your header, and it is the only vocabulary in which this question has one right answer: your module is Qt-free, and a reader in Rust or Nim asking the same module the same question gets the same words back. Note `int` here is LIDL's `int`, which is **64-bit** — each type in the contract maps to exactly one type per language, and integers are 64-bit throughout, so a value that fits your `int64_t` cannot be silently truncated on the way across.
 - **Each `Description` is your doc comment**, carried through the module's method introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
 - **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
 
@@ -720,8 +739,8 @@ signature and `///` description:
 Plugin Events:
 ==============
 
-void versionReady(QString version)
-  Signature: versionReady(QString)
+void versionReady(tstr version)
+  Signature: versionReady(tstr)
   Description:
     Emitted by libVersionNotify() once the library version is known.
     Carries the version string read from libcalc.
@@ -813,15 +832,19 @@ Methods:
       Defined as n * (n-1) * ... * 1, with 0! = 1.
   fibonacci(n: int) -> int
       Returns the nth Fibonacci number (0-indexed).
-  libVersion() -> QString
+  libVersion() -> tstr
       Returns the version string of the wrapped libcalc C library.
       Read straight from the linked native library, not metadata.json.
   libVersionNotify() -> void
       Looks up the library version and emits it as a `versionReady`
       event instead of returning it. Used by the QML tutorial (Part 2).
+  name() -> tstr
+      The module's name, as declared in its metadata.
+  version() -> tstr
+      The module's version, as declared in its metadata.
 
 Events:
-  versionReady(version: QString)
+  versionReady(version: tstr)
       Emitted by libVersionNotify() once the library version is known.
       Carries the version string read from libcalc.
 ```

@@ -413,7 +413,7 @@ Dependencies:
 ./lm/bin/lm methods result/lib/calc_via_interface_plugin.dylib  # macOS
 ```
 
-Every `public` method is here. `int64_t` shows up as `int` and `std::string` as `QString` — the wire types the generated glue exposes.
+Every `public` method is here, published in the **LIDL contract** vocabulary rather than in C++ or Qt names: `int64_t` shows up as `int` and `std::string` as `tstr`. `lm` is reporting what the module says about itself, and what a module publishes is its contract.
 
 ---
 
