@@ -21,8 +21,8 @@
 # that git tag (passed to both `run` and `generate` so the executed commands and
 # the generated Markdown agree). Any further args are forwarded verbatim to the
 # `run` and `generate` invocations, so e.g. `--release-for REPO=REF` also works:
-#   ./run.sh --release 0.2.0
-#   ./run.sh --release 0.2.0 --release-for logos-basecamp=main
+#   ./run.sh --release TAG
+#   ./run.sh --release TAG --release-for logos-basecamp=main
 #
 set -euo pipefail
 

@@ -48,9 +48,9 @@ nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml
 # Generate the .md tutorial from the YAML spec
 nix run github:logos-co/logos-doctest -- generate tests/tutorial-wrapping-c-library.test.yaml
 
-# Pin all GitHub URLs to a specific release tag
-nix run github:logos-co/logos-doctest -- run tests/tutorial-wrapping-c-library.test.yaml --release 0.2.0
-nix run github:logos-co/logos-doctest -- generate tests/tutorial-wrapping-c-library.test.yaml --release 0.2.0
+# Pin all GitHub URLs to a specific release tag (omit --release to track latest)
+nix run github:logos-co/logos-doctest -- run tests/tutorial-wrapping-c-library.test.yaml --release TAG
+nix run github:logos-co/logos-doctest -- generate tests/tutorial-wrapping-c-library.test.yaml --release TAG
 ```
 
 > **Tip:** developing against a local `logos-doctest` checkout? Swap `github:logos-co/logos-doctest` for `path:../logos-doctest` (or wherever your checkout lives) to run your local changes.
@@ -95,7 +95,7 @@ nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml
 
 Press `q` to quit at any time. `--tui` needs an interactive terminal and the [`rich`](https://github.com/Textualize/rich) package — both are bundled in the doctest flake, so no extra install is needed when using `nix`.
 
-The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/0.2.0#output`. Set it to `""` or omit it for latest.
+The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`. Set it to `""` or omit it for latest.
 
 ## Example Modules
 
@@ -127,13 +127,13 @@ This:
 By default `run.sh` resolves every `{release}` placeholder to the latest commit on each repo. Pass `--release TAG` to pin them all to a git tag, so the executed commands and the generated Markdown both reference that tag:
 
 ```bash
-./run.sh --release 0.2.0
+./run.sh --release TAG
 ```
 
 Any further arguments are forwarded verbatim to the underlying `doctest run`/`generate` calls, so you can override a single repo's ref with `--release-for`:
 
 ```bash
-./run.sh --release 0.2.0 --release-for logos-basecamp=main
+./run.sh --release TAG --release-for logos-basecamp=main
 ```
 
 The `TAG` must exist on each referenced repo, or the `nix build`/`nix flake init` steps will fail to resolve it. Pinning expands each `{release}` placeholder so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`; omitting `--release` leaves them at latest.
@@ -141,7 +141,7 @@ The `TAG` must exist on each referenced repo, or the `nix build`/`nix flake init
 To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
 
 ```bash
-DOCTEST="nix run path:../logos-doctest --" ./run.sh --release 0.2.0
+DOCTEST="nix run path:../logos-doctest --" ./run.sh
 ```
 
 > **Note:** the run requires [Nix with flakes](https://nixos.org/download.html) and pulls/builds real dependencies (Qt, the Logos SDK), so the first run is slow. On Linux, add `--continue-on-fail` to the `run` command in `run.sh` if a known-failing prerequisite step would otherwise stop the chain early.
