@@ -911,6 +911,71 @@ sections:
           ```
 
   # ── Known Limitations (prose only) ─────────────────────────────────────────
+  # ── Intents (prose only) ───────────────────────────────────────────────────
+  #
+  # Prose rather than executable steps on purpose: a real intent needs TWO apps,
+  # and adding a second one here would double a tutorial that is about calc_ui.
+  # The executable two-app version lives in logos-basecamp's own doctests, which
+  # is where shell behaviour belongs.
+  - title: "Calling Another App"
+    text: |
+      `logos.callModule()` calls a module you name. Sometimes you want a
+      **capability** instead — "somebody sign this", "somebody open this chat" —
+      without knowing or caring which app provides it. That is an *intent*.
+
+      ### Requesting
+
+      Declare what you may ask for in `metadata.json`. Entries are **objects**,
+      not strings:
+
+      ```json
+      "uses": [ { "intent": "calc.history.show" } ]
+      ```
+
+      Then ask:
+
+      ```qml
+      logos.request("calc.history.show", { last: 10 }, function (res) {
+          if (res.ok) console.log("shown by", res.data.provider)
+          else        console.log("failed:", res.error)
+      })
+      ```
+
+      You may only request intents you declared — an undeclared request comes
+      back `not_declared`. The callback fires exactly once and always
+      asynchronously, and `res.data` is a real JS object, not a JSON string.
+
+      ### Providing
+
+      ```json
+      "provides": [ { "intent": "calc.history.show" } ]
+      ```
+
+      ```qml
+      Connections {
+          target: logos
+          function onIntentRequested(requestId, intent, params, requesterName) {
+              // Show whatever UI you need, then answer. Answering later is
+              // normal — you are not obliged to respond synchronously.
+              logos.respond(requestId, true, ({ provider: "calc_ui" }), "")
+          }
+      }
+      ```
+
+      Declaring `provides` without connecting `intentRequested` is the one
+      mistake that looks like a hang: the requester waits out the deadline and
+      gets `timeout`.
+
+      > **Watch the shape.** `"uses": ["calc.history.show"]` — a bare string
+      > array — is silently ignored, and the request then fails `not_declared`
+      > with nothing pointing at the manifest. Objects, always. Check the shell
+      > log for `IntentRegistry:` lines, which name every declaration it skipped.
+
+      If more than one installed app provides the same intent, the shell asks
+      the user which to use and remembers the answer if they tick the box. You
+      never see that list and cannot influence it — see
+      [Intents for App Developers](guide-intents-for-app-developers.md).
+
   - title: "Known Limitations"
     text: |
       ### QML-to-C++ type coercion

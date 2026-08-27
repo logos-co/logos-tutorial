@@ -168,7 +168,12 @@ sections:
           cd ..
         post_text: "Verify the symbols are exported:"
         extra_run:
-          run: "nm -gU lib/libcalc.{ext} | grep calc"
+          # Plain `nm`, no flags: the executed command has to work on BOTH
+          # platforms, and there is no shared flag that does. `-gU` is macOS
+          # ("defined only"); GNU nm rejects it and falls back to looking for
+          # a.out, which fails the step on Linux. The code_block below still
+          # shows the idiomatic per-platform form.
+          run: "nm lib/libcalc.{ext} | grep calc"
           code_block: |
             # Linux
             nm -D lib/libcalc.so | grep calc
