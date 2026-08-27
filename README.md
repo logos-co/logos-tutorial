@@ -8,6 +8,11 @@ Tutorial series and reference documentation for building Logos modules.
 
 - [Logos Developer Guide](logos-developer-guide.md)
 
+**Making apps talk to each other?** Read the short guide to intents — declaring a capability,
+requesting one, and what the shell does when several apps qualify:
+
+- [Intents for App Developers](guide-intents-for-app-developers.md)
+
 ## Next Tutorials
 
 Step-by-step tutorials that build on each other. Each creates a working module you can run.
