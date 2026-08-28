@@ -201,8 +201,6 @@ The full set of available fields:
   "main": "my_module_plugin",
   "interface": "universal",
   "dependencies": [],
-  "provides": [],
-  "uses": [],
   "include": [],
 
   "nix": {
@@ -237,8 +235,8 @@ The full set of available fields:
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
-| `provides`                       | No                                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
-| `uses`                           | No                                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
+| `provides`                       | No (`ui_qml` only)                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
+| `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
 | `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
@@ -1271,6 +1269,12 @@ Everything above is a module calling a **named** module: you know who you want
 and you call it. Intents are the other shape — you name a **capability** and let
 the shell find a provider.
 
+**Intents are for `ui_qml` apps only, and that is a design line rather than a
+V1 limit.** Core modules already call each other by name through `LogosAPI`
+(§8.1–§8.4), with no chooser and nothing to consent to. `provides` / `uses` on a
+non-`ui_qml` module are discarded before they are ever read, and — unlike the
+mistakes below — that drop is **silent**.
+
 ```qml
 // "Somebody show this chat group." The requester never learns who did.
 logos.request("chat.group.open", { groupId: "abc123" }, function (res) {
@@ -1299,7 +1303,8 @@ Both keys go in `metadata.json`, and both are **arrays of objects**:
 > "uses": [{"intent": "wallet.sign"}]   ← right
 > ```
 >
-> The request then fails with `not_declared` and nothing points at the manifest.
+> The request then fails with `not_declared`. The shell does say so, though:
+> look for an `IntentRegistry:` warning naming your module at startup.
 > Check the shell's log for `IntentRegistry:` lines, which name every
 > declaration that was skipped and why.
 
@@ -1372,7 +1377,7 @@ as `unavailable` — you cannot tell from the delay which side rejected you.
 The distinction from `failed` is what you should do next. `failed` means the
 world did not cooperate; retrying is reasonable. `bad_request` means you sent
 the wrong thing; retrying unchanged will fail identically. Check the provider's
-`provides[].params` in its `metadata.json` (§4.2) to see the shape it expects.
+`provides[].params` in its `metadata.json` (§8.5) to see the shape it expects.
 
 #### Describing what an intent needs — `provides[].params`
 
@@ -1421,10 +1426,6 @@ The shell raises a chooser. What you can rely on as an app author:
   influence how a provider is presented, and a provider cannot dress itself up
   in the chooser.
 - **The list is sorted**, so the order is stable across runs.
-- **"Always use this app"** persists the pick for that (requester, intent) pair.
-  It is re-checked at use, so an app being upgraded does not lose the
-  preference — and if the remembered provider stops declaring the intent, the
-  chooser simply comes back.
 - **Dismissing gives `cancelled`**, not `unavailable`, so you can distinguish
   "the user said no" from "there was nobody to ask". Treat `cancelled` as a
   normal outcome, not an error to report.
@@ -1432,8 +1433,6 @@ The shell raises a chooser. What you can rely on as an app author:
 The chosen provider is brought to the foreground **and left there.** The shell
 does not navigate back when your request completes; returning is ordinary
 navigation the user drives. Do not write your app expecting to regain focus.
-
-Clearing remembered choices lives in the shell's settings, not in your app.
 
 **`unavailable` is deliberately uninformative.** "Nobody provides this" and "you
 were not allowed" are the same answer, delivered on the same timing floor, so an
