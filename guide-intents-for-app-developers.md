@@ -86,6 +86,36 @@ did not describe are passed through untouched, so adding one later does not
 break existing callers. No `params` at all means "undescribed" — not "takes
 nothing" — and nothing is checked.
 
+**4. Say whether servicing it ends**, if it doesn't.
+
+When you respond, the shell takes the user back to whoever asked. That's right
+for a transaction — they came to sign something, it's signed, they're done with
+you. It's wrong when the whole point of the request was to *bring them to you*:
+opening a note, landing on a page, starting something they'll want to watch.
+
+Declare that and the shell leaves them where they are:
+
+```json
+"provides": [ { "intent": "wallet.open", "handoff": true } ]
+```
+
+Default is `false`. This controls **navigation only** — when you respond is a
+separate choice, and both are normal:
+
+- **Respond on arrival** when there is nothing to finish: you opened a page, and
+  that was the whole request.
+- **Hold it open** and respond when the user marks the action done. They still
+  aren't sent back — you just told the caller it really happened.
+
+Two things to get right:
+
+- **Mind the 10-minute deadline** if you hold a request open. After that the
+  shell reports `timeout` to the caller. Plenty for a button press; not for work
+  waiting on a network or a chain — respond once it's *started*, and let the
+  caller read the outcome from its own data source.
+- **`"handoff": "true"` is a string**, not a boolean, and is refused. You'd get
+  a transaction and a line in the shell's diagnostics.
+
 ---
 
 ## The result
@@ -159,6 +189,12 @@ Names are matched byte-exactly. Agree on one before you ship it — a name is a 
 6. **`uses` entries are objects, not strings.** `[{ "intent": "x" }]`, not `["x"]`. `cardinality`
    accepts only `"single"` today.
 
+7. **Show the result when you get it back.** Responding hands the user back to you, and arriving
+   somewhere is only *explained* by seeing what happened — render the outcome ("Payment sent") on
+   the screen they land on. Without it the shell looks like it moved for no reason. This is the one
+   part of the round trip the shell cannot do for you: it knows the request finished, not what
+   finishing meant in your app.
+
 ---
 
 ## Not possible yet
@@ -183,8 +219,15 @@ The shell raises a chooser. You get no say in it, and that is the point.
 - **Dismissing gives you `cancelled`**, not `unavailable` — so you can tell "the user said no" from
   "there was nobody to ask". Treat it as a normal outcome, not an error to report.
 
-**The provider keeps the foreground.** Once your request completes, the shell does *not* navigate
-back to you. Returning is something the user does. Do not write your app assuming it regains focus.
+**You get the foreground back when the provider answers** — a completed request returns the user to
+you, whether the provider succeeded or the user cancelled. Show the result when they arrive
+(gotcha 7); the motion only reads as a consequence if the screen explains it.
+
+Not guaranteed, though, and your app must not break without it. The shell stays put if the user
+navigated away while the provider was working, if the provider declared the intent a `handoff`, or
+if the request ended any way other than the provider answering — a timeout, or the provider going
+away. In all of those the result still reaches your callback exactly as normal; only the navigation
+is skipped. Write your handler as if focus is a bonus.
 
 ---
 
@@ -195,8 +238,8 @@ index. That is what lets a catalog answer "which installable package provides th
 own registry only sees packages already on disk.
 
 Intent **names** only. `uses` stays in `metadata.json`, because a catalog needs to know what a
-package *can do*, not what it wants to call — and so does your `params`, because the shell enforces
-that against the installed file, not the catalog's copy. Entries are objects (`{"intent": ...}`),
+package *can do*, not what it wants to call — and so do your `params` and `handoff`, because the
+shell reads both from the installed file rather than the catalog's copy. Entries are objects (`{"intent": ...}`),
 and a bare string is normalised up to that form.
 
 `provides` sits inside the manifest, which is the region a package signature covers — so once
