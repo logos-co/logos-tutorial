@@ -234,7 +234,8 @@ The full set of available fields:
 | `interface`                      | No                                     | --                 | Set to `"universal"` for the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. Omit for the older hand-written Qt-plugin pattern.                            |
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
-| `dependencies`                   | No                                     | `[]`               | Other Logos module names this depends on. Each entry must match the `name` field in that dependency's `metadata.json`.                                                                                                                                         |
+| `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module.                                                                                  |
+| `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded, never a load failure when absent, and not bundled. See [Optional dependencies](#optional-dependencies). |
 | `provides`                       | No (`ui_qml` only)                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
 | `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
@@ -1152,6 +1153,70 @@ void MyModulePlugin::initLogos(LogosAPI* api) {
 The generated `LogosModules` struct provides a member for each module, with methods matching the module's `Q_INVOKABLE` methods. For every method `foo()`, an async variant `fooAsync()` is also generated that takes a callback parameter.
 
 > **Prefer async wrappers.** Use `doSomethingAsync(...)` instead of `doSomething(...)` to avoid blocking the caller's thread. Synchronous calls can cause hangs if the target module is slow to respond.
+
+### Optional dependencies
+
+A module can name what it talks to in three ways, and they differ in **who picks
+the module** and **who guarantees it is running** — not in how you call it:
+
+| Field | Module chosen | Loader behaviour | Reached as |
+| --- | --- | --- | --- |
+| `dependencies` | at build time | auto-loaded; a failure to load one fails this module | `modules().<name>` |
+| `optional_dependencies` | at build time | never loaded, never required | `modules().<name>` |
+| `interface_dependencies` | at **runtime**, by you | never loaded | `modules().bind_<iface>(name)` |
+
+`optional_dependencies` is the middle one: the module name is concrete, so you
+get the same typed wrapper as a required dependency, but nothing guarantees it
+is there.
+
+```json
+"optional_dependencies": ["modules_state", "verified_proxy_module"]
+```
+
+Three things follow, all of them about lifetime:
+
+- the loader **never brings one up**, and never fails a load because one is missing;
+- unloading one **does not** take its dependents down;
+- it is **not bundled** — your consumers do not inherit its runtime closure.
+
+That last point is usually the reason to reach for this. Declaring a heavyweight
+module as a required dependency drags its whole closure into every consumer of
+*your* module, its tests and its packages, including users who will never install
+it.
+
+**Something else owns the lifetime.** Loading your module does not load these, so
+whatever brings them up — the app, `logoscore -l`, a package manager — has to.
+Write the module so it works when they are absent.
+
+**Bound the call.** A call to a module that is not running costs the full
+protocol deadline before it fails, so say what you are willing to wait:
+
+```cpp
+logos::CallError err;
+auto verdict = modules().verified_proxy_module.check(chainId, &err, /*timeout_ms=*/1500);
+if (err.code == "object_unavailable") { /* not running — carry on without it */ }
+```
+
+`object_unavailable` is how you tell "not there" from "there, and it said no".
+A module that ran and returned nothing is a different answer from one that was
+never reachable, and code that cannot tell them apart will eventually treat a
+sick dependency as a missing one.
+
+**Or ask first**, with `modules_state.is_ready("<name>")`. It reads the host's
+own registry, so it can say a module is genuinely **absent** — which nothing
+the transport sees locally can. Two limits: it answers the *host's* view rather
+than "a call from me will succeed" (it goes true a few hundred milliseconds
+early, before the per-caller token handshake), and a runtime whose
+`modules_state` feed is stale reports an empty listing. So treat a "yes" as
+reliable and a "no" as a hint — never the other way round, or a stale feed will
+have you skipping modules that are running.
+
+Each name still needs a flake input — the contract has to come from somewhere —
+but nothing is *built* from it: only the dependency's published `.lidl` is read.
+A name that publishes no contract is refused at build time rather than quietly
+falling back to building it, which would defeat the point. A name may not appear
+in `dependencies` or `interface_dependencies` as well: `modules()` has one member
+per name.
 
 ### Dependency Interfaces
 
