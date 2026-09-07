@@ -1218,6 +1218,13 @@ falling back to building it, which would defeat the point. A name may not appear
 in `dependencies` or `interface_dependencies` as well: `modules()` has one member
 per name.
 
+Both kinds also reach the `.lgx` **manifest** (0.6.0), the only copy an
+installer or catalog can read before unpacking: `optional_dependencies` so an
+installer can offer them without calling a package broken when one is absent,
+and `interface_dependencies` as **names only** — `file` and `impl_class` are
+paths into your own source tree and mean nothing in a shipped package, the same
+reason `provides` carries intent names alone.
+
 ### Dependency Interfaces
 
 A regular dependency couples a module to **one concrete provider**: you list `other_module` in `dependencies`, and the generated `modules().other_module` wrapper bakes that name into every call. A **dependency interface** instead lets a module declare a *contract* — a list of methods and events — that **any** module exposing a superset of it can satisfy, and bind that contract to a concrete module **chosen at runtime**.
