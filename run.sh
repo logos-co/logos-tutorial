@@ -118,6 +118,18 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-concurrent"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Optional Dependencies tutorial is another leaf that needs only Part 1's
+# calc_module — which it deliberately does NOT install at first, to show a
+# missing optional dependency being reported rather than failing the load.
+echo "==> Running Optional Dependencies tutorial into ${OUTPUT_DIR}/logos-calc-observer-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-observer-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-observer-module"
+"${DOCTEST[@]}" run tests/tutorial-modules-state.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-observer-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do

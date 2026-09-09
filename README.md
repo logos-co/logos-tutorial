@@ -31,6 +31,8 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Concurrent Dispatch:** [Concurrent Dispatch](outputs/tutorial-concurrent-dispatch.md) — build `calc_slow` (Rust, `concurrency: "multi"`) and `calc_fanout` (C++, ordinary), then *measure* the difference: four calls at the `multi` worker peak at 4 in flight; flip one metadata key to `"single"` and the identical fan-out peaks at 1. Fully standalone — no earlier part required.
 
+- **Optional Dependencies:** [Optional Dependencies and the Module Registry](outputs/tutorial-modules-state.md) — build `calc_observer`, whose `dependencies` list is empty and which names `calc_module` and `modules_state` under `optional_dependencies` instead. Runs three times — dependency never installed, installed and running, and pulled out from under a live module — to show what the middle dependency kind actually buys. Needs only Part 1.
+
 - **logos-dev-boost:** _(⚠️ **EXPERIMENTAL — NOT READY**)_ [Scaffolding Modules with logos-dev-boost](tutorial-dev-boost.md) — use the `logos-dev-boost` CLI to auto-generate modules from C library directories. Wraps libcalc (source-only) and sqlcipher (pre-built `.so`), including integration tests that create encrypted databases. Covers `--type module`, `--type full-app`, and `--lib-dir`.
 
 ## Executable Tutorials
@@ -116,6 +118,7 @@ Working module source code used by the tutorials:
 | `logos-calc-via-interface-module/` | `calc_via_interface` | `core` (binds an interface at runtime) | Dependency Interfaces |
 | `logos-calc-rust-module/` | `calc_rust` | `core` (Rust, depends on `calc_module`) | Writing a Module in Rust |
 | `logos-calc-concurrent/` | `calc_slow` + `calc_fanout` | `core` (Rust `multi` worker + C++ driver) | Concurrent Dispatch |
+| `logos-calc-observer-module/` | `calc_observer` | `core` (optional deps + `modules_state`) | Optional Dependencies |
 
 ## Regenerating the outputs
 
@@ -127,7 +130,7 @@ The `outputs/` directory (the rendered `.md` tutorials linked above, plus the bu
 
 This:
 
-1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs each remaining leaf — Composing Modules, Dependency Interfaces, Writing a Module in Rust, Concurrent Dispatch — into its own subdirectory, reusing the `calc_module` the chain just built (`--workdir`, so no leaf rebuilds its `requires:` chain).
+1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs each remaining leaf — Composing Modules, Dependency Interfaces, Writing a Module in Rust, Concurrent Dispatch, Optional Dependencies — into its own subdirectory, reusing the `calc_module` the chain just built (`--workdir`, so no leaf rebuilds its `requires:` chain).
 2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/`, named after the spec. CI diffs these against the generator, so a committed `.md` that has fallen behind its spec fails the build.
 3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the persistence scratch dirs the tutorials create (`calc-data/`, `.logoscore/`).
 

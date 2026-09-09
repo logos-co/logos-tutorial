@@ -1,0 +1,18 @@
+{
+  "name": "calc_observer",
+  "display_name": "Calc Observer",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "example",
+  "description": "Uses optional dependencies and reads the host's module registry",
+  "main": "calc_observer_plugin",
+  "interface": "universal",
+  "dependencies": [],
+  "optional_dependencies": ["modules_state", "calc_module"],
+
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+  }
+}

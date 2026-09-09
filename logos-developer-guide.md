@@ -1167,7 +1167,9 @@ the module** and **who guarantees it is running** — not in how you call it:
 
 `optional_dependencies` is the middle one: the module name is concrete, so you
 get the same typed wrapper as a required dependency, but nothing guarantees it
-is there.
+is there. [Optional Dependencies and the Module
+Registry](tutorial-modules-state.md) walks the whole thing end to end — the same
+module run with its dependency missing, present, and pulled out from under it.
 
 ```json
 "optional_dependencies": ["modules_state", "verified_proxy_module"]
@@ -1527,6 +1529,7 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 - **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs in a separate `ui-host` process. The remote interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource`, and the QML view reaches it through a typed replica (`logos.module()` + `QtRemoteObjects.watch()`).
 - **[Composing Modules](tutorial-composing-modules.md)** — build `calc_aggregator`, a core module that depends on `calc_module` and exercises every part of `LogosModuleContext`: the injected properties, per-instance persistence, typed sync and async dependency calls, and typed event subscription.
 - **[Dependency Interfaces](tutorial-interface-dependencies.md)** — build `calc_via_interface`, which declares a *contract* rather than a concrete dependency and binds it to a provider chosen at runtime. Its `dependencies` list stays empty. See [Dependency Interfaces](#dependency-interfaces).
+- **[Optional Dependencies and the Module Registry](tutorial-modules-state.md)** — build `calc_observer`, which declares its dependencies under `optional_dependencies` and reads the host's own registry through `modules_state`. See [Optional dependencies](#optional-dependencies).
 - **[Concurrent Dispatch](tutorial-concurrent-dispatch.md)** — build a `"concurrency": "multi"` worker and an ordinary driver, and measure the overlap: 4 concurrent calls against `multi`, 1 against `single`. See [§1.6](#16-concurrent-dispatch).
 - **[Writing a Module in Rust](tutorial-rust-module.md)** — build `calc_rust`, a core module written entirely in Rust that consumes the **C++** `calc_module` through the same typed `modules().calc_module` client a C++ consumer gets. Covers Rust-first authoring, the derived `.lidl`, typed events and `Option<T>`.
 
