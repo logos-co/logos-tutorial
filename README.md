@@ -25,6 +25,10 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Composing Modules:** [Composing Modules with the Module Context](outputs/tutorial-composing-modules.md) — build `calc_aggregator`, a `core` module that **depends on `calc_module`** and showcases everything `LogosModuleContext` offers: the `modulePath` / `instanceId` / `instancePersistencePath` properties, per-instance persistence wired up in `onContextReady()`, typed **sync** and **async** dependency callers (`modules().calc_module`), and typed event subscribers. No UI — driven entirely from `logoscore`. Needs only Part 1.
 
+- **Dependency Interfaces:** [Binding an Interface at Runtime](outputs/tutorial-interface-dependencies.md) — build `calc_via_interface`, a `core` module that declares a *calculator contract* instead of a concrete dependency and binds it to a provider chosen at runtime with `modules().bind_calculator(name)`. Its `dependencies` list is empty. Needs only Part 1.
+
+- **Writing a Module in Rust:** [Writing a Module in Rust](outputs/tutorial-rust-module.md) — build `calc_rust`, a `core` module written entirely in Rust that depends on the **C++** `calc_module` and calls it through the same typed `modules().calc_module` client a C++ consumer gets. Covers Rust-first authoring (the `trait` is the contract), the derived `.lidl`, typed events, and `Option<T>` as a real optional. Scaffold: `nix flake init -t ...#rust`. Needs only Part 1.
+
 - **logos-dev-boost:** _(⚠️ **EXPERIMENTAL — NOT READY**)_ [Scaffolding Modules with logos-dev-boost](tutorial-dev-boost.md) — use the `logos-dev-boost` CLI to auto-generate modules from C library directories. Wraps libcalc (source-only) and sqlcipher (pre-built `.so`), including integration tests that create encrypted databases. Covers `--type module`, `--type full-app`, and `--lib-dir`.
 
 ## Executable Tutorials
@@ -107,6 +111,8 @@ Working module source code used by the tutorials:
 | `logos-calc-ui/` | `calc_ui` | `ui_qml` (QML-only) | Part 2 |
 | `logos-calc-ui-cpp/` | `calc_ui_cpp` | `ui_qml` (C++ backend + QML view) | Part 3 |
 | `logos-calc-aggregator-module/` | `calc_aggregator` | `core` (depends on `calc_module`) | Composing Modules |
+| `logos-calc-via-interface-module/` | `calc_via_interface` | `core` (binds an interface at runtime) | Dependency Interfaces |
+| `logos-calc-rust-module/` | `calc_rust` | `core` (Rust, depends on `calc_module`) | Writing a Module in Rust |
 
 ## Regenerating the outputs
 
@@ -118,9 +124,9 @@ The `outputs/` directory (the rendered `.md` tutorials linked above, plus the bu
 
 This:
 
-1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs the **Composing Modules** tutorial into `outputs/logos-calc-aggregator-module/`, reusing the `calc_module` the chain just built (`--workdir`, so its `requires:` chain is not rebuilt).
-2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/` (`tutorial-wrapping-c-library.md`, `tutorial-qml-ui-app.md`, `tutorial-cpp-ui-app.md`, `tutorial-composing-modules.md`).
-3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the aggregator tutorial's `calc-data/` persistence scratch dir.
+1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs each remaining leaf — Composing Modules, Dependency Interfaces, Writing a Module in Rust — into its own subdirectory, reusing the `calc_module` the chain just built (`--workdir`, so no leaf rebuilds its `requires:` chain).
+2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/`, named after the spec. CI diffs these against the generator, so a committed `.md` that has fallen behind its spec fails the build.
+3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the persistence scratch dirs the tutorials create (`calc-data/`, `.logoscore/`).
 
 ### Pinning to a release tag
 

@@ -1524,7 +1524,10 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
-- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a C++ + QML view module that combines a QML frontend with a C++ backend. The backend exposes `Q_INVOKABLE` methods using the generated typed SDK; the QML view calls them via `logos.callModuleAsync()`.
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs in a separate `ui-host` process. The remote interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource`, and the QML view reaches it through a typed replica (`logos.module()` + `QtRemoteObjects.watch()`).
+- **[Composing Modules](tutorial-composing-modules.md)** — build `calc_aggregator`, a core module that depends on `calc_module` and exercises every part of `LogosModuleContext`: the injected properties, per-instance persistence, typed sync and async dependency calls, and typed event subscription.
+- **[Dependency Interfaces](tutorial-interface-dependencies.md)** — build `calc_via_interface`, which declares a *contract* rather than a concrete dependency and binds it to a provider chosen at runtime. Its `dependencies` list stays empty. See [Dependency Interfaces](#dependency-interfaces).
+- **[Writing a Module in Rust](tutorial-rust-module.md)** — build `calc_rust`, a core module written entirely in Rust that consumes the **C++** `calc_module` through the same typed `modules().calc_module` client a C++ consumer gets. Covers Rust-first authoring, the derived `.lidl`, typed events and `Option<T>`.
 
 ### 9.2 Module Dependencies
 

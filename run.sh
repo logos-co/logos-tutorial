@@ -94,6 +94,19 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-via-interface-module"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Rust tutorial is a leaf that needs only Part 1's calc_module, which it
+# consumes as a concrete dependency from Rust. Same standalone --workdir
+# treatment as the two above: it reuses ../logos-calc-module rather than
+# building a second one.
+echo "==> Running Rust Module tutorial into ${OUTPUT_DIR}/logos-calc-rust-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-rust-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-rust-module"
+"${DOCTEST[@]}" run tests/tutorial-rust-module.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-rust-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do
