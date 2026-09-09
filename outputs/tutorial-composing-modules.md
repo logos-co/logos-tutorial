@@ -44,10 +44,10 @@ This scaffolds a `flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` di
 
 ### 1.2 Remove the template's example sources
 
-The minimal template ships an example Qt plugin (`minimal_*`). Delete those — this tutorial supplies its own pure-C++ `src/` files:
+The minimal template ships an example `minimal_impl` class. Delete it — this tutorial supplies its own `src/` files:
 
 ```bash
-rm -f src/minimal_interface.h src/minimal_plugin.h src/minimal_plugin.cpp
+rm -f src/minimal_impl.h src/minimal_impl.cpp
 ```
 
 ---

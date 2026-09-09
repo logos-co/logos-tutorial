@@ -48,6 +48,7 @@ jobs:
           - composing-modules
           - interface-dependencies
           - rust-module
+          - concurrent-dispatch
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
     # jobs must opt into it to publish to the public cache.
     environment: ${{ github.ref == 'refs/heads/master' && 'public-cache' || '' }}

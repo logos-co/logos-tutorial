@@ -49,8 +49,8 @@ sections:
 
       - title: "Remove the template's example sources"
         text: |
-          The minimal template ships an example Qt plugin (`minimal_*`). Delete those — this tutorial supplies its own pure-C++ `src/` files:
-        run: "rm -f src/minimal_interface.h src/minimal_plugin.h src/minimal_plugin.cpp"
+          The minimal template ships an example `minimal_impl` class. Delete it — this tutorial supplies its own `src/` files:
+        run: "rm -f src/minimal_impl.h src/minimal_impl.cpp"
 
   # ── Step 2: Configure the module ────────────────────────────────────────────
   - title: "Configure the Module"

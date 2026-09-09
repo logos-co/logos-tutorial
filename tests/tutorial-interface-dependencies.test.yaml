@@ -49,8 +49,8 @@ sections:
 
       - title: "Remove the template's example sources"
         text: |
-          Delete the example Qt plugin the template ships — this tutorial supplies its own pure-C++ `src/` files:
-        run: "rm -f src/minimal_interface.h src/minimal_plugin.h src/minimal_plugin.cpp"
+          Delete the example `minimal_impl` class the template ships — this tutorial supplies its own `src/` files:
+        run: "rm -f src/minimal_impl.h src/minimal_impl.cpp"
 
   # ── Step 2: Declare the interface ───────────────────────────────────────────
   - title: "Declare the Interface"

@@ -107,6 +107,17 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-rust-module"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Concurrent Dispatch tutorial is fully standalone — it builds both of its
+# own modules and needs no calc_module at all.
+echo "==> Running Concurrent Dispatch tutorial into ${OUTPUT_DIR}/logos-calc-concurrent/"
+rm -rf "${OUTPUT_DIR}/logos-calc-concurrent"
+mkdir -p "${OUTPUT_DIR}/logos-calc-concurrent"
+"${DOCTEST[@]}" run tests/tutorial-concurrent-dispatch.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-concurrent" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do

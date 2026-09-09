@@ -1,0 +1,20 @@
+{
+  "name": "calc_slow",
+  "display_name": "Slow Worker",
+  "version": "1.0.0",
+  "type": "core",
+  "interface": "cdylib",
+  "concurrency": "single",
+  "category": "example",
+  "description": "A deliberately slow worker that records how many calls overlap",
+  "main": "calc_slow_plugin",
+  "dependencies": [],
+
+  "codegen": { "rust": { "crate": "rust-lib", "trait": "CalcSlowModule" } },
+
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+  }
+}
