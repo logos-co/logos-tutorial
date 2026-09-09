@@ -130,6 +130,17 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-observer-module"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Caller Identity tutorial is fully standalone — it builds both of its own
+# modules and needs no calc_module.
+echo "==> Running Caller Identity tutorial into ${OUTPUT_DIR}/logos-calc-guarded/"
+rm -rf "${OUTPUT_DIR}/logos-calc-guarded"
+mkdir -p "${OUTPUT_DIR}/logos-calc-guarded"
+"${DOCTEST[@]}" run tests/tutorial-caller-identity.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-guarded" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do
