@@ -7,14 +7,18 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
+  - [Required](#required)
+  - [Recommended Knowledge](#recommended-knowledge)
 - [Part 1: Creating a Module](#part-1-creating-a-module)
   - [1.1 Scaffold with logos-module-builder](#11-scaffold-with-logos-module-builder)
   - [1.2 Project Structure](#12-project-structure)
   - [1.3 The metadata.json Configuration](#13-the-metadatajson-configuration)
-  - [1.4 Writing Module Code](#14-writing-module-code)
+  - [1.4 Understanding the Module Code](#14-understanding-the-module-code)
   - [1.5 Building Your Module](#15-building-your-module)
+  - [1.6 Concurrent dispatch](#16-concurrent-dispatch)
+  - [1.7 Authoring in Rust and Nim](#17-authoring-in-rust-and-nim)
 - [Part 2: Inspecting Your Module](#part-2-inspecting-your-module)
-  - [2.1 The lm CLI Tool](#21-the-lm-cli-tool)
+  - [2.1 The `lm` CLI Tool](#21-the-lm-cli-tool)
   - [2.2 The logos-module-viewer](#22-the-logos-module-viewer)
 - [Part 3: Testing UI Modules](#part-3-testing-ui-modules)
   - [3.1 How It Works](#31-how-it-works)
@@ -23,30 +27,50 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
 - [Part 4: Packaging Your Module](#part-4-packaging-your-module)
   - [4.1 The LGX Package Format](#41-the-lgx-package-format)
   - [4.2 Building LGX Packages](#42-building-lgx-packages)
-    - [Built-in Nix Derivation (Preferred)](#built-in-nix-derivation-preferred)
-    - [Using nix bundle (Alternative)](#using-nix-bundle-alternative)
 - [Part 5: Installing and Managing Modules](#part-5-installing-and-managing-modules)
-  - [5.1 The lgpm CLI](#51-the-lgpm-cli)
+  - [5.1 The `lgpm` CLI](#51-the-lgpm-cli)
   - [5.2 Installing from Local Files](#52-installing-from-local-files)
-  - [5.3 Installing from a Registry](#53-installing-from-a-registry)
+  - [5.3 Downloading and Installing from a Registry](#53-downloading-and-installing-from-a-registry)
 - [Part 6: Running Your Module](#part-6-running-your-module)
-  - [6.1 Running with logoscore](#61-running-with-logoscore)
+  - [6.1 Running with `logoscore`](#61-running-with-logoscore)
 - [Part 7: Running in logos-basecamp](#part-7-running-in-logos-basecamp)
   - [7.1 Building logos-basecamp](#71-building-logos-basecamp)
   - [7.2 Module Types in logos-basecamp](#72-module-types-in-logos-basecamp)
 - [Part 8: Inter-Module Communication](#part-8-inter-module-communication)
   - [8.1 The LogosAPI](#81-the-logosapi)
   - [8.2 The C++ SDK Code Generator](#82-the-c-sdk-code-generator)
+  - [Optional dependencies](#optional-dependencies)
+  - [Dependency Interfaces](#dependency-interfaces)
+  - [Who Is Calling — Caller Identity](#who-is-calling--caller-identity)
+  - [Asking the Host What Is Running — `modules_state`](#asking-the-host-what-is-running--modulesstate)
   - [8.3 LogosResult](#83-logosresult)
   - [8.4 Communication Modes](#84-communication-modes)
+  - [8.5 App-to-App Intents](#85-app-to-app-intents)
 - [Part 9: Advanced Topics](#part-9-advanced-topics)
   - [9.1 Tutorials](#91-tutorials)
   - [9.2 Module Dependencies](#92-module-dependencies)
+  - [9.3 Exposing OpenMetrics / Prometheus Metrics](#93-exposing-openmetrics--prometheus-metrics)
+  - [9.4 Platform-keyed metadata](#94-platform-keyed-metadata)
+  - [9.5 Finishing before teardown](#95-finishing-before-teardown)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
+  - [`lm` -- Module Inspector](#lm----module-inspector)
+  - [`logoscore` -- Headless Runtime](#logoscore----headless-runtime)
+  - [`lgpm` -- Local Package Manager](#lgpm----local-package-manager)
+  - [`lgpd` -- Package Downloader](#lgpd----package-downloader)
+  - [`logos-cpp-generator` -- SDK Code Generator](#logos-cpp-generator----sdk-code-generator)
+  - [`nix-bundle-lgx` -- LGX Bundler](#nix-bundle-lgx----lgx-bundler)
+- [Reference: Flake Outputs](#reference-flake-outputs)
 - [Troubleshooting](#troubleshooting)
-
----
+  - ["experimental features" error with Nix](#experimental-features-error-with-nix)
+  - [Module loads but LogosAPI is not available](#module-loads-but-logosapi-is-not-available)
+  - [Module not discovered by logos-basecamp](#module-not-discovered-by-logos-basecamp)
+  - [lgpm install fails](#lgpm-install-fails)
+  - [Checking if a module loaded successfully](#checking-if-a-module-loaded-successfully)
+  - [UI module `nix run` fails to load dependencies](#ui-module-nix-run-fails-to-load-dependencies)
+  - [Capability module not found](#capability-module-not-found)
+  - [LGX variant mismatch](#lgx-variant-mismatch)
+  - [Cross-platform builds](#cross-platform-builds)
 
 ## Overview
 
@@ -148,7 +172,7 @@ nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 nix flake init -t github:logos-co/logos-module-builder#ui-qml
 ```
 
-> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. For reproducible builds, pin it to a specific commit — see the `flake.nix` examples in [Section 3.2](#32-building-lgx-packages) and the [tutorials](tutorial-wrapping-c-library.md#23-flakenix--nix-build-config).
+> **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. For reproducible builds, pin it to a specific commit — see the `flake.nix` examples in [§4.2 Building LGX Packages](#42-building-lgx-packages) and the [tutorials](tutorial-wrapping-c-library.md#23-flakenix--nix-build-config).
 
 **Available templates:**
 
@@ -231,8 +255,10 @@ The full set of available fields:
 | `description`                    | No                                     | `"A Logos module"` | Human-readable description                                                                                                                                                                                                                                     |
 | `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the standalone app plugin directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
-| `interface`                      | No                                     | --                 | Set to `"universal"` for the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. Omit for the older hand-written Qt-plugin pattern.                            |
+| `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). Omit for the older hand-written Qt-plugin pattern.                            |
+| `codegen`                        | No (required for `cdylib`)             | `{}`               | Where the builder finds your code and your contract. `codegen.rust = { crate, trait?, source?, staticlib? }` and `codegen.nim = { crate, main?, staticlib?, link? }` select a language core; `codegen.lidl` names a committed contract; `codegen.impl_header` / `impl_class` override the `universal` defaults. See [§1.7](#17-authoring-in-rust-and-nim).                            |
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
+| `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module.                                                                                  |
 | `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded, never a load failure when absent, and not bundled. See [Optional dependencies](#optional-dependencies). |
@@ -240,7 +266,9 @@ The full set of available fields:
 | `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
-| `include`                        | No                                     | `[]`               | Additional files (e.g. shared libraries like `libwaku.so`, `libwaku.dylib`) to bundle alongside the plugin in the output.                                                                                                                                      |
+| `host_services`                  | No                                     | `[]`               | Privileged host capabilities granted into the module's own image. Closed set: `token_registry`, `token_delivery` — both trust-root, and both hard-allowlisted to `capability_module` alone, because a build-time allowlist a module could extend from its own metadata would not be an allowlist. An ungranted module asking for one gets `LP_ERR_UNSUPPORTED` at runtime, however loudly its metadata asked.                            |
+| `platforms`                      | No                                     | `[]`               | Platform-keyed overlays merged into this metadata before anything else reads it. See [§9.4 Platform-keyed metadata](#94-platform-keyed-metadata).                            |
+| `include`                        | No                                     | `[]`               | Runtime files to stage beside the plugin that nothing links against — in practice, **`dlopen`'d libraries**. Nothing else can stage these: a library reached only through `dlopen` has no import-table or `DT_NEEDED` entry for the build to follow. Names are looked up in this module's `nix.packages.runtime` and resolved external libraries, under both `lib/` and `bin/`. A name that matches nothing is **normal** — the list is a deliberate cross-platform superset (`.so`, `.dylib` and `.dll` side by side), so at most one spelling can match.                                                                                                                                      |
 | `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
 | `nix.packages.runtime`           | No                                     | `[]`               | Nix packages for runtime                                                                                                                                                                                                                                       |
 | `nix.external_libraries`         | No                                     | `[]`               | External C/C++ libraries to wrap. Each entry is an object — see [configuration reference](https://github.com/logos-co/logos-module-builder/blob/master/docs/configuration.md#nixexternal_libraries) for fields (`name`, `vendor_path`, `build_command`, etc.). |
@@ -394,6 +422,92 @@ guaranteed** — don't rely on "event X always arrives before method Y returns";
 (3) a *caller* built against logos-protocol < 0.2 will see the raw pending marker
 instead of the result — rebuild callers against ≥ 0.2 (still compatible with every
 existing module) to consume a `multi` module concurrently.
+
+
+### 1.7 Authoring in Rust and Nim
+
+`interface: "cdylib"` builds a module whose core is written in another language.
+The plugin the host loads is the same artifact a C++ module produces — `lm`,
+`lgx`, `lgpm`, `logoscore` and basecamp cannot tell them apart — because the
+builder compiles your code to a static library and links it into the generated
+glue.
+
+#### Rust
+
+Two templates scaffold one:
+
+```bash
+nix flake init -t github:logos-co/logos-module-builder#rust
+nix flake init -t github:logos-co/logos-module-builder#rust-with-external-lib
+```
+
+Authoring is **Rust-first**: you write a `trait`, and the builder derives the
+`.lidl` from it. There is no `build.rs`, no committed contract to keep in step
+with the code, and no SDK version to choose — `logos-rust-sdk` is a path
+dependency the builder stages from the same revision its generator came from,
+so generated code and runtime cannot drift.
+
+```json
+"interface": "cdylib",
+"codegen": { "rust": { "crate": "rust-lib", "trait": "MyThingModule" } }
+```
+
+| Key | Meaning |
+| --- | --- |
+| `crate` | the crate directory, relative to the project root |
+| `trait` | **switches on Rust-first mode.** Omit it and the builder expects a committed `codegen.lidl` instead |
+| `source` | which file holds the trait. Default `src/lib.rs` |
+| `staticlib` | override the archive name. Defaults to the crate's `[lib]`/`[package]` name |
+
+The trait **name is derived**, not free: the module `name` in PascalCase, plus
+`Module` unless it already ends in it — `my_thing` → `MyThingModule`. Its methods
+are the module's API and its `///` comments become the contract's descriptions.
+A companion `<Trait>Events` trait declares typed events, each becoming an
+`emit_<name>` free function. Dependencies are reached through `modules().<dep>`,
+returning `Result<T, LogosError>`.
+
+`Cargo.lock` is **committed**, and the templates ship one. The crate depends on
+the SDK by a path the builder only materialises during a build, so a clean
+checkout cannot resolve it — shipping the lock is what makes `nix build` work as
+the first command you run. To regenerate it after changing dependencies, stage
+the SDK first:
+
+```bash
+nix build github:logos-co/logos-module-builder#rust-sdk-src -o logos-rust-sdk-src
+(cd rust-lib && cargo generate-lockfile)
+```
+
+Native crate dependencies go under `nix.rust`: `packages.build` become
+`nativeBuildInputs`, `packages.runtime` become `buildInputs`, and
+`nix.rust.toolchain` pins a rustc version.
+
+Worked end to end in [Writing a Module in Rust](tutorial-rust-module.md).
+
+#### Nim
+
+The same shape, one language further along:
+
+```json
+"interface": "cdylib",
+"codegen": { "nim": { "crate": "nim", "main": "my_thing.nim" } }
+```
+
+| Key | Meaning |
+| --- | --- |
+| `crate` | the Nim sources directory |
+| `main` | entry file. Default `<name>.nim` |
+| `staticlib` | archive name. Defaults to `name` with dashes replaced by underscores |
+| `link` | external C libraries to place after the Nim archive on the link line |
+
+The builder compiles with `nim c --app:staticlib --noMain --mm:orc -d:useMalloc
+-d:release` and stages the archive where CMake links it. The **whole** module
+source is staged, not just the crate directory, so sibling imports like
+`import ../src/...` resolve.
+
+> **The Nim surface is hand-written today.** Unlike Rust, there is no generator
+> deriving a contract from your code: you write the module-impl C ABI exports
+> yourself. A Nim `lidl-gen` is intended to close that gap. Treat this path as
+> newer and thinner than the Rust one, and there is no tutorial for it yet.
 
 ---
 
@@ -968,7 +1082,7 @@ nix build 'github:logos-co/logos-basecamp#bin-appimage'       # Linux AppImage
 nix build 'github:logos-co/logos-basecamp#bin-macos-app'      # macOS .app bundle
 ```
 
-> **Note:** When installing modules into logos-basecamp, the LGX variant type must match the build type. Dev builds of basecamp expect **dev** LGX variants (e.g., `darwin-arm64-dev`), while portable builds expect **portable** variants (e.g., `darwin-arm64`). Use the `dual` bundler (see [3.2](#32-bundling-with-nix-bundle-lgx)) to produce packages that work with both.
+> **Note:** When installing modules into logos-basecamp, the LGX variant type must match the build type. Dev builds of basecamp expect **dev** LGX variants (e.g., `darwin-arm64-dev`), while portable builds expect **portable** variants (e.g., `darwin-arm64`). Use the `dual` bundler (see [§4.2](#42-building-lgx-packages)) to produce packages that work with both.
 
 ### 7.2 Module Types in logos-basecamp
 
@@ -1275,6 +1389,107 @@ Binding is **not validated**: a module that does not satisfy the interface surfa
 
 See the [Dependency Interfaces tutorial](tutorial-interface-dependencies.md) for an end-to-end walkthrough, and [Composing Modules](tutorial-composing-modules.md) for the concrete-dependency counterpart.
 
+### Who Is Calling — Caller Identity
+
+Some methods should not be open to every module. You read who is calling with
+`logos::currentCaller()`:
+
+```cpp
+#include <logos_caller.h>
+
+std::string MyThingImpl::setLimit(int64_t n) {
+    const logos::LogosCaller caller = logos::currentCaller();
+    if (!caller.isModule("admin_module"))
+        return "refused";
+    m_limit = n;
+    return "ok";
+}
+```
+
+It is **ambient**, not a parameter: it never appears in a `.lidl`, and no method
+opts in. By the time your handler runs the caller has presented a token this
+module itself issued, so the identity is a fact the callee possesses rather than
+a claim the caller makes — an unauthorized call never reaches your handler at all.
+
+`LogosCaller` has five arms:
+
+| Arm | Carries | Seen when |
+| --- | --- | --- |
+| `Host` | **nothing** | the runtime itself — including a `logoscore call`, which the daemon relays under the host anchor |
+| `Module` | `name`, optional `instance` | one module calling another |
+| `Derived` | `parent`, `leaf` | a derived identity, e.g. a UI plugin under its module |
+| `Operator` | `name` | a named operator token |
+| `Unknown` | — | everything else |
+
+with `isHost()`, `isModule()`, `isModule(name)` (which ignores the instance, so a
+restarted module is still itself), `isDerived()`, `isOperator()` and `isUnknown()`.
+
+**`Host` carries no name, ever.** `"core"` and `"capability_module"` hold the same
+token value under two keys, so a name there would be a coin flip presented as a
+fact. Ask `isHost()`; do not go looking for which part of the runtime called.
+
+**`Unknown` is the fail-closed answer, and it is in band.** It covers an unnamed
+caller, a document this build cannot read, an arm from a newer protocol, and *no
+dispatch in flight on this thread* — a spawned worker, a timer, `onContextReady`,
+an event emission. Write the gate as `if (!caller.isModule(...)) refuse;` so every
+arm you did not think about lands on the refusal path.
+
+**The identity is valid for one dispatch, on the dispatching thread.** A handler
+that needs it later must copy it at the top.
+
+Two builds read `Unknown` forever, quietly. A **legacy `Q_INVOKABLE` Qt plugin**
+has no generated glue, so nothing pushes the identity in. And a module generated
+below **logos-protocol 0.6** has no caller machinery at all, yet still compiles,
+links and loads. Neither warns you — which is why a refusal should name what it
+saw.
+
+In Rust the surface is `logos_rust_sdk::current_caller()`, returning
+`Unknown | HostAnchor | Module{name, instance} | Derived{parent, leaf} | Operator{name}`,
+with `is_module(name)`, `identity()` for a map key and `describe_for_human()` for
+a log line.
+
+Worked end to end in [Caller Identity](tutorial-caller-identity.md).
+
+### Asking the Host What Is Running — `modules_state`
+
+`modules_state` is a read-only registry of every module the host knows about. It
+ships with the runtime and is loaded for you, so it is normally named under
+`optional_dependencies` rather than `dependencies`.
+
+| Call | Answers |
+| --- | --- |
+| `list_modules()` | a `ModuleListing` — every known module, plus `partial` and a listing-level `seq` |
+| `module_record(name)` | one record, or **null** |
+| `is_ready(name)` | loaded **and** has published its object |
+| `module_state_changed` | every applied transition, as an old/new pair |
+
+Records carry six states — `unloaded`, `loading`, `loaded`, `ready`, `stopping`,
+`error`. A seventh, `absent`, appears **only in events**: a module that is absent
+is simply not in the listing, and `module_record` answers null. One spelling for
+"not there", not two — and `absent` (never heard of it) is a different answer from
+`unloaded` (installed, not running).
+
+Three things to get right:
+
+- **null is not a failure.** The empty optional crosses the wire as JSON null;
+  success or failure is decided by the call's error channel, never by the value.
+- **`partial: true` is an honest short answer**, not a health flag — the host's
+  last scan skipped something. A silently short list would be worse.
+- **Treat an unrecognised state as "not loaded", never as an error.** That rule is
+  normative: otherwise the day a new state is introduced is the day every existing
+  consumer breaks.
+
+`is_ready` answers *the host's* view, not "a call from me will succeed" — that
+additionally needs a per-caller handshake this module cannot know about, so it
+goes true a few hundred milliseconds early. Treat a **yes** as reliable and a
+**no** as a hint, never the other way round.
+
+Its read surface is open to every module. Its ingest surface — `note_transition`
+and `apply_snapshot`, which write the facts everyone else trusts — admits the
+**host only**, gated exactly as described above.
+
+Worked end to end in [Optional Dependencies and the Module Registry](tutorial-modules-state.md).
+
 ### 8.3 LogosResult
 
 Many module methods return `LogosResult` for structured success/error handling:
@@ -1555,9 +1770,9 @@ Each module publishes a small, language-neutral **LIDL interface contract** as a
 
 This is the same `logos-cpp-generator` from [§8.2](#82-the-c-sdk-code-generator), just driven by the dependency's LIDL contract — the same kind of `.lidl`/`.h` contract `interface_dependencies` uses — instead of inspecting a compiled plugin. Inspecting a compiled plugin (as §8.2 describes) is the manual/standalone path; for declared module dependencies the builder uses the contract path, which is why no dependency plugin is built.
 
-Because the contract is LIDL, the dependency's implementation language doesn't matter: the pipeline is `source → LIDL → C++` for a C++ module today, and `Rust → LIDL → C++` for a Rust module tomorrow — the same generated `modules().<dep>` wrapper either way.
+Because the contract is LIDL, the dependency's implementation language doesn't matter: the pipeline is `source → LIDL → C++` for a C++ module and `Rust → LIDL → C++` for a Rust one — the same generated `modules().<dep>` wrapper either way. [Writing a Module in Rust](tutorial-rust-module.md) has a Rust module consuming a C++ one, and [Concurrent Dispatch](tutorial-concurrent-dispatch.md) has it the other way round.
 
-> **Transitional fallback.** A dependency built by an older `logos-module-builder` won't expose a `lidl` output yet; for those the builder falls back to the previous behavior (build the dependency and copy its generated headers), so mixed dependency graphs keep working.
+> **There is no fallback.** The builder used to build a dependency and copy its generated headers when it published no `lidl`; that path has been retired. A dependency that publishes no contract is now **refused by name** at eval, before anything is built — quietly building it instead would defeat the point of reading a contract in the first place.
 
 To force a specific contract source for a dependency — a committed `.lidl`, a header in another repo, etc. — add a `dependency_overrides` entry keyed by the dependency name:
 
@@ -1638,6 +1853,69 @@ logoscore --config-dir /tmp/om load-module openmetrics
 logoscore --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
 curl http://localhost:9090/metrics
 ```
+
+
+### 9.4 Platform-keyed metadata
+
+A module that needs different values per OS or architecture writes **overlays**
+instead of a hand-maintained superset. They are merged before anything else reads
+the metadata, so every consumer sees one already-resolved config.
+
+```json
+"include": [],
+"platforms": [
+  { "when": { "os": "linux" },   "include": ["libcore.so"] },
+  { "when": { "os": "darwin" },  "include": ["libcore.dylib"] },
+  { "when": { "os": "windows" }, "include": ["libcore.dll"] }
+],
+
+"nix": {
+  "packages": { "runtime": ["nlohmann_json"] },
+  "platforms": [
+    { "when": { "os": "linux" }, "packages": { "runtime": ["krb5"] } },
+    { "when": { "architecture": "arm64" }, "cmake": { "extra_link_libraries": ["atomic"] } }
+  ]
+}
+```
+
+Overlays are read from **exactly two places** — the top level and `nix`. Anywhere
+else is a hard error naming the path, rather than an overlay that silently never
+fires. `when` matches on `os`, `architecture` and `abi`; a misspelled selector, and
+a valid-but-unreachable one, both throw at eval.
+
+Merging is: lists **concatenate**, scalars are last-wins, objects recurse, and a
+`null` or a type mismatch is an error.
+
+> **The trap is that lists concatenate.** A value left in the base is *added to*,
+> not replaced. Writing `"include": ["libcore.so"]` in the base and a `darwin`
+> overlay for the `.dylib` gives macOS **both** names. Leave the base empty and put
+> every spelling in an overlay.
+
+Not everything may be overlaid. `name`, `version`, `type`, `interface`, `codegen`,
+`icon`, `view`, `category`, `description`, `concurrency`, `host_services`,
+`interface_dependencies` and `dependency_overrides` are refused on principle — a
+module's identity, its authoring model and its thread-safety obligation must not
+depend on which machine produced the binary.
+
+### 9.5 Finishing before teardown
+
+A module gets one chance to finish work before it is unloaded:
+
+```cpp
+protected:
+    LogosShutdown aboutToUnload() override;
+```
+
+Return **`LogosShutdown::Synchronous`** (the default) to say "already quiescent —
+tear me down now". Return **`LogosShutdown::Asynchronous`** to say "wait for me",
+and call `unloadFinished()` when you are done. The host waits, but only for a
+bounded grace period: a module that asks and never finishes costs a bounded delay
+and is torn down anyway.
+
+> **Do not debug this on stderr.** The subprocess container closes the child's
+> stdout and stderr *before* it sends the stop signal, so anything you print during
+> teardown is never relayed — and a silent probe looks exactly like a hook that
+> never fired. Write to a file instead.
 
 ---
 
@@ -1720,6 +1998,31 @@ nix bundle --bundler github:logos-co/nix-bundle-lgx .#lib            # Dev varia
 nix bundle --bundler github:logos-co/nix-bundle-lgx#portable .#lib   # Portable variant
 nix bundle --bundler github:logos-co/nix-bundle-lgx#dual .#lib       # Both variants
 ```
+
+
+## Reference: Flake Outputs
+
+What a module's flake gives you, beyond `nix build`.
+
+| Output | Produces |
+| --- | --- |
+| `.#default` | the plugin plus its generated headers — what `nix build` gives you |
+| `.#lib` | the plugin shared library alone |
+| `.#lidl` | the module's **published contract**. Cheap: no plugin is compiled. This is what consumers generate their typed clients from |
+| `.#generate` | a ready-to-build source tree with every generator already run and `generated_code/` fully populated. Build it from `nix develop` without re-running a generator — and read it when you want to know what your wrapper actually looks like |
+| `.#include` | the generated SDK headers |
+| `.#headers-qt` / `.#headers-lp` | dependency wrappers, Qt-typed and Qt-free respectively |
+| `.#lgx` / `.#lgx-portable` | the signed `.lgx` package, dev and portable variants |
+| `.#install` / `.#install-portable` | build, bundle and install via `lgpm` in one step |
+| `.#unit-tests` | added automatically when `tests/CMakeLists.txt` exists; also a `check` |
+| `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — relaunch and QML edits are picked up with no rebuild |
+| `.#integration-test` (`ui_qml`) | headless UI tests via logos-qt-mcp; also a `check` |
+| `nix run .` (`ui_qml`) | the standalone app, with the plugin and its dependency modules |
+
+Every one of these also exists per system, including the cross target:
+`nix build .#packages.x86_64-windows.lgx-portable`. That target is a
+**pseudo-system** — it evaluates anywhere but only realises on `x86_64-linux`,
+because Windows is cross-built.
 
 ---
 
