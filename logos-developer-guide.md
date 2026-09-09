@@ -146,18 +146,26 @@ nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 
 # For ui_qml modules (QML-only, no C++)
 nix flake init -t github:logos-co/logos-module-builder#ui-qml
+
+# Or scaffold the same core module written in Rust
+nix flake init -t github:logos-co/logos-module-builder#rust
+
+# Or a Rust module that links an external C library
+nix flake init -t github:logos-co/logos-module-builder#rust-with-external-lib
 ```
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. For reproducible builds, pin it to a specific commit — see the `flake.nix` examples in [Section 3.2](#32-building-lgx-packages) and the [tutorials](tutorial-wrapping-c-library.md#23-flakenix--nix-build-config).
 
 **Available templates:**
 
-| Template            | Use Case                                              |
-| ------------------- | ----------------------------------------------------- |
-| `default`           | Minimal core module (C++ backend, no UI)              |
-| `with-external-lib` | Core module wrapping an external C/C++ library        |
-| `ui-qml-backend`    | ui_qml with C++ backend + QML view (process-isolated) |
-| `ui-qml`            | ui_qml QML-only (in-process, no C++)                  |
+| Template                 | Use Case                                              |
+| ------------------------ | ----------------------------------------------------- |
+| `default`                | Minimal core module (C++ backend, no UI)              |
+| `with-external-lib`      | Core module wrapping an external C/C++ library        |
+| `ui-qml-backend`         | ui_qml with C++ backend + QML view (process-isolated) |
+| `ui-qml`                 | ui_qml QML-only (in-process, no C++)                  |
+| `rust`                   | Minimal core module written in Rust                   |
+| `rust-with-external-lib` | Rust core module linking an external C library        |
 
 The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
 
