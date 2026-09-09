@@ -1,0 +1,23 @@
+[package]
+name = "calc_slow"
+version = "1.0.0"
+edition = "2021"
+
+# Standalone crate — the empty table keeps cargo from adopting any workspace it
+# finds in a parent directory.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+
+# Cargo.lock is committed — the builder feeds it to buildRustPackage. To
+# regenerate it after changing dependencies, stage the SDK the path dep below
+# points at, then resolve against it:
+#   nix build github:logos-co/logos-module-builder#rust-sdk-src -o logos-rust-sdk-src
+#   (cd rust-lib && cargo generate-lockfile)
+
+[dependencies]
+serde_json = "1"
+# Staged by the builder from the same logos-rust-sdk revision its code
+# generator comes from, so there is no generator/runtime skew to manage.
+logos-rust-sdk = { path = "../logos-rust-sdk-src" }

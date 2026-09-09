@@ -1,0 +1,21 @@
+{
+  "name": "calc_rust",
+  "display_name": "Rust Calculator",
+  "version": "1.0.0",
+  "type": "core",
+  "interface": "cdylib",
+  "category": "example",
+  "description": "Statistics over calc_module, written in Rust",
+  "main": "calc_rust_plugin",
+  "dependencies": ["calc_module"],
+
+  "codegen": {
+    "rust": { "crate": "rust-lib", "trait": "CalcRustModule" }
+  },
+
+  "nix": {
+    "packages": { "build": [], "runtime": [] },
+    "external_libraries": [],
+    "cmake": { "find_packages": [], "extra_sources": [], "extra_include_dirs": [], "extra_link_libraries": [] }
+  }
+}

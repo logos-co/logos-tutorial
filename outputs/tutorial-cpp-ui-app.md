@@ -918,6 +918,49 @@ You declare each pattern in the `.rep` and implement it in your `*Backend` (whic
 
 The last live row uses the `LogosUiPluginContext` surface — Qt-typed `modules()` callers and event subscriptions armed in `onContextReady()`: `versionEvent` is a PROP fed by the `modules().calc_module.onVersionReady(...)` subscription, and the *Announce version* button drives it. **Model** is the one pattern shown but not built here — for a `QAbstractItemModel*` Q_PROPERTY remoted via `logos.model()`, see [Next Steps](#next-steps).
 
+## Offering a Capability to Other Apps
+
+A `.rep` interface is how *your* QML talks to *your* backend. It is
+private — no other app can see it, and that is deliberate.
+
+When you want another app to be able to use something you do, declare an
+**intent** instead. Unlike a `.rep` method, an intent is addressed by
+capability rather than by app name, so a caller never has to know you
+exist.
+
+In `metadata.json` — entries are **objects**, not strings:
+
+```json
+"provides": [ { "intent": "calc.evaluate" } ]
+```
+
+Handle it in your QML view, exactly like any other signal:
+
+```qml
+Connections {
+    target: logos
+    function onIntentRequested(requestId, intent, params, requesterName) {
+        // Your backend is still reached the normal way — via the replica.
+        // The intent is just how the request arrived.
+        var result = backend.evaluate(params.expression)
+        logos.respond(requestId, true, ({ value: result }), "")
+    }
+}
+```
+
+Answering later is fine and usually right: show whatever UI you need,
+let the user decide, then call `logos.respond`. What you must not do is
+declare `provides` and never connect `intentRequested` — the requester
+then waits out the deadline and gets `timeout`.
+
+Because `provides` is copied into the signed `.lgx` manifest, a catalog
+can see what your package offers before it is installed. `uses` is not
+copied: what you can *do* is public, what you want to *call* is not.
+
+Full API and error codes: [Developer Guide](logos-developer-guide.md)
+§8.5. App-author walkthrough:
+[Intents for App Developers](guide-intents-for-app-developers.md).
+
 ## Next Steps
 
 - This tutorial already exercises slots, PROPs of different types and modes, and a signal — extend them with more state for your own UI

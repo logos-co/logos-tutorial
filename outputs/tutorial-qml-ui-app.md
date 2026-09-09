@@ -628,15 +628,15 @@ Launch basecamp pointed at that data directory. The `calc_ui` plugin appears in 
 ![calc_module returns 3 + 5 = 8](images/basecamp-calc-installed.png)
 
 The doc comments you wrote on `calc_module`'s methods and events in
-Part 1 also surface in basecamp. Open **Settings → Modules → Core
-Modules**, then open `calc_module`'s **Interface** — each method and
-event shows its `description`.
+Part 1 also surface in basecamp. Open **Settings → Module
+Inspector**, then open `calc_module`'s **Interface** — each method
+and event shows its `description`.
 
 ![Method and event descriptions render (single- and multi-line)](images/basecamp-interface-docs.png)
 
 The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-The **Interface** screen (Settings → Modules → Core Modules → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
+The **Interface** screen (Settings → Module Inspector → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
 The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 
@@ -823,6 +823,65 @@ node tests/ui-tests.mjs  # in another terminal
 ```
 
 ---
+
+## Calling Another App
+
+`logos.callModule()` calls a module you name. Sometimes you want a
+**capability** instead — "somebody sign this", "somebody open this chat" —
+without knowing or caring which app provides it. That is an *intent*.
+
+### Requesting
+
+Declare what you may ask for in `metadata.json`. Entries are **objects**,
+not strings:
+
+```json
+"uses": [ { "intent": "calc.history.show" } ]
+```
+
+Then ask:
+
+```qml
+logos.request("calc.history.show", { last: 10 }, function (res) {
+    if (res.ok) console.log("shown by", res.data.provider)
+    else        console.log("failed:", res.error)
+})
+```
+
+You may only request intents you declared — an undeclared request comes
+back `not_declared`. The callback fires exactly once and always
+asynchronously, and `res.data` is a real JS object, not a JSON string.
+
+### Providing
+
+```json
+"provides": [ { "intent": "calc.history.show" } ]
+```
+
+```qml
+Connections {
+    target: logos
+    function onIntentRequested(requestId, intent, params, requesterName) {
+        // Show whatever UI you need, then answer. Answering later is
+        // normal — you are not obliged to respond synchronously.
+        logos.respond(requestId, true, ({ provider: "calc_ui" }), "")
+    }
+}
+```
+
+Declaring `provides` without connecting `intentRequested` is the one
+mistake that looks like a hang: the requester waits out the deadline and
+gets `timeout`.
+
+> **Watch the shape.** `"uses": ["calc.history.show"]` — a bare string
+> array — is silently ignored, and the request then fails `not_declared`
+> with nothing pointing at the manifest. Objects, always. Check the shell
+> log for `IntentRegistry:` lines, which name every declaration it skipped.
+
+If more than one installed app provides the same intent, the shell asks
+the user which to use and remembers the answer if they tick the box. You
+never see that list and cannot influence it — see
+[Intents for App Developers](guide-intents-for-app-developers.md).
 
 ## Known Limitations
 

@@ -94,6 +94,53 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-via-interface-module"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# The Rust tutorial is a leaf that needs only Part 1's calc_module, which it
+# consumes as a concrete dependency from Rust. Same standalone --workdir
+# treatment as the two above: it reuses ../logos-calc-module rather than
+# building a second one.
+echo "==> Running Rust Module tutorial into ${OUTPUT_DIR}/logos-calc-rust-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-rust-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-rust-module"
+"${DOCTEST[@]}" run tests/tutorial-rust-module.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-rust-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
+# The Concurrent Dispatch tutorial is fully standalone — it builds both of its
+# own modules and needs no calc_module at all.
+echo "==> Running Concurrent Dispatch tutorial into ${OUTPUT_DIR}/logos-calc-concurrent/"
+rm -rf "${OUTPUT_DIR}/logos-calc-concurrent"
+mkdir -p "${OUTPUT_DIR}/logos-calc-concurrent"
+"${DOCTEST[@]}" run tests/tutorial-concurrent-dispatch.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-concurrent" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
+# The Optional Dependencies tutorial is another leaf that needs only Part 1's
+# calc_module — which it deliberately does NOT install at first, to show a
+# missing optional dependency being reported rather than failing the load.
+echo "==> Running Optional Dependencies tutorial into ${OUTPUT_DIR}/logos-calc-observer-module/"
+rm -rf "${OUTPUT_DIR}/logos-calc-observer-module"
+mkdir -p "${OUTPUT_DIR}/logos-calc-observer-module"
+"${DOCTEST[@]}" run tests/tutorial-modules-state.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-observer-module" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
+# The Caller Identity tutorial is fully standalone — it builds both of its own
+# modules and needs no calc_module.
+echo "==> Running Caller Identity tutorial into ${OUTPUT_DIR}/logos-calc-guarded/"
+rm -rf "${OUTPUT_DIR}/logos-calc-guarded"
+mkdir -p "${OUTPUT_DIR}/logos-calc-guarded"
+"${DOCTEST[@]}" run tests/tutorial-caller-identity.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-calc-guarded" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do

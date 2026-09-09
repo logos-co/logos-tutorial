@@ -8,10 +8,10 @@ name: Tutorial Tests
 #      the gh-pages branch on its first run.)
 #   2. Nothing else — GITHUB_TOKEN already has the permissions granted below.
 #
-# Each run publishes the two-column HTML report to:
-#   https://<owner>.github.io/<repo>/pr-<N>/<os>/      (pull requests)
-#   https://<owner>.github.io/<repo>/main/<os>/        (pushes to main/master)
-# and (for PRs) posts/updates a comment with the links.
+# Each run publishes one two-column HTML report per tutorial per OS to:
+#   https://<owner>.github.io/<repo>/pr-<N>/<tutorial>/<os>/   (pull requests)
+#   https://<owner>.github.io/<repo>/main/<tutorial>/<os>/     (pushes to main/master)
+# with an index at the ref root, and (for PRs) a comment linking to it.
 #
 # Note: pull requests opened from forks get a read-only GITHUB_TOKEN, so the
 # Pages push and PR comment are skipped for them — the downloadable artifact is
@@ -29,12 +29,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # One cell per leaf spec per OS. Leaves only — Parts 1 and 2 are pulled in by
+  # tutorial-cpp-ui-app's `requires:` chain, so naming them here would build
+  # them twice.
+  #
+  # This used to be a single cell running every leaf back-to-back, which spent
+  # 29-51 min of a 90 min budget and took the whole report down with one bad
+  # step. One cell per spec keeps each tutorial inside its own budget and lets
+  # a failure name itself.
   tutorial-tests:
-    name: Tutorial Tests (${{ matrix.os }})
+    name: ${{ matrix.tutorial }} (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        tutorial:
+          - cpp-ui-app
+          - composing-modules
+          - interface-dependencies
+          - rust-module
+          - concurrent-dispatch
+          - modules-state
+          - caller-identity
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
     # jobs must opt into it to publish to the public cache.
     environment: ${{ github.ref == 'refs/heads/master' && 'public-cache' || '' }}
@@ -45,30 +61,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      # The runner is the shared `doctest` CLI, invoked directly via its flake
 
       - name: Setup Nix and Logos cache
         uses: logos-co/setup-nix-cache-action@v1
         with:
           attic-token-ci: ${{ secrets.ATTIC_TOKEN_CI }}
           attic-token-public: ${{ secrets.ATTIC_TOKEN_PUBLIC }}
+
+      # The runner is the shared `doctest` CLI, invoked directly via its flake
       # (github:logos-co/logos-doctest). The flake bundles Python + PyYAML
       # (+ rich), so no pip install step is needed.
-      - name: Test - UI chain + Composing Modules + Dependency Interfaces (C Library tutorial pulled in via requires)
+      #
+      # --continue-on-fail so the run walks every step and the published report
+      # is complete. The job still fails (non-zero exit) if any step failed;
+      # this only changes whether we stop early.
+      - name: Run tutorial
         run: |
-          # Three leaves, run back-to-back into one report:
-          #   - tutorial-cpp-ui-app: the Part 1 -> 2 -> 3 chain (requires:)
-          #   - tutorial-composing-modules: the calc_aggregator core module
-          #     (requires Part 1 only)
-          #   - tutorial-interface-dependencies: the calc_via_interface module
-          #     binding a calculator interface at runtime (requires Part 1 only)
-          # --continue-on-fail so the run walks every step and the published
-          # report is complete. The job still fails (non-zero exit) if any step
-          # failed; this only changes whether we stop early.
           nix run github:logos-co/logos-doctest -- run \
-            tests/tutorial-cpp-ui-app.test.yaml \
-            tests/tutorial-composing-modules.test.yaml \
-            tests/tutorial-interface-dependencies.test.yaml \
+            tests/tutorial-${{ matrix.tutorial }}.test.yaml \
             --verbose \
             --continue-on-fail \
             --report "${{ runner.temp }}/tutorial-report.html"
@@ -89,25 +99,44 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tutorial-report-${{ matrix.os }}
+          name: tutorial-report-${{ matrix.tutorial }}-${{ matrix.os }}
           path: report-out/index.html
           if-no-files-found: warn
 
-      - name: Verify markdown generation
+  # Generation is platform-independent and cheap (no module is built), so it is
+  # one job rather than a matrix cell. It diffs against the committed outputs/
+  # because execution and generation share one source of truth: a spec that runs
+  # green while outputs/ says something else means the published tutorial is
+  # describing a run that never happened. Both UI tutorials drifted for three
+  # weeks before this existed.
+  verify-generation:
+    name: Generated markdown matches outputs/
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Nix and Logos cache
+        uses: logos-co/setup-nix-cache-action@v1
+        with:
+          attic-token-ci: ${{ secrets.ATTIC_TOKEN_CI }}
+
+      - name: Generate every spec and diff against outputs/
+        shell: bash
         run: |
-          nix run github:logos-co/logos-doctest -- generate \
-            tests/tutorial-wrapping-c-library.test.yaml \
-            -o /tmp/gen-part1.md
-          nix run github:logos-co/logos-doctest -- generate \
-            tests/tutorial-qml-ui-app.test.yaml \
-            -o /tmp/gen-part2.md
-          nix run github:logos-co/logos-doctest -- generate \
-            tests/tutorial-composing-modules.test.yaml \
-            -o /tmp/gen-composing.md
-          nix run github:logos-co/logos-doctest -- generate \
-            tests/tutorial-interface-dependencies.test.yaml \
-            -o /tmp/gen-interface-deps.md
-          echo "Generated markdown successfully"
+          set -uo pipefail
+          drift=0
+          for spec in tests/*.test.yaml; do
+            name="$(basename "$spec" .test.yaml)"
+            nix run github:logos-co/logos-doctest -- generate "$spec" -o "/tmp/$name.md"
+            if ! diff -u "outputs/$name.md" "/tmp/$name.md"; then
+              echo "::error file=outputs/$name.md::outputs/$name.md is stale — regenerate it with ./run.sh (or doctest generate $spec -o outputs/$name.md)"
+              drift=1
+            fi
+          done
+          exit "$drift"
 
   publish-report:
     name: Publish report to GitHub Pages
@@ -147,27 +176,44 @@ jobs:
 
           mkdir -p "site/$BASE"
           found=""
-          for os in ubuntu-latest macos-latest; do
-            src="artifacts/tutorial-report-$os/index.html"
-            if [ -f "$src" ]; then
-              mkdir -p "site/$BASE/$os"
-              cp "$src" "site/$BASE/$os/index.html"
-              found="$found $os"
-            fi
+          # Artifacts are named tutorial-report-<tutorial>-<os>. Splitting on the
+          # OS suffix rather than the first dash is what keeps a tutorial id
+          # containing dashes (every one of them) intact.
+          for dir in artifacts/tutorial-report-*/; do
+            [ -f "$dir/index.html" ] || continue
+            n="$(basename "$dir")"; n="${n#tutorial-report-}"
+            for os in ubuntu-latest macos-latest; do
+              case "$n" in
+                *-"$os")
+                  id="${n%-$os}"
+                  mkdir -p "site/$BASE/$id/$os"
+                  cp "$dir/index.html" "site/$BASE/$id/$os/index.html"
+                  found="$found $id/$os"
+                  ;;
+              esac
+            done
           done
-          echo "found=$found" >> "$GITHUB_OUTPUT"
+          echo "found=$(echo $found)" >> "$GITHUB_OUTPUT"
 
-          # Landing page for this ref linking to each OS report.
+          # Landing page for this ref, one row per tutorial.
           {
             echo "<!doctype html><meta charset=utf-8>"
             echo "<title>Tutorial reports — $BASE</title>"
-            echo "<style>body{font:16px system-ui;margin:40px;max-width:640px}a{color:#2563eb}</style>"
+            echo "<style>body{font:16px system-ui;margin:40px;max-width:640px}a{color:#2563eb}li{margin:.35em 0}</style>"
             echo "<h1>Tutorial execution reports</h1>"
             echo "<p><strong>$BASE</strong> · commit <code>${GITHUB_SHA::7}</code></p><ul>"
-            for os in ubuntu-latest macos-latest; do
-              if [ -d "site/$BASE/$os" ]; then
-                echo "<li><a href=\"./$os/\">$os</a></li>"
-              fi
+            for d in site/"$BASE"/*/; do
+              id="$(basename "$d")"
+              [ "$id" = "index.html" ] && continue
+              printf '<li><strong>%s</strong> — ' "$id"
+              sep=""
+              for os in ubuntu-latest macos-latest; do
+                if [ -d "site/$BASE/$id/$os" ]; then
+                  printf '%s<a href="./%s/%s/">%s</a>' "$sep" "$id" "$os" "$os"
+                  sep=" · "
+                fi
+              done
+              echo "</li>"
             done
             echo "</ul>"
           } > "site/$BASE/index.html"
@@ -179,7 +225,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           keep_files: true          # don't wipe other PRs' directories
-          commit_message: "Publish tutorial report for ${{ steps.arrange.outputs.base }} (${{ github.sha }})"
+          commit_message: "Publish tutorial reports for ${{ steps.arrange.outputs.base }} (${{ github.sha }})"
 
       - name: Comment on PR with report links
         if: ${{ github.event_name == 'pull_request' && steps.arrange.outputs.found != '' }}
@@ -190,16 +236,29 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const root = `https://${owner}.github.io/${repo}/${base}`;
-            const oses = "${{ steps.arrange.outputs.found }}".trim().split(/\s+/).filter(Boolean);
+            const cells = "${{ steps.arrange.outputs.found }}".trim().split(/\s+/).filter(Boolean);
 
-            const links = oses.map(os => `- [\`${os}\` report](${root}/${os}/)`).join("\n");
+            // Group by tutorial so the comment stays one line per tutorial
+            // however many OSes ran.
+            const byTutorial = new Map();
+            for (const cell of cells) {
+              const [id, os] = cell.split("/");
+              if (!byTutorial.has(id)) byTutorial.set(id, []);
+              byTutorial.get(id).push(os);
+            }
+            const links = [...byTutorial.entries()]
+              .map(([id, oses]) =>
+                `- \`${id}\` — ` + oses.map(os => `[${os}](${root}/${id}/${os}/)`).join(" · "))
+              .join("\n");
+
             const marker = "<!-- tutorial-report-links -->";
             const body =
               `${marker}\n` +
-              `### 📊 Tutorial execution report\n\n` +
+              `### 📊 Tutorial execution reports\n\n` +
               `Rendered tutorial alongside the commands actually run and their output ` +
               `(updated each run, commit \`${context.sha.slice(0,7)}\`):\n\n` +
               `${links}\n\n` +
+              `[All reports for this PR](${root}/)\n\n` +
               `_Pages can take a minute to update after the run finishes._`;
 
             const { data: comments } = await github.rest.issues.listComments({
