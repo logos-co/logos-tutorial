@@ -1088,6 +1088,12 @@ nix build 'github:logos-co/logos-basecamp#portable' --out-link ./logos-basecamp-
 nix build 'github:logos-co/logos-basecamp#bin-bundle-dir'     # Flat directory bundle
 nix build 'github:logos-co/logos-basecamp#bin-appimage'       # Linux AppImage
 nix build 'github:logos-co/logos-basecamp#bin-macos-app'      # macOS .app bundle
+
+# Windows: an NSIS installer wrapping the same bundle. One binary, two modes --
+# a per-user install (Start Menu entry, uninstaller in Add/Remove Programs) or
+# extract-only to a folder of the user's choosing. Cross-built like everything
+# else Windows, so this attribute is only under packages.x86_64-windows.
+nix build 'github:logos-co/logos-basecamp#packages.x86_64-windows.bin-installer'
 ```
 
 > **Note:** When installing modules into logos-basecamp, the LGX variant type must match the build type. Dev builds of basecamp expect **dev** LGX variants (e.g., `darwin-arm64-dev`), while portable builds expect **portable** variants (e.g., `darwin-arm64`). Use the `dual` bundler (see [§4.2](#42-building-lgx-packages)) to produce packages that work with both.
