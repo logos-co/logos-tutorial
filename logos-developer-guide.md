@@ -268,11 +268,11 @@ The full set of available fields:
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
-| `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module.                                                                                  |
-| `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded, never a load failure when absent, and not bundled. See [Optional dependencies](#optional-dependencies). |
+| `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module. Its canonical LIDL contract is bundled in `assets/lidl/`.                                                                                  |
+| `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded and never a load failure when absent. Its runtime package is not auto-bundled; its canonical LIDL contract is. See [Optional dependencies](#optional-dependencies). |
 | `provides`                       | No (`ui_qml` only)                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
 | `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
-| `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }` — see [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
+| `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }`; its canonical contract is bundled in `assets/lidl/`. See [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
 | `host_services`                  | No                                     | `[]`               | Privileged host capabilities granted into the module's own image. Closed set: `token_registry`, `token_delivery` — both trust-root, and both hard-allowlisted to `capability_module` alone, because a build-time allowlist a module could extend from its own metadata would not be an allowlist. An ungranted module asking for one gets `LP_ERR_UNSUPPORTED` at runtime, however loudly its metadata asked.                            |
 | `platforms`                      | No                                     | `[]`               | Platform-keyed overlays merged into this metadata before anything else reads it. See [§9.4 Platform-keyed metadata](#94-platform-keyed-metadata).                            |
@@ -333,7 +333,7 @@ int64_t MyModuleImpl::add(int64_t a, int64_t b) { return a + b; }
 3. **Events** are declared in a `logos_events:` section (the class must inherit `LogosModuleContext`). Calling the event method routes the typed args to subscribers via the host's `eventResponse` channel — outside a host (unit tests) it's a safe no-op.
 4. **Inter-module calls** also go through `LogosModuleContext`: from a method body, `modules().other_module.someMethod(arg)` calls another module using std types, with no raw `LogosAPI` and no Qt. Declare the dependency in `metadata.json`'s `dependencies` and as a flake input.
 
-You do **not** write `initLogos`, `name()`/`version()` (read from `metadata.json`), `Q_INVOKABLE`, or the `eventResponse` signal — all are generated. `name()` is taken from `metadata.json`'s `name`, so they can never drift out of sync.
+You do **not** write `initLogos`, `name()`/`version()` (read from `metadata.json`), `lidl()`, `Q_INVOKABLE`, or the `eventResponse` signal — all are generated. `lidl()` returns the canonical LIDL document built into the module; it is byte-identical to the module's `.#lidl` output and its `assets/lidl/<name>.lidl` package asset. These three built-ins are deliberately omitted from that document, so it describes the authored API rather than recursively describing itself.
 
 > **Older Qt-plugin pattern.** As of this writing the scaffolding templates still emit a hand-written Qt plugin (`*_interface.h` + `*_plugin.h` + `*_plugin.cpp` with `QObject`, `Q_PLUGIN_METADATA`, `Q_INVOKABLE`, and an `initLogos(LogosAPI*)` you store). That pattern still builds and is what `ui_qml` C++ backends use (see [Building a C++ UI Module](tutorial-cpp-ui-app.md)). For a new core module, prefer the pure-C++ pattern above — replace the template's `src/` files with your `*_impl.h`/`*_impl.cpp` and add `"interface": "universal"` to `metadata.json`. The [C-library tutorial](tutorial-wrapping-c-library.md) walks through this end to end.
 
@@ -603,13 +603,20 @@ Example JSON output, for a universal module with
     "returnType": "tstr",
     "isInvokable": true,
     "description": "The module's name, as declared in its metadata."
+  },
+  {
+    "name": "lidl",
+    "signature": "lidl()",
+    "returnType": "tstr",
+    "isInvokable": true,
+    "description": "The module's canonical LIDL interface document."
   }
 ]
 ```
 
-`name` and `version` are **derived**: the generator emits them from
-`metadata.json`, so every module answers them without the author writing them,
-and they appear in every listing.
+`name`, `version`, and `lidl` are **derived**. The generator emits identity from
+`metadata.json` and embeds the canonical contract, so every module answers all
+three without the author writing them, and they appear in every listing.
 
 The same listing from a handwritten Qt plugin would instead read:
 
@@ -733,6 +740,11 @@ Logos modules are distributed as **`.lgx` packages**. An LGX file is a gzip-comp
 ```
 mymodule.lgx (tar.gz)
 ├── manifest.json          # Package metadata
+├── assets/                # Platform-independent assets (one copy)
+│   ├── icon.png           # Optional package icon
+│   └── lidl/
+│       ├── my_module.lidl # Core module's own canonical interface
+│       └── other.lidl     # Canonical dependency/interface contracts
 ├── variants/
 │   ├── linux-amd64/
 │   │   └── my_module_plugin.so
@@ -745,6 +757,14 @@ mymodule.lgx (tar.gz)
 ```
 
 The **manifest.json** is auto-generated from your module's `metadata.json` by the bundler. It maps each variant to its main entry point.
+
+LIDL contracts live under root-level `assets/lidl/`, outside every platform
+variant. A core module includes its own contract plus the contracts selected by
+`dependencies`, `optional_dependencies`, and `interface_dependencies`. A
+`ui_qml` plugin exposes no callable module API, so it includes dependency
+contracts only. When platform packages are merged, byte-identical paths are
+deduplicated; the merge fails if two builds produce different canonical bytes
+for the same contract name.
 
 It is not a copy of `metadata.json`. The bundler projects a fixed set of fields
 across — including `name`, `version`, `type`, `dependencies`, `view`, `icon` and
@@ -1312,7 +1332,9 @@ Three things follow, all of them about lifetime:
 
 - the loader **never brings one up**, and never fails a load because one is missing;
 - unloading one **does not** take its dependents down;
-- it is **not bundled** — your consumers do not inherit its runtime closure.
+- its **runtime package is not bundled** — your consumers do not inherit its
+  runtime closure. Its small canonical LIDL contract is still included in
+  `assets/lidl/`, because that is the interface the generated client used.
 
 That last point is usually the reason to reach for this. Declaring a heavyweight
 module as a required dependency drags its whole closure into every consumer of
@@ -1359,6 +1381,11 @@ installer can offer them without calling a package broken when one is absent,
 and `interface_dependencies` as **names only** — `file` and `impl_class` are
 paths into your own source tree and mean nothing in a shipped package, the same
 reason `provides` carries intent names alone.
+
+All three dependency kinds also contribute a canonical file under
+`assets/lidl/<name>.lidl`. Authored `.lidl` and header-derived definitions go
+through the same parse, validate, and serialize pass before publication, so a
+consumer cannot tell which authoring form produced the document.
 
 ### Dependency Interfaces
 
@@ -2027,7 +2054,7 @@ What a module's flake gives you, beyond `nix build`.
 | --- | --- |
 | `.#default` | the plugin plus its generated headers — what `nix build` gives you |
 | `.#lib` | the plugin shared library alone |
-| `.#lidl` | the module's **published contract**. Cheap: no plugin is compiled. This is what consumers generate their typed clients from |
+| `.#lidl` | the module's **canonical published contract**. Authored files are parsed, validated, and re-serialized just like header-derived contracts. Cheap: no plugin is compiled. This is what consumers generate their typed clients from and what `lidl()` returns |
 | `.#generate` | a ready-to-build source tree with every generator already run and `generated_code/` fully populated. Build it from `nix develop` without re-running a generator — and read it when you want to know what your wrapper actually looks like |
 | `.#include` | the generated SDK headers |
 | `.#headers-qt` / `.#headers-lp` | dependency wrappers, Qt-typed and Qt-free respectively |

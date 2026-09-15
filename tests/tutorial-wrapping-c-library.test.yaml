@@ -499,7 +499,7 @@ sections:
           2. Convert the C result to a C++ type if needed (e.g., `const char*` → `std::string`)
           3. Return it — the generated glue marshals it onto the wire
 
-          Notice what you **didn't** write: no `initLogos`, no `Q_INVOKABLE`, no `name()`/`version()` (read from `metadata.json`), no signal declaration. The generator produces all of it from the header.
+          Notice what you **didn't** write: no `initLogos`, no `Q_INVOKABLE`, no `name()`/`version()` (read from `metadata.json`), no `lidl()` (the canonical interface document), no signal declaration. The generator produces all of it from the header.
 
   # ── Step 4: Build the Module ────────────────────────────────────────────────
   - title: "Build the Module"
@@ -616,9 +616,9 @@ sections:
           - "Read straight from the linked native library, not metadata.json."
         post_text: |
           Output — each method you declared, with its doc comment as a
-          `Description`, plus the two identity methods (`name`, `version`) the
-          generator derives from `metadata.json` so every module answers them
-          without you writing them. A single-line comment renders inline; a
+          `Description`, plus the three built-ins (`name`, `version`, `lidl`)
+          the generator derives from `metadata.json` and the canonical contract
+          so every module answers them without you writing them. A single-line comment renders inline; a
           multi-line comment (`factorial`'s two `///` lines, `libVersion`'s
           `/** ... */` block, and `libVersionNotify`'s two `///` lines) keeps
           its line breaks:
