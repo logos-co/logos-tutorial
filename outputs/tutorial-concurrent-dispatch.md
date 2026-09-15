@@ -2,7 +2,7 @@
 
 By default a Logos module handles calls **one at a time**. Every method runs on the module's event loop, so you never think about thread-safety — and a handler that blocks stalls *every other caller* until it returns. For a module whose work is a slow download or a slow RPC, that is the wrong trade.
 
-Setting **`"concurrency": "multi"`** in `metadata.json` opts a module into **concurrent dispatch**: each incoming call runs on its own worker. In exchange, **you** own thread-safety.
+Setting **`"concurrency": "multi"`** in `metadata.json` opts a module into **concurrent dispatch**: calls run on a bounded, reusable worker pool. In exchange, **you** own thread-safety.
 
 This tutorial builds two modules and *measures* the difference. Neither one is a UI, and neither depends on any earlier part.
 
@@ -74,6 +74,7 @@ If the Rust scaffold is new to you, [Writing a Module in Rust](tutorial-rust-mod
   "type": "core",
   "interface": "cdylib",
   "concurrency": "multi",
+  "max_workers": 4,
   "category": "example",
   "description": "A deliberately slow worker that records how many calls overlap",
   "main": "calc_slow_plugin",
@@ -89,9 +90,9 @@ If the Rust scaffold is new to you, [Writing a Module in Rust](tutorial-rust-mod
 }
 ```
 
-`"concurrency": "multi"` is the only line that makes this module concurrent. Its default is `"single"`, and a `single` module is completely unchanged by the feature's existence — it pays no overhead.
+`"concurrency": "multi"` is the line that makes this module concurrent. Its default is `"single"`, and a `single` module is completely unchanged by the feature's existence — it pays no overhead.
 
-The optional `"max_workers"` caps the pool. Left out, the runtime sizes it.
+The optional positive integer `"max_workers"` caps active handlers; calls beyond it queue on the reusable pool. Left out or `null`, the runtime sizes the bounded pool to available CPU parallelism. We set it to 4 so this experiment's expected peak is deterministic.
 
 ### 2.3 The module logic
 
@@ -398,6 +399,7 @@ The trait has to change with it, because the two modes have different shapes: `s
   "type": "core",
   "interface": "cdylib",
   "concurrency": "single",
+  "max_workers": 4,
   "category": "example",
   "description": "A deliberately slow worker that records how many calls overlap",
   "main": "calc_slow_plugin",
@@ -527,7 +529,7 @@ Same driver, same calls, same replies. One metadata key decided whether they ove
 
 | | `single` (default) | `multi` |
 |---|---|---|
-| Dispatch | one call at a time, on the event loop | each call on its own worker |
+| Dispatch | one call at a time, on the event loop | calls queue on a bounded reusable worker pool |
 | Rust receiver | `&mut self` | **`&self`**, bound `Send + Sync` |
 | Rust state | plain fields | interior mutability (`Mutex`, `RwLock`, `Atomic*`) — enforced by the compiler |
 | C++ | nothing to do | handlers may run concurrently; guard shared members yourself |
@@ -539,7 +541,7 @@ Same driver, same calls, same replies. One metadata key decided whether they ove
 
 ### How it works, and its limits
 
-`multi` is realized **entirely by the code generator** — there is no new transport and no change to the provider/host ABI. A `multi` module's generated glue does not block in its dispatch entry point: it hands the handler to a worker, returns a small *pending* marker, and pushes the real result back as a completion event when the worker finishes. The consumer side awaits that completion transparently. Because the host merely forwards the marker and the completion, **an existing daemon or app loads and runs a `multi` module unmodified** — this is logos-protocol **0.2**, an additive minor bump.
+`multi` is realized **entirely by the code generator** — there is no new transport and no change to the provider/host ABI. A `multi` module's generated glue does not block in its dispatch entry point: it queues the handler on a bounded worker pool, returns a small *pending* marker, and pushes the real result back as a completion event when a worker finishes. The consumer side awaits that completion transparently. Because the host merely forwards the marker and the completion, **an existing daemon or app loads and runs a `multi` module unmodified** — this is logos-protocol **0.2**, an additive minor bump.
 
 Three caveats:
 
