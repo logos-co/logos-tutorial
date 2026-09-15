@@ -385,10 +385,13 @@ handler that **blocks** — a download that runs for minutes, a slow RPC — sta
 *every other caller* of that module until it returns.
 
 Set **`"concurrency": "multi"`** in `metadata.json` to opt that module into
-**concurrent dispatch**: each incoming call runs on its own worker, so a blocking
-handler no longer holds up the others (e.g. a downloader can serve two downloads
-at once). In exchange, **you own thread-safety** — your handlers run in parallel,
-so any state they share must be synchronized.
+**concurrent dispatch**: calls are queued on a bounded, reusable worker pool, so
+a blocking handler no longer holds up the others (e.g. a downloader can serve
+two downloads at once). In exchange, **you own thread-safety** — handlers up to
+the pool limit run in parallel, so any state they share must be synchronized.
+Set the optional positive integer `max_workers` to cap that overlap explicitly;
+when it is `null` or omitted, the runtime sizes the bounded pool to available CPU
+parallelism. Calls beyond the cap wait in the pool rather than spawning threads.
 
 The generated code enforces the contract differently per language:
 
@@ -407,17 +410,19 @@ The generated code enforces the contract differently per language:
   struct Impl { jobs: std::sync::Mutex<Vec<String>> }   // guard shared state
   ```
 
-- **C++** (`interface: "universal"` / `"cdylib"`). In `multi` mode each call runs
-  on a worker thread, so your impl's methods may execute concurrently — treat them
-  as re-entrant and guard any shared members (`std::atomic`, `std::mutex`). The
-  `LogosModuleContext` accessors and the event-emit path are already thread-safe.
+- **C++** (`interface: "universal"` / `"cdylib"`). In `multi` mode calls run on
+  pooled worker threads, so your impl's methods may execute concurrently — treat
+  them as re-entrant and guard any shared members (`std::atomic`, `std::mutex`).
+  The `LogosModuleContext` accessors and the event-emit path are already
+  thread-safe.
 
 **How it works (and its limits).** `multi` is realized **entirely by the code
 generator** — there is no new transport and, crucially, **no change to the
 provider/host ABI**. A `multi` module's generated glue does not block in its
-dispatch entry point: it hands the handler to a worker and immediately returns a
-small *pending* marker, then pushes the real result back as a completion event
-once the worker finishes. The consumer side awaits that completion transparently,
+dispatch entry point: it queues the handler on the bounded pool and immediately
+returns a small *pending* marker, then pushes the real result back as a completion event
+once a pooled worker finishes. Excess calls remain queued behind the configured
+pool cap. The consumer side awaits that completion transparently,
 so generated clients are unchanged. The decomposition is *serialized dispatch +
 concurrent processing + serialized responses*, and it works over the default
 transport (QtRO) as well as the plain transport. Because the host merely forwards
