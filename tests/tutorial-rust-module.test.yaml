@@ -369,7 +369,7 @@ sections:
         expect_contains:
           - "describe"
         post_text: |
-          Two details in this listing. `describe` takes a `QVariant` rather than a `QString`, which is how the optional survives the Qt boundary — a `QVariant` can be empty, a `QString` can only be `""`. And `name()` / `version()` are there without appearing in your trait: the generator injects them, because every module must answer them and no author should have to write them.
+          Two details in this listing. `describe` takes a `QVariant` rather than a `QString`, which is how the optional survives the Qt boundary — a `QVariant` can be empty, a `QString` can only be `""`. And `name()` / `version()` / `lidl()` are there without appearing in your trait: the generator injects them, because every module must answer them and no author should have to write them. `lidl()` returns the same canonical document published by `nix build .#lidl` and bundled under `assets/lidl/`.
 
   # ── Step 7: Run it ──────────────────────────────────────────────────────────
   - title: "Run it with `logoscore`"
