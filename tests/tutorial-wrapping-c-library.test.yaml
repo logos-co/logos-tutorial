@@ -1301,6 +1301,15 @@ sections:
 
       Setting `go_build: true` enables the Go toolchain and sets `CGO_ENABLED=1`.
 
+  - title: "More Types, Call Errors and Package Workflows"
+    text: |
+      [Method Calls and Supported Types in C++ and Rust](tutorial-method-calls-and-types.md)
+      adds runnable examples for the full parameter/return type surface, domain
+      errors, call failures and custom synchronous/asynchronous timeouts in both
+      languages. [Producing, Merging and Signing LGX Packages](tutorial-lgx-packages.md)
+      covers archive creation, variant merging, inspection, extraction, signing
+      and publisher trust with `lgx`.
+
   # ── Real-World Example (prose only) ──────────────────────────────────────
   - title: "Real-World Example: logos-libp2p-module"
     text: |

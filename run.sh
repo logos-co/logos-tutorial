@@ -141,6 +141,21 @@ mkdir -p "${OUTPUT_DIR}/logos-calc-guarded"
   --keep-workdir \
   ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
 
+# Both new tutorials are standalone. Keep module sources, but keep the package
+# exercise (including its disposable signing key) in the runner's temp dir.
+echo "==> Running Calls and Types tutorial into ${OUTPUT_DIR}/logos-api-examples/"
+mkdir -p "${OUTPUT_DIR}/logos-api-examples"
+"${DOCTEST[@]}" run tests/tutorial-method-calls-and-types.test.yaml \
+  --verbose \
+  --workdir "${OUTPUT_DIR}/logos-api-examples" \
+  --keep-workdir \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
+echo "==> Running LGX Packages tutorial"
+"${DOCTEST[@]}" run tests/tutorial-lgx-packages.test.yaml \
+  --verbose \
+  ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"}
+
 echo "==> Generating .md tutorials into ${OUTPUT_DIR}/"
 mkdir -p "${OUTPUT_DIR}"
 for spec in tests/*.test.yaml; do

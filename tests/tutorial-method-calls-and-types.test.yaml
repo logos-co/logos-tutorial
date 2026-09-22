@@ -1,0 +1,730 @@
+name: 'Tutorial: Method Calls and Supported Types in C++ and Rust'
+output: tutorial-method-calls-and-types.md
+project_name: logos-api-examples
+release: ''
+intro: |
+  Build two modules that expose the supported parameter and return type families, then call across the C++/Rust boundary with explicit error handling and per-call deadlines. Each language acts as both provider and caller.
+what_you_build: C++ and Rust echo modules with runnable type, error and timeout examples.
+what_you_learn:
+- Map LIDL types to C++ and Rust provider signatures
+- Return and inspect a domain error separately from a failed call
+- Set synchronous and asynchronous call deadlines in both languages
+- Round-trip bytes, arrays, maps, records, nested values and optionals
+prerequisites:
+- Nix with flakes enabled
+- Python 3 for the runtime assertions
+- Basic C++ and Rust; no earlier tutorial is required
+sections:
+- title: The supported type surface
+  text: |
+    This table describes the current Qt-free C++ and Rust **provider** surfaces.
+    Every `echo*` method below takes and returns the indicated type. Containers can
+    nest: the examples include bytes inside lists/maps/records, a list and map of
+    records, a nested record and an array of arrays.
+
+    | LIDL | C++ provider | Rust provider |
+    |---|---|---|
+    | `tstr` | `std::string` | `String` |
+    | `bstr` | `std::vector<uint8_t>` | `Vec<u8>` |
+    | `int` | `int64_t` | `i64` |
+    | `uint` | `uint64_t` | `u64` |
+    | `float64` | `double` | `f64` |
+    | `bool` | `bool` | `bool` |
+    | `any` | `nlohmann::json` | `serde_json::Value` |
+    | `[tstr]` | `std::vector<std::string>` | `serde_json::Value` |
+    | `[int]` | `std::vector<int64_t>` | `serde_json::Value` |
+    | `[uint]` | `std::vector<uint64_t>` | `serde_json::Value` |
+    | `[float64]` | `std::vector<double>` | `serde_json::Value` |
+    | `[bool]` | `std::vector<bool>` | `serde_json::Value` |
+    | `[any]` | `LogosList` | `serde_json::Value` |
+    | `{tstr: any}` | `LogosMap` | `serde_json::Value` |
+    | `[bstr]` | `std::vector<std::vector<uint8_t>>` | `serde_json::Value` |
+    | `{tstr: bstr}` | `std::map<std::string, std::vector<uint8_t>>` | `serde_json::Value` |
+    | `{tstr: int}` | `std::map<std::string, int64_t>` | `serde_json::Value` |
+    | `{tstr: int}` | `std::unordered_map<std::string, int64_t>` | `serde_json::Value` |
+    | `[[int]]` | `std::vector<std::vector<int64_t>>` | `serde_json::Value` |
+    | `Entry` | `Entry` | `Entry` |
+    | `[Entry]` | `std::vector<Entry>` | `Vec<Entry>` |
+    | `{tstr: Entry}` | `std::map<std::string, Entry>` | `serde_json::Value` |
+    | `Batch` | `Batch` | `Batch` |
+    | `?tstr` | `std::optional<std::string>` | `Option<String>` |
+    | `void` (return only) | `void` | `()` |
+    | `result` (return only) | `StdLogosResult` | `Result<serde_json::Value, String>` |
+
+    Rust uses a **committed LIDL contract** here. The Rust-first trait frontend used
+    in the [introductory tutorial](tutorial-rust-module.md) does not derive record or
+    map contracts and rejects optional returns. Declaring the LIDL directly exposes
+    the larger supported surface and generates the trait you implement. Do not write
+    `Vec<i64>` in that generated provider impl: general collections currently arrive
+    as `serde_json::Value`; a record and `[Record]` are the typed exceptions. Record
+    **fields** are typed recursively (for example `Batch.tags: Vec<String>`).
+
+    C++ header-first authoring uses the displayed standard types; an unordered map
+    is allowed for method parameters/returns, while record fields use `std::map`.
+    Use 64-bit integers, not `int`/`i32`, for a contract that crosses languages.
+    `void` and `result` are return-only. Arbitrary C++ classes, pointers, enums,
+    non-string map keys and Rust tuples are not additional wire types: express them
+    with the supported records/collections instead.
+
+    `?T` has two states. An empty positional optional is JSON `null`; an empty
+    optional record field is omitted. A present empty string is still a value.
+    `Option<Option<T>>` cannot carry a third state. The tests check both null and
+    an empty string, and both an absent and a populated record field.
+
+    Bytes use the tagged JSON form `{"_bytes":"AAH_"}` (unpadded base64url for
+    `00 01 ff`), including inside containers. Scalar byte methods and typed record
+    fields are encoded by the SDK; when a Rust collection arrives as `Value`, retain
+    those tags. A list of JSON integers is not the canonical byte representation.
+
+    Generated **clients** need not have the same collection signatures as providers:
+    C++ wrappers use `LogosList`/`LogosMap` for many general collections; Rust clients
+    borrow `&serde_json::Value`, return `Value`, and borrow typed records. Inspect
+    `nix build .#generate` when you need the exact generated signature.
+- title: The shared calling contract
+  step: true
+  text: |
+    Create a fresh directory (`mkdir logos-api-examples && cd logos-api-examples`).
+    Both modules implement the echo API and also call the other module through this
+    small interface. Binding by name avoids a build-time dependency cycle; the
+    runtime test explicitly loads both providers before invoking either caller.
+  steps:
+  - title: '`cpp/interfaces/calls.lidl`'
+    file:
+      path: cpp/interfaces/calls.lidl
+      content: |
+        module calls {
+          version "1.0.0"
+          method echoInt(v: int) -> int
+          method doVoid() -> void
+          method makeResult(ok: bool) -> result
+          method slow(ms: int) -> int
+        }
+  - run: |-
+      mkdir -p rust/interfaces
+      cp cpp/interfaces/calls.lidl rust/interfaces/calls.lidl
+- title: The C++ provider and caller
+  step: true
+  text: |
+    The header is the C++ contract. `LogosMap` and `LogosList` are JSON aliases with
+    object/array contracts; `nlohmann::json` declares unrestricted `any`.
+  steps:
+  - title: '`cpp/flake.nix`'
+    file:
+      path: cpp/flake.nix
+      content: |
+        {
+          inputs.logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
+          outputs = inputs@{ logos-module-builder, ... }:
+            logos-module-builder.lib.mkLogosModule {
+              src = ./.;
+              configFile = ./metadata.json;
+              flakeInputs = inputs;
+            };
+        }
+  - title: '`cpp/metadata.json`'
+    file:
+      path: cpp/metadata.json
+      content: |
+        {
+          "name": "api_cpp",
+          "version": "1.0.0",
+          "type": "core",
+          "category": "example",
+          "description": "C++ types, errors and per-call deadlines",
+          "main": "api_cpp_plugin",
+          "interface": "universal",
+          "dependencies": [],
+          "interface_dependencies": [
+            {
+              "name": "calls",
+              "file": "interfaces/calls.lidl"
+            }
+          ]
+        }
+  - title: '`cpp/CMakeLists.txt`'
+    file:
+      path: cpp/CMakeLists.txt
+      content: |
+        cmake_minimum_required(VERSION 3.14)
+        project(ApiExample LANGUAGES CXX)
+        include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
+        logos_module(NAME api_cpp SOURCES src/api_cpp_impl.h src/api_cpp_impl.cpp)
+  - title: '`cpp/src/api_cpp_impl.h`'
+    file:
+      path: cpp/src/api_cpp_impl.h
+      content: |
+        #pragma once
+        #include <cstdint>
+        #include <map>
+        #include <optional>
+        #include <string>
+        #include <unordered_map>
+        #include <vector>
+        #include <logos_json.h>
+        #include <logos_result.h>
+        #include <logos_module_context.h>
+
+        struct Entry {
+            std::string label;
+            std::vector<uint8_t> payload;
+            std::optional<uint64_t> count;
+        };
+        struct Batch {
+            Entry entry;
+            std::vector<std::string> tags;
+        };
+
+        class ApiCppImpl : public LogosModuleContext {
+        public:
+            std::string echoString(const std::string& v);
+            std::vector<uint8_t> echoBytes(const std::vector<uint8_t>& v);
+            int64_t echoInt(int64_t v);
+            uint64_t echoUint(uint64_t v);
+            double echoDouble(double v);
+            bool echoBool(bool v);
+            nlohmann::json echoAny(const nlohmann::json& v);
+            std::vector<std::string> echoStringList(const std::vector<std::string>& v);
+            std::vector<int64_t> echoIntList(const std::vector<int64_t>& v);
+            std::vector<uint64_t> echoUintList(const std::vector<uint64_t>& v);
+            std::vector<double> echoDoubleList(const std::vector<double>& v);
+            std::vector<bool> echoBoolList(const std::vector<bool>& v);
+            LogosList echoList(const LogosList& v);
+            LogosMap echoMap(const LogosMap& v);
+            std::vector<std::vector<uint8_t>> echoBytesList(const std::vector<std::vector<uint8_t>>& v);
+            std::map<std::string, std::vector<uint8_t>> echoBytesMap(const std::map<std::string, std::vector<uint8_t>>& v);
+            std::map<std::string, int64_t> echoIntMap(const std::map<std::string, int64_t>& v);
+            std::unordered_map<std::string, int64_t> echoUnorderedMap(const std::unordered_map<std::string, int64_t>& v);
+            std::vector<std::vector<int64_t>> echoNested(const std::vector<std::vector<int64_t>>& v);
+            Entry echoEntry(const Entry& v);
+            std::vector<Entry> echoEntries(const std::vector<Entry>& v);
+            std::map<std::string, Entry> echoEntryMap(const std::map<std::string, Entry>& v);
+            Batch echoBatch(const Batch& v);
+            std::optional<std::string> echoOptional(const std::optional<std::string>& v);
+            void doVoid();
+            StdLogosResult makeResult(bool ok);
+            int64_t slow(int64_t ms);
+            std::string checkCalls(const std::string& provider);
+            std::string startAsync(const std::string& provider);
+            std::string asyncStatus();
+        };
+  - title: "Implement echoes and check the two error channels \u2014 `cpp/src/api_cpp_impl.cpp`"
+    file:
+      path: cpp/src/api_cpp_impl.cpp
+      content: |
+        #include "api_cpp_impl.h"
+        #include "logos_sdk.h"
+        #include <chrono>
+        #include <memory>
+        #include <mutex>
+        #include <thread>
+
+        std::string ApiCppImpl::echoString(const std::string& v) { return v; }
+        std::vector<uint8_t> ApiCppImpl::echoBytes(const std::vector<uint8_t>& v) { return v; }
+        int64_t ApiCppImpl::echoInt(int64_t v) { return v; }
+        uint64_t ApiCppImpl::echoUint(uint64_t v) { return v; }
+        double ApiCppImpl::echoDouble(double v) { return v; }
+        bool ApiCppImpl::echoBool(bool v) { return v; }
+        nlohmann::json ApiCppImpl::echoAny(const nlohmann::json& v) { return v; }
+        std::vector<std::string> ApiCppImpl::echoStringList(const std::vector<std::string>& v) { return v; }
+        std::vector<int64_t> ApiCppImpl::echoIntList(const std::vector<int64_t>& v) { return v; }
+        std::vector<uint64_t> ApiCppImpl::echoUintList(const std::vector<uint64_t>& v) { return v; }
+        std::vector<double> ApiCppImpl::echoDoubleList(const std::vector<double>& v) { return v; }
+        std::vector<bool> ApiCppImpl::echoBoolList(const std::vector<bool>& v) { return v; }
+        LogosList ApiCppImpl::echoList(const LogosList& v) { return v; }
+        LogosMap ApiCppImpl::echoMap(const LogosMap& v) { return v; }
+        std::vector<std::vector<uint8_t>> ApiCppImpl::echoBytesList(const std::vector<std::vector<uint8_t>>& v) { return v; }
+        std::map<std::string, std::vector<uint8_t>> ApiCppImpl::echoBytesMap(const std::map<std::string, std::vector<uint8_t>>& v) { return v; }
+        std::map<std::string, int64_t> ApiCppImpl::echoIntMap(const std::map<std::string, int64_t>& v) { return v; }
+        std::unordered_map<std::string, int64_t> ApiCppImpl::echoUnorderedMap(const std::unordered_map<std::string, int64_t>& v) { return v; }
+        std::vector<std::vector<int64_t>> ApiCppImpl::echoNested(const std::vector<std::vector<int64_t>>& v) { return v; }
+        Entry ApiCppImpl::echoEntry(const Entry& v) { return v; }
+        std::vector<Entry> ApiCppImpl::echoEntries(const std::vector<Entry>& v) { return v; }
+        std::map<std::string, Entry> ApiCppImpl::echoEntryMap(const std::map<std::string, Entry>& v) { return v; }
+        Batch ApiCppImpl::echoBatch(const Batch& v) { return v; }
+        std::optional<std::string> ApiCppImpl::echoOptional(const std::optional<std::string>& v) { return v; }
+        void ApiCppImpl::doVoid() {}
+        StdLogosResult ApiCppImpl::makeResult(bool ok) {
+            if (!ok) return {false, {}, "deliberate domain error"};
+            return {true, 42, ""};
+        }
+        int64_t ApiCppImpl::slow(int64_t ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms > 0 ? ms : 0));
+            return ms;
+        }
+
+        std::string ApiCppImpl::checkCalls(const std::string& provider) {
+            auto peer = modules().bind_calls(provider);
+            logos::CallError err;
+            // Zero is a valid answer. Only the error channel tells us if it arrived.
+            auto zero = peer.echoInt(0, &err, 2000);
+            if (!err.ok()) return err.code + ": " + err.message + " (" + err.origin + ")";
+            if (zero != 0) return "wrong zero value";
+
+            // A domain error is a SUCCESSFUL call carrying a failed result value.
+            auto domain = peer.makeResult(false, &err, 2000);
+            if (!err.ok()) return "call failed: " + err.message;
+            if (domain.success || domain.error != "deliberate domain error")
+                return "wrong domain error";
+            auto success = peer.makeResult(true, &err, 2000);
+            if (!err.ok() || !success.success || success.value != 42)
+                return "wrong success result";
+
+            peer.doVoid(&err, 2000);
+            if (!err.ok()) return "void call failed: " + err.message;
+
+            // Warm the peer above before measuring a deadline; discovery takes time.
+            peer.slow(500, &err, 50);
+            if (err.code != "timeout") return "expected timeout, got: " + err.code;
+            // The first handler can still be running. 2 seconds covers it and this call.
+            auto completed = peer.slow(10, &err, 2000);
+            if (!err.ok() || completed != 10) return "longer deadline failed";
+            if (peer.echoInt(7, &err) != 7 || !err.ok()) return "default call failed";
+            return "sync checks passed";
+        }
+
+        namespace {
+        struct Pending {
+            std::mutex mutex;
+            int done = 0;
+            bool ok = true;
+        };
+        std::shared_ptr<Pending> pending;
+        void record(const std::shared_ptr<Pending>& state, bool ok) {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->ok = state->ok && ok;
+            ++state->done;
+        }
+        }
+
+        std::string ApiCppImpl::startAsync(const std::string& provider) {
+            auto state = std::make_shared<Pending>();
+            pending = state;
+            auto peer = modules().bind_calls(provider);
+            peer.echoIntAsyncResult(0, [state](logos::AsyncResult<int64_t> r) {
+                record(state, r.ok() && r.value == 0);
+            }, 2000);
+            peer.makeResultAsyncResult(false, [state](logos::AsyncResult<StdLogosResult> r) {
+                record(state, r.ok() && !r.value.success
+                              && r.value.error == "deliberate domain error");
+            }, 2000);
+            peer.slowAsyncResult(500, [state](logos::AsyncResult<int64_t> r) {
+                record(state, !r.ok() && r.error.code == "timeout");
+            }, 50);
+            // Return to the event loop. Do not wait here for callbacks.
+            return "started";
+        }
+        std::string ApiCppImpl::asyncStatus() {
+            auto state = pending;
+            if (!state) return "not started";
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->done != 3) return "pending";
+            return state->ok ? "async checks passed" : "async checks failed";
+        }
+- title: The Rust provider and caller
+  step: true
+  text: |
+    Scaffold Rust first to get the builder's compatible `Cargo.toml` and `Cargo.lock`.
+    We replace the trait-first metadata with `codegen.lidl`; the generated scaffold
+    now supplies `ApiRustModule`, `Entry` and `Batch`. The crate keeps its scaffolded
+    package name (`minimal_rust`); `staticlib` below is set to match it.
+  steps:
+  - run: |-
+      mkdir -p rust
+      (cd rust && nix flake init -t github:logos-co/logos-module-builder{release}#rust)
+  - title: '`rust/flake.nix`'
+    file:
+      path: rust/flake.nix
+      content: |
+        {
+          inputs.logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
+          outputs = inputs@{ logos-module-builder, ... }:
+            logos-module-builder.lib.mkLogosModule {
+              src = ./.;
+              configFile = ./metadata.json;
+              flakeInputs = inputs;
+            };
+        }
+  - title: '`rust/metadata.json`'
+    file:
+      path: rust/metadata.json
+      content: |
+        {
+          "name": "api_rust",
+          "version": "1.0.0",
+          "type": "core",
+          "category": "example",
+          "description": "Rust types, errors and per-call deadlines",
+          "main": "api_rust_plugin",
+          "interface": "cdylib",
+          "dependencies": [],
+          "interface_dependencies": [
+            {
+              "name": "calls",
+              "file": "interfaces/calls.lidl"
+            }
+          ],
+          "codegen": {
+            "lidl": "api_rust.lidl",
+            "rust": {
+              "crate": "rust-lib",
+              "staticlib": "minimal_rust"
+            }
+          }
+        }
+  - title: '`rust/CMakeLists.txt`'
+    file:
+      path: rust/CMakeLists.txt
+      content: |
+        cmake_minimum_required(VERSION 3.14)
+        project(ApiExample LANGUAGES CXX)
+        include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)
+        logos_module(NAME api_rust)
+  - title: '`rust/api_rust.lidl`'
+    file:
+      path: rust/api_rust.lidl
+      content: |
+        module api_rust {
+          version "1.0.0"
+        type Entry {
+          label: tstr
+          payload: bstr
+          ? count: uint
+        }
+        type Batch {
+          entry: Entry
+          tags: [tstr]
+        }
+          method echoString(v: tstr) -> tstr
+          method echoBytes(v: bstr) -> bstr
+          method echoInt(v: int) -> int
+          method echoUint(v: uint) -> uint
+          method echoDouble(v: float64) -> float64
+          method echoBool(v: bool) -> bool
+          method echoAny(v: any) -> any
+          method echoStringList(v: [tstr]) -> [tstr]
+          method echoIntList(v: [int]) -> [int]
+          method echoUintList(v: [uint]) -> [uint]
+          method echoDoubleList(v: [float64]) -> [float64]
+          method echoBoolList(v: [bool]) -> [bool]
+          method echoList(v: [any]) -> [any]
+          method echoMap(v: {tstr: any}) -> {tstr: any}
+          method echoBytesList(v: [bstr]) -> [bstr]
+          method echoBytesMap(v: {tstr: bstr}) -> {tstr: bstr}
+          method echoIntMap(v: {tstr: int}) -> {tstr: int}
+          method echoUnorderedMap(v: {tstr: int}) -> {tstr: int}
+          method echoNested(v: [[int]]) -> [[int]]
+          method echoEntry(v: Entry) -> Entry
+          method echoEntries(v: [Entry]) -> [Entry]
+          method echoEntryMap(v: {tstr: Entry}) -> {tstr: Entry}
+          method echoBatch(v: Batch) -> Batch
+          method echoOptional(v: ?tstr) -> ?tstr
+          method doVoid() -> void
+          method makeResult(ok: bool) -> result
+          method slow(ms: int) -> int
+          method checkCalls(provider: tstr) -> tstr
+          method startAsync(provider: tstr) -> tstr
+          method asyncStatus() -> tstr
+        }
+  - title: '`rust/rust-lib/src/lib.rs`'
+    file:
+      path: rust/rust-lib/src/lib.rs
+      content: |
+        //! Contract-first Rust: the builder generates the trait and record structs.
+        include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/provider_gen.rs"));
+
+        #[derive(Default)]
+        struct ApiRust;
+
+        impl ApiRustModule for ApiRust {
+            fn echo_string(&mut self, v: String) -> String { v }
+            fn echo_bytes(&mut self, v: Vec<u8>) -> Vec<u8> { v }
+            fn echo_int(&mut self, v: i64) -> i64 { v }
+            fn echo_uint(&mut self, v: u64) -> u64 { v }
+            fn echo_double(&mut self, v: f64) -> f64 { v }
+            fn echo_bool(&mut self, v: bool) -> bool { v }
+            fn echo_any(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_string_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_int_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_uint_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_double_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_bool_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_bytes_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_bytes_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_int_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_unordered_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_nested(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_entry(&mut self, v: Entry) -> Entry { v }
+            fn echo_entries(&mut self, v: Vec<Entry>) -> Vec<Entry> { v }
+            fn echo_entry_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_batch(&mut self, v: Batch) -> Batch { v }
+            fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
+            fn do_void(&mut self) {}
+            fn make_result(&mut self, ok: bool) -> Result<serde_json::Value, String> {
+                if ok { Ok(serde_json::json!(42)) }
+                else { Err("deliberate domain error".to_string()) }
+            }
+            fn slow(&mut self, ms: i64) -> i64 {
+                std::thread::sleep(std::time::Duration::from_millis(ms.max(0) as u64));
+                ms
+            }
+            fn check_calls(&mut self, provider: String) -> String {
+                check_calls(&provider).unwrap_or_else(|e| e)
+            }
+            fn start_async(&mut self, provider: String) -> String {
+                start_async(&provider);
+                "started".to_string()
+            }
+            fn async_status(&mut self) -> String {
+                let state = ASYNC_STATE.lock().unwrap();
+                if state.0 != 3 { "pending" }
+                else if state.1 { "async checks passed" }
+                else { "async checks failed" }.to_string()
+            }
+        }
+
+        fn check_calls(provider: &str) -> Result<String, String> {
+            use std::time::Duration;
+            let peer = calls::CallsClient::bind(provider);
+            // The outer Result reports a call failure, even if T can be zero or null.
+            let zero = peer.echo_int_with_timeout(0, Duration::from_secs(2))
+                .map_err(|e| format!("call failed: {e}"))?;
+            if zero != 0 { return Err("wrong zero value".into()); }
+
+            // For LIDL `result`, a Rust CLIENT receives the envelope as JSON.
+            // Ok(envelope) does not imply that envelope["success"] is true.
+            let domain = peer.make_result_with_timeout(false, Duration::from_secs(2))
+                .map_err(|e| e.to_string())?;
+            if domain["success"] != false || domain["error"] != "deliberate domain error" {
+                return Err("wrong domain error".into());
+            }
+            let success = peer.make_result(true).map_err(|e| e.to_string())?;
+            if success["success"] != true || success["value"] != 42 {
+                return Err("wrong success result".into());
+            }
+            peer.do_void().map_err(|e| e.to_string())?;
+
+            match peer.slow_with_timeout(500, Duration::from_millis(50)) {
+                Err(logos_rust_sdk::LogosError::PluginCallFailed { message, .. }) => {
+                    // The SDK carries the protocol's structured error as message JSON.
+                    let error: serde_json::Value = serde_json::from_str(&message)
+                        .map_err(|e| e.to_string())?;
+                    if error["code"] != "timeout" { return Err(message); }
+                }
+                other => return Err(format!("expected timeout: {other:?}")),
+            }
+            let completed = peer.slow_with_timeout(10, Duration::from_secs(2))
+                .map_err(|e| e.to_string())?;
+            if completed != 10 { return Err("longer deadline failed".into()); }
+            if peer.echo_int(7).map_err(|e| e.to_string())? != 7 {
+                return Err("default call failed".into());
+            }
+            if !matches!(peer.echo_int_with_timeout(0, Duration::ZERO),
+                         Err(logos_rust_sdk::LogosError::InvalidTimeout { .. })) {
+                return Err("zero timeout should be rejected".into());
+            }
+            Ok("sync checks passed".into())
+        }
+
+        // The callbacks may run on another thread. Keep shared state behind a mutex.
+        static ASYNC_STATE: std::sync::Mutex<(usize, bool)> = std::sync::Mutex::new((0, true));
+        fn record(ok: bool) {
+            let mut state = ASYNC_STATE.lock().unwrap();
+            state.0 += 1;
+            state.1 &= ok;
+        }
+        fn start_async(provider: &str) {
+            use std::time::Duration;
+            *ASYNC_STATE.lock().unwrap() = (0, true);
+            let peer = calls::CallsClient::bind(provider);
+            peer.echo_int_async_with_timeout(0, Duration::from_secs(2), |r| {
+                record(matches!(r, Ok(0)));
+            });
+            peer.make_result_async_with_timeout(false, Duration::from_secs(2), |r| {
+                record(r.map(|v| v["success"] == false
+                                && v["error"] == "deliberate domain error").unwrap_or(false));
+            });
+            peer.slow_async_with_timeout(500, Duration::from_millis(50), |r| {
+                // Async errors currently retain the message, not the structured code.
+                // This controlled slow call should fail; the sync probe checks the code.
+                record(matches!(r, Err(logos_rust_sdk::LogosError::PluginCallFailed { .. })));
+            });
+        }
+
+        #[no_mangle]
+        pub extern "Rust" fn logos_module_install() {
+            install::<ApiRust>();
+        }
+- title: Read errors and choose deadlines
+  text: |
+    There are two independent outcomes:
+
+    | Outcome | C++ generated client | Rust generated client |
+    |---|---|---|
+    | Call could not complete (timeout, unavailable peer, dispatch failure) | `!err.ok()` or `!asyncResult.ok()` | `Err(LogosError)` |
+    | Method ran and refused the operation | `err.ok()` plus `!value.success` | `Ok(envelope)` plus `envelope["success"] == false` |
+    | Method ran successfully | `err.ok()` plus a valid value | `Ok(value)` |
+
+    C++ uses `peer.echoInt(0, &err, 2000)` for a two-second limit. A missing error
+    argument discards failure details. For asynchronous work use
+    `echoIntAsyncResult(0, callback, 2000)`; the value-only `echoIntAsync` cannot tell
+    failure from a legitimate zero. The Qt-free value-only async twin has no timeout
+    argument. These examples use the Qt-free surface; Qt wrappers use `Timeout`
+    instead of integer milliseconds.
+
+    Rust uses `echo_int_with_timeout(0, Duration::from_secs(2))` and
+    `echo_int_async_with_timeout(0, duration, callback)`. A provider's
+    `Result<Value, String>` becomes the LIDL result envelope; it is distinct from
+    the client's `Result<Value, LogosError>` call outcome. The examples inspect both.
+    Rust synchronous transport errors carry protocol JSON in
+    `PluginCallFailed.message`; the sync example parses its `code`. Async failures
+    currently keep only the human-readable message, so the async example handles
+    `PluginCallFailed` without assuming that the structured code survived.
+
+    Without an explicit deadline the protocol default is 20 seconds. C++ values
+    `<= 0` select that default. Rust explicit durations must convert to at least
+    1 ms and at most `i32::MAX` ms; zero/sub-millisecond durations and values above
+    that range return `InvalidTimeout`. Deadlines apply to one call and do not
+    change later calls on the client.
+
+    A timeout does **not cancel** the provider's work. `slow(500)` can still be
+    running after the 50 ms call has failed, so the next call gets a two-second
+    budget. Do not automatically retry a timed-out operation with side effects.
+    The async examples return to the event loop and are polled from a later call;
+    shared callback state is protected by a mutex. Finish one async probe before
+    starting another in the Rust example.
+- title: Build and install both modules
+  step: true
+  steps:
+  - run: nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos
+  - run: nix build 'github:logos-co/logos-package-manager{release}' --out-link ./pm
+  - run: |
+      set -eu
+      (cd cpp && git init -q && git add -A && nix build .#lgx --out-link result-lgx)
+      (cd rust && git init -q && git add -A && nix build .#lgx --out-link result-lgx)
+      ./pm/bin/lgpm --modules-dir ./modules install --file cpp/result-lgx/*.lgx
+      ./pm/bin/lgpm --modules-dir ./modules install --file rust/result-lgx/*.lgx
+- title: Exercise every type and both calling directions
+  step: true
+  text: |
+    This driver starts an isolated daemon, loads both modules, and compares every
+    `--json` result with its input. The `json:` argument prefix preserves arrays,
+    objects, null and literal strings without scalar coercion. It also checks empty values and optional
+    presence, then calls Rust from C++ and C++ from Rust for synchronous and
+    asynchronous success, domain errors and timeouts. It stops the daemon even if a
+    check fails. Python 3 is used only for these assertions.
+
+    For an individual call in a running daemon, the equivalent commands are:
+
+    ```bash
+    ./logos/bin/logoscore --config-dir ./.logoscore call api_cpp echoBytes 'json:{"_bytes":"AAH_"}'
+    ./logos/bin/logoscore --config-dir ./.logoscore call api_rust echoIntList 'json:[-2,0,3]'
+    ./logos/bin/logoscore --config-dir ./.logoscore call api_cpp checkCalls api_rust
+    ```
+  steps:
+  - title: '`check_examples.py`'
+    file:
+      path: check_examples.py
+      content: |
+        import json
+        import subprocess
+        import time
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent
+        cli = [str(root / "logos/bin/logoscore"), "--json", "--config-dir", str(root / ".logoscore")]
+
+        def command(*args):
+            result = subprocess.run(cli + list(args), text=True, capture_output=True, timeout=30)
+            if result.returncode:
+                raise RuntimeError(f"{args}: {result.stdout} {result.stderr}")
+            lines = [line for line in result.stdout.splitlines() if line.startswith("{")]
+            return json.loads(lines[-1]) if lines else {}
+
+        def call(module, method, *args):
+            reply = command("call", module, method, *args)
+            assert reply.get("status") == "ok", reply
+            return reply["result"]
+
+        cases = [['echoString', 'hello Logos'],
+         ['echoBytes', {'_bytes': 'AAH_'}],
+         ['echoInt', -42],
+         ['echoUint', 42],
+         ['echoDouble', 2.5],
+         ['echoBool', False],
+         ['echoAny', {'mixed': [1, False, 'text']}],
+         ['echoStringList', ['one', 'two']],
+         ['echoIntList', [-2, 0, 3]],
+         ['echoUintList', [0, 3]],
+         ['echoDoubleList', [1.5, 2.5]],
+         ['echoBoolList', [True, False]],
+         ['echoList', [1, 'text', None]],
+         ['echoMap', {'count': 3, 'label': 'sample'}],
+         ['echoBytesList', [{'_bytes': 'AAH_'}, {'_bytes': ''}]],
+         ['echoBytesMap', {'data': {'_bytes': 'AAH_'}}],
+         ['echoIntMap', {'first': -2, 'second': 3}],
+         ['echoUnorderedMap', {'first': -2, 'second': 3}],
+         ['echoNested', [[1, 2], [], [3]]],
+         ['echoEntry', {'label': 'sample', 'payload': {'_bytes': 'AAH_'}, 'count': 7}],
+         ['echoEntries', [{'label': 'empty', 'payload': {'_bytes': ''}}]],
+         ['echoEntryMap', {'one': {'label': 'first', 'payload': {'_bytes': 'AAH_'}}}],
+         ['echoBatch',
+          {'entry': {'label': 'nested', 'payload': {'_bytes': 'AAH_'}}, 'tags': ['tag']}],
+         ['echoOptional', None],
+         ['echoOptional', ''],
+         ['echoOptional', 'present'],
+         ['echoInt', 0],
+         ['echoString', ''],
+         ['echoStringList', []],
+         ['echoBytes', {'_bytes': ''}],
+         ['echoEntry', {'label': 'absent', 'payload': {'_bytes': ''}}]]
+
+        with (root / "daemon.log").open("w") as log:
+            daemon = subprocess.Popen(cli + ["-D", "-m", str(root / "modules")],
+                                      stdout=log, stderr=subprocess.STDOUT)
+            try:
+                for attempt in range(100):
+                    try:
+                        command("status")
+                        break
+                    except (RuntimeError, subprocess.TimeoutExpired):
+                        if daemon.poll() is not None:
+                            raise RuntimeError("daemon exited; read daemon.log")
+                        time.sleep(0.2)
+                else:
+                    raise RuntimeError("daemon did not become ready")
+                for module in ("api_cpp", "api_rust"):
+                    command("load-module", module)
+                for module in ("api_cpp", "api_rust"):
+                    for method, value in cases:
+                        arg = "json:" + json.dumps(value, separators=(",", ":"))
+                        actual = call(module, method, arg)
+                        assert actual == value, (module, method, value, actual)
+                    print(f"{module}: {len(cases)} type round trips passed")
+                # Each caller runs against the provider written in the OTHER language.
+                for caller, provider in (("api_cpp", "api_rust"), ("api_rust", "api_cpp")):
+                    assert call(caller, "checkCalls", provider) == "sync checks passed"
+                    assert call(caller, "startAsync", provider) == "started"
+                    for attempt in range(100):
+                        status = call(caller, "asyncStatus")
+                        if status != "pending":
+                            break
+                        time.sleep(0.1)
+                    assert status == "async checks passed", (caller, status)
+                    print(f"{caller} -> {provider}: sync and async checks passed")
+            finally:
+                try:
+                    command("stop")
+                finally:
+                    try:
+                        daemon.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        daemon.terminate()
+                        daemon.wait(timeout=10)
+  - run: python3 check_examples.py
+    expect_contains:
+    - 'api_cpp: 31 type round trips passed'
+    - 'api_rust: 31 type round trips passed'
+    - 'api_cpp -> api_rust: sync and async checks passed'
+    - 'api_rust -> api_cpp: sync and async checks passed'

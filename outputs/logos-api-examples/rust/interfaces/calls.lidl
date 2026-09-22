@@ -1,0 +1,7 @@
+module calls {
+  version "1.0.0"
+  method echoInt(v: int) -> int
+  method doVoid() -> void
+  method makeResult(ok: bool) -> result
+  method slow(ms: int) -> int
+}

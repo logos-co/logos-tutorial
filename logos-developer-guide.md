@@ -27,6 +27,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
 - [Part 4: Packaging Your Module](#part-4-packaging-your-module)
   - [4.1 The LGX Package Format](#41-the-lgx-package-format)
   - [4.2 Building LGX Packages](#42-building-lgx-packages)
+  - [4.3 Managing and Signing Packages with lgx](#43-managing-and-signing-packages-with-lgx)
 - [Part 5: Installing and Managing Modules](#part-5-installing-and-managing-modules)
   - [5.1 The `lgpm` CLI](#51-the-lgpm-cli)
   - [5.2 Installing from Local Files](#52-installing-from-local-files)
@@ -46,6 +47,8 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [8.3 LogosResult](#83-logosresult)
   - [8.4 Communication Modes](#84-communication-modes)
   - [8.5 App-to-App Intents](#85-app-to-app-intents)
+  - [8.6 Call Errors and Custom Timeouts](#86-call-errors-and-custom-timeouts)
+  - [8.7 Supported Parameter and Return Types](#87-supported-parameter-and-return-types)
 - [Part 9: Advanced Topics](#part-9-advanced-topics)
   - [9.1 Tutorials](#91-tutorials)
   - [9.2 Module Dependencies](#92-module-dependencies)
@@ -54,6 +57,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [9.5 Finishing before teardown](#95-finishing-before-teardown)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
+  - [`lgx` -- Package Tool](#lgx----package-tool)
   - [`lm` -- Module Inspector](#lm----module-inspector)
   - [`logoscore` -- Headless Runtime](#logoscore----headless-runtime)
   - [`lgpm` -- Local Package Manager](#lgpm----local-package-manager)
@@ -329,7 +333,7 @@ int64_t MyModuleImpl::add(int64_t a, int64_t b) { return a + b; }
 **How it works:**
 
 1. **Any `public` method is exposed** — discoverable by `lm`, callable by `logoscore call`, and accessible from other modules. `private` members are not.
-2. **Use the supported types** so the generator can translate them onto the wire: `void`, `bool`, `int64_t`, `uint64_t`, `double`, `std::string`, `std::vector<std::string>`, `std::vector<uint8_t>`, `LogosMap`/`LogosList` (from `<logos_json.h>`), and `StdLogosResult` (from `<logos_result.h>`). Use `int64_t` for integers, not `int`.
+2. **Use the supported types** so the generator can translate them onto the wire: `bool`, `int64_t`, `uint64_t`, `double`, `std::string`, bytes (`std::vector<uint8_t>`), `std::vector<T>`, string-keyed maps, `std::optional<T>`, and records declared as `struct` in the header. `LogosMap`/`LogosList` and `nlohmann::json` (from `<logos_json.h>`) provide JSON values; `void` and `StdLogosResult` (from `<logos_result.h>`) are return-only types. Use `int64_t` for integers, not `int`. See [§8.7](#87-supported-parameter-and-return-types) for the C++/Rust mapping and runnable examples.
 3. **Events** are declared in a `logos_events:` section (the class must inherit `LogosModuleContext`). Calling the event method routes the typed args to subscribers via the host's `eventResponse` channel — outside a host (unit tests) it's a safe no-op.
 4. **Inter-module calls** also go through `LogosModuleContext`: from a method body, `modules().other_module.someMethod(arg)` calls another module using std types, with no raw `LogosAPI` and no Qt. Declare the dependency in `metadata.json`'s `dependencies` and as a flake input.
 
@@ -870,6 +874,45 @@ This produces a `my_module-<version>.lgx` file in the current directory.
 > **Windows is cross-built only.** `x86_64-windows` is a pseudo-system: there is no Nix daemon for Windows, so the package is produced on a Linux (or macOS) machine targeting `x86_64-w64-mingw32` and copied across. Note the variant is spelled `windows-x86_64`, not `windows-amd64` — unlike Linux, it has no alias, so a package labelled `windows-amd64` will not install.
 
 ---
+
+### 4.3 Managing and Signing Packages with lgx
+
+The [LGX packages tutorial](outputs/tutorial-lgx-packages.md) executes the full
+workflow, including duplicate-variant rejection and signed/trusted verification.
+Build the tool with `nix build github:logos-co/logos-package#lgx -o lgx`.
+
+```bash
+# Create takes a name, without the .lgx extension.
+./lgx/bin/lgx create my_module
+./lgx/bin/lgx add my_module.lgx -v linux-amd64 -f ./dist --main my_module_plugin.so
+./lgx/bin/lgx manifest my_module.lgx
+./lgx/bin/lgx manifest my_module.lgx --json > manifest.json
+./lgx/bin/lgx extract my_module.lgx -v linux-amd64 -o extracted
+
+# Collect packages built for the same module/version on each target platform.
+./lgx/bin/lgx merge my_module-linux.lgx my_module-macos.lgx -o release.lgx
+./lgx/bin/lgx verify release.lgx
+
+# Generate a publisher identity once, then sign the final writable archive.
+./lgx/bin/lgx keygen --name publisher --output-dir ./keys
+./lgx/bin/lgx sign release.lgx --key publisher --keys-dir ./keys
+./lgx/bin/lgx signature release.lgx > manifest.sig
+./lgx/bin/lgx keyring add publisher "$(cat keys/publisher.did)" --dir ./trusted-keys
+./lgx/bin/lgx verify release.lgx --keyring-dir ./trusted-keys
+```
+
+`add` replaces an existing variant; it does not resolve runtime libraries or make
+a dev binary portable. Prefer `.#lgx-portable` for real module distribution.
+Merge requires matching metadata, rejects duplicate variants by default, and
+deduplicates identical root assets. `--skip-duplicates` keeps the first variant.
+Sign **after** merging: input signatures are not retained. Copy Nix outputs to
+a writable file before editing or signing them.
+
+Keep the private `.jwk` file out of source control and packages. Only trust a
+publisher DID obtained through a trusted channel. `verify` checks structure,
+content hashes and any signature; exit 0 also permits unsigned packages and
+valid signatures from untrusted keys. Inspect its trust report separately.
+`lgx publish` is currently a no-op.
 
 ## Part 5: Installing and Managing Modules
 
@@ -1779,11 +1822,97 @@ handle the fallback.
 
 ---
 
+### 8.6 Call Errors and Custom Timeouts
+
+For Qt-free C++ modules, generated synchronous methods accept a trailing
+`logos::CallError*` and a timeout in milliseconds:
+
+```cpp
+logos::CallError err;
+auto value = modules().calc_module.add(0, 0, &err, 1500);
+if (!err.ok()) {
+    // err.code, err.message, err.origin describe the failed call.
+    return;
+}
+// value == 0 is a valid successful result.
+
+modules().calc_module.addAsyncResult(0, 0,
+    [](logos::AsyncResult<int64_t> r) {
+        if (!r.ok()) { /* handle r.error */ return; }
+        // Use r.value here.
+    }, 1500);
+```
+
+Use `AsyncResult` when you need to distinguish failure from a default value.
+The Qt-free value-only `addAsync` has neither an error channel nor a timeout
+argument. Qt wrappers spell the deadline with `Timeout` instead of milliseconds.
+
+Rust generated clients return `Result<T, LogosError>` and provide timeout twins:
+
+```rust
+use std::time::Duration;
+match modules().calc_module.add_with_timeout(0, 0, Duration::from_millis(1500)) {
+    Ok(value) => { /* use value, including zero */ }
+    Err(error) => { eprintln!("call failed: {error}"); }
+}
+modules().calc_module.add_async_with_timeout(
+    0, 0, Duration::from_millis(1500), |result| {
+        match result {
+            Ok(value) => { /* use value */ }
+            Err(error) => { eprintln!("call failed: {error}"); }
+        }
+    });
+```
+
+The protocol default is 20 seconds. C++ `timeout_ms <= 0` selects the default;
+Rust explicit durations below 1 ms or above `i32::MAX` ms are rejected with
+`InvalidTimeout`. A deadline applies only to that call and does not cancel work
+already running at the provider.
+
+A method can also run successfully and return a **domain error**. A C++ provider
+returns `StdLogosResult{false, {}, "reason"}`; a Rust provider returns
+`Err("reason".to_string())` from `Result<serde_json::Value, String>`. On the
+client, check the call outcome first, then the returned result's `success` and
+`error`. Rust clients receive the LIDL result envelope as `serde_json::Value`:
+`Ok(envelope)` can contain `envelope["success"] == false`.
+
+The [C++ and Rust examples](outputs/tutorial-method-calls-and-types.md) exercise
+both error channels and short/long deadlines, synchronously and asynchronously,
+in both calling directions.
+
+### 8.7 Supported Parameter and Return Types
+
+The [type walkthrough](outputs/tutorial-method-calls-and-types.md#the-supported-type-surface)
+contains a complete provider mapping and executable round trips for these
+families:
+
+| LIDL | C++ provider | Rust provider |
+| --- | --- | --- |
+| `bool`, `int`, `uint`, `float64` | `bool`, `int64_t`, `uint64_t`, `double` | `bool`, `i64`, `u64`, `f64` |
+| `tstr`, `bstr` | `std::string`, `std::vector<uint8_t>` | `String`, `Vec<u8>` |
+| `any` | `nlohmann::json` | `serde_json::Value` |
+| `[T]`, `{tstr: T}` | `std::vector<T>`, `std::map<std::string, T>` | General collections use `serde_json::Value`; `[Record]` uses `Vec<Record>` |
+| `[any]`, `{tstr: any}` | `LogosList`, `LogosMap` | `serde_json::Value` |
+| Named record | `struct` declared in the impl header | Generated struct from LIDL |
+| `?T` | `std::optional<T>` | `Option<T>` |
+| `void` (return only) | `void` | `()` |
+| `result` (return only) | `StdLogosResult` | `Result<serde_json::Value, String>` |
+
+Collections and records can nest; bytes keep their tagged base64url encoding
+at every depth. Optional record fields omit the key when empty, while empty
+positional optionals use null. The Rust example uses a committed LIDL contract
+to expose records, typed maps and optional returns; these exceed what the
+Rust-first trait frontend can derive. Client collection signatures may differ
+from provider signatures, as detailed in the walkthrough.
+
 ## Part 9: Advanced Topics
 
 ### 9.1 Tutorials
 
 For hands-on walkthroughs of module development patterns, see the dedicated tutorials:
+
+- **[Producing, Merging and Signing LGX Packages](outputs/tutorial-lgx-packages.md)** — package operations, inspection, signatures and publisher trust.
+- **[Method Calls and Supported Types in C++ and Rust](outputs/tutorial-method-calls-and-types.md)** — all supported type families, both error channels and custom sync/async deadlines.
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
@@ -1982,6 +2111,25 @@ and is torn down anyway.
 
 ## Reference: CLI Tools Summary
 
+### `lgx` -- Package Tool
+
+```bash
+lgx create <name>
+lgx add <pkg> -v <variant> -f <path> [--main <relative-path>] [--assets <dir>] [-y]
+lgx remove <pkg> -v <variant> [-y]
+lgx merge <pkg1> <pkg2> -o <output> [--skip-duplicates] [-y]
+lgx manifest <pkg> [--json]
+lgx extract <pkg> [-v <variant>] [-o <dir>]
+lgx verify <pkg> [--keyring-dir <dir>]
+lgx keygen --name <key> [--output-dir <dir>]
+lgx sign <pkg> --key <key> [--keys-dir <dir>]
+lgx signature <pkg>
+lgx keyring add <name> <did> [--dir <dir>]
+lgx keyring list [--dir <dir>]
+lgx keyring remove <name> [--dir <dir>]
+lgx semver --help
+```
+
 ### `lm` -- Module Inspector
 
 ```bash
@@ -2058,7 +2206,7 @@ What a module's flake gives you, beyond `nix build`.
 | `.#generate` | a ready-to-build source tree with every generator already run and `generated_code/` fully populated. Build it from `nix develop` without re-running a generator — and read it when you want to know what your wrapper actually looks like |
 | `.#include` | the generated SDK headers |
 | `.#headers-qt` / `.#headers-lp` | dependency wrappers, Qt-typed and Qt-free respectively |
-| `.#lgx` / `.#lgx-portable` | the signed `.lgx` package, dev and portable variants |
+| `.#lgx` / `.#lgx-portable` | the `.lgx` package, dev and portable variants; sign the final writable archive separately |
 | `.#install` / `.#install-portable` | build, bundle and install via `lgpm` in one step |
 | `.#unit-tests` | added automatically when `tests/CMakeLists.txt` exists; also a `check` |
 | `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — relaunch and QML edits are picked up with no rebuild |
