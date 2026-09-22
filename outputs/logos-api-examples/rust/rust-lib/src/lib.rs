@@ -12,21 +12,21 @@ impl ApiRustModule for ApiRust {
     fn echo_double(&mut self, v: f64) -> f64 { v }
     fn echo_bool(&mut self, v: bool) -> bool { v }
     fn echo_any(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_string_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_int_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_uint_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_double_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_bool_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_bytes_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_bytes_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_int_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_unordered_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-    fn echo_nested(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+    fn echo_string_list(&mut self, v: Vec<String>) -> Vec<String> { v }
+    fn echo_int_list(&mut self, v: Vec<i64>) -> Vec<i64> { v }
+    fn echo_uint_list(&mut self, v: Vec<u64>) -> Vec<u64> { v }
+    fn echo_double_list(&mut self, v: Vec<f64>) -> Vec<f64> { v }
+    fn echo_bool_list(&mut self, v: Vec<bool>) -> Vec<bool> { v }
+    fn echo_list(&mut self, v: Vec<serde_json::Value>) -> Vec<serde_json::Value> { v }
+    fn echo_map(&mut self, v: std::collections::BTreeMap<String, serde_json::Value>) -> std::collections::BTreeMap<String, serde_json::Value> { v }
+    fn echo_bytes_list(&mut self, v: Vec<Vec<u8>>) -> Vec<Vec<u8>> { v }
+    fn echo_bytes_map(&mut self, v: std::collections::BTreeMap<String, Vec<u8>>) -> std::collections::BTreeMap<String, Vec<u8>> { v }
+    fn echo_int_map(&mut self, v: std::collections::BTreeMap<String, i64>) -> std::collections::BTreeMap<String, i64> { v }
+    fn echo_unordered_map(&mut self, v: std::collections::BTreeMap<String, i64>) -> std::collections::BTreeMap<String, i64> { v }
+    fn echo_nested(&mut self, v: Vec<Vec<i64>>) -> Vec<Vec<i64>> { v }
     fn echo_entry(&mut self, v: Entry) -> Entry { v }
     fn echo_entries(&mut self, v: Vec<Entry>) -> Vec<Entry> { v }
-    fn echo_entry_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+    fn echo_entry_map(&mut self, v: std::collections::BTreeMap<String, Entry>) -> std::collections::BTreeMap<String, Entry> { v }
     fn echo_batch(&mut self, v: Batch) -> Batch { v }
     fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
     fn do_void(&mut self) {}

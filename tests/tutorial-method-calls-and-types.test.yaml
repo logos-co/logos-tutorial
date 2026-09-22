@@ -17,7 +17,7 @@ prerequisites:
 sections:
 - title: The supported type surface
   text: |
-    This table describes the current Qt-free C++ and Rust **generated provider
+    This table describes the Qt-free C++ and Rust **generated provider
     method signatures**.
     Every `echo*` method below takes and returns the indicated type. Containers can
     nest: the examples include bytes inside lists/maps/records, a list and map of
@@ -32,40 +32,38 @@ sections:
     | `float64` | `double` | `f64` |
     | `bool` | `bool` | `bool` |
     | `any` | `nlohmann::json` | `serde_json::Value` |
-    | `[tstr]` | `std::vector<std::string>` | `serde_json::Value` |
-    | `[int]` | `std::vector<int64_t>` | `serde_json::Value` |
-    | `[uint]` | `std::vector<uint64_t>` | `serde_json::Value` |
-    | `[float64]` | `std::vector<double>` | `serde_json::Value` |
-    | `[bool]` | `std::vector<bool>` | `serde_json::Value` |
-    | `[any]` | `LogosList` | `serde_json::Value` |
-    | `{tstr: any}` | `LogosMap` | `serde_json::Value` |
-    | `[bstr]` | `std::vector<std::vector<uint8_t>>` | `serde_json::Value` |
-    | `{tstr: bstr}` | `std::map<std::string, std::vector<uint8_t>>` | `serde_json::Value` |
-    | `{tstr: int}` | `std::map<std::string, int64_t>` | `serde_json::Value` |
-    | `{tstr: int}` | `std::unordered_map<std::string, int64_t>` | `serde_json::Value` |
-    | `[[int]]` | `std::vector<std::vector<int64_t>>` | `serde_json::Value` |
+    | `[tstr]` | `std::vector<std::string>` | `Vec<String>` |
+    | `[int]` | `std::vector<int64_t>` | `Vec<i64>` |
+    | `[uint]` | `std::vector<uint64_t>` | `Vec<u64>` |
+    | `[float64]` | `std::vector<double>` | `Vec<f64>` |
+    | `[bool]` | `std::vector<bool>` | `Vec<bool>` |
+    | `[any]` | `LogosList` | `Vec<serde_json::Value>` |
+    | `{tstr: any}` | `LogosMap` | `BTreeMap<String, serde_json::Value>` |
+    | `[bstr]` | `std::vector<std::vector<uint8_t>>` | `Vec<Vec<u8>>` |
+    | `{tstr: bstr}` | `std::map<std::string, std::vector<uint8_t>>` | `BTreeMap<String, Vec<u8>>` |
+    | `{tstr: int}` | `std::map<std::string, int64_t>` | `BTreeMap<String, i64>` |
+    | `{tstr: int}` | `std::unordered_map<std::string, int64_t>` | `BTreeMap<String, i64>` |
+    | `[[int]]` | `std::vector<std::vector<int64_t>>` | `Vec<Vec<i64>>` |
     | `Entry` | `Entry` | `Entry` |
     | `[Entry]` | `std::vector<Entry>` | `Vec<Entry>` |
-    | `{tstr: Entry}` | `std::map<std::string, Entry>` | `serde_json::Value` |
+    | `{tstr: Entry}` | `std::map<std::string, Entry>` | `BTreeMap<String, Entry>` |
     | `Batch` | `Batch` | `Batch` |
     | `?tstr` | `std::optional<std::string>` | `Option<String>` |
     | `void` (return only) | `void` | `()` |
     | `result` (return only) | `StdLogosResult` | `Result<serde_json::Value, String>` |
 
-    The Rust column describes the generated API, not the available wire types.
-    LIDL still validates a `[int]` or `{tstr: int}` argument against its declared
-    shape before passing it to a Rust method as `serde_json::Value`. The method
-    can deserialize that value into `Vec<i64>` or `BTreeMap<String, i64>` when it
-    needs an owned type. This is a generator signature limitation; record fields
-    are already generated as recursively typed Rust values.
+    Rust collection types follow LIDL recursively: `[int]` is `Vec<i64>` and
+    `{tstr: [bstr]}` is `BTreeMap<String, Vec<Vec<u8>>>`. Within collections,
+    `serde_json::Value` appears where an element is `any`. The generated provider
+    validates incoming collection values against
+    their LIDL shape before decoding them into these Rust types.
 
     Rust uses a **committed LIDL contract** here. The Rust-first trait frontend used
-    in the [introductory tutorial](tutorial-rust-module.md) does not derive record or
-    map contracts and rejects optional returns. Declaring the LIDL directly exposes
-    the larger supported surface and generates the trait you implement. Do not write
-    `Vec<i64>` in that generated provider impl: general collections currently arrive
-    as `serde_json::Value`; a record and `[Record]` are the typed exceptions. Record
-    **fields** are typed recursively (for example `Batch.tags: Vec<String>`).
+    in the [introductory tutorial](tutorial-rust-module.md) can derive supported
+    `Vec<T>` and `BTreeMap<String, T>` contracts, but does not derive record
+    declarations and rejects optional returns. Declaring the LIDL directly exposes
+    the larger supported surface and generates the trait you implement. Record
+    **fields** are typed recursively too (for example `Batch.tags: Vec<String>`).
 
     C++ header-first authoring uses the displayed standard types; an unordered map
     is allowed for method parameters/returns, while record fields use `std::map`.
@@ -81,13 +79,15 @@ sections:
 
     Bytes use the tagged JSON form `{"_bytes":"AAH_"}` (unpadded base64url for
     `00 01 ff`), including inside containers. Scalar byte methods and typed record
-    fields are encoded by the SDK; when a Rust collection arrives as `Value`, retain
-    those tags. A list of JSON integers is not the canonical byte representation.
+    fields are encoded by the SDK. Nested `Vec<u8>` values are encoded with the
+    same tags automatically. A list of JSON integers is not the canonical byte
+    representation.
 
     Generated **clients** need not have the same collection signatures as providers:
-    C++ wrappers use `LogosList`/`LogosMap` for many general collections; Rust clients
-    borrow `&serde_json::Value`, return `Value`, and borrow typed records. Inspect
-    `nix build .#generate` when you need the exact generated signature.
+    C++ wrappers use `LogosList`/`LogosMap` for many general collections. Rust
+    clients borrow slices and `&BTreeMap` for collection parameters and return
+    owned `Vec<T>` and `BTreeMap<String, T>`. Inspect `nix build .#generate`
+    when you need the exact generated signature.
 - title: The shared calling contract
   step: true
   text: |
@@ -334,7 +334,9 @@ sections:
     Scaffold Rust first to get the builder's compatible `Cargo.toml` and `Cargo.lock`.
     We replace the trait-first metadata with `codegen.lidl`; the generated scaffold
     now supplies `ApiRustModule`, `Entry` and `Batch`. The crate keeps its scaffolded
-    package name (`minimal_rust`); `staticlib` below is set to match it.
+    package name (`minimal_rust`); `staticlib` below is set to match it. The
+    explicit SDK input gives the builder the merged typed-collection generator
+    and its matching runtime while its own lock is still catching up.
   steps:
   - run: |-
       mkdir -p rust
@@ -345,6 +347,8 @@ sections:
       content: |
         {
           inputs.logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
+          inputs.logos-rust-sdk.url = "github:logos-co/logos-rust-sdk{release}";
+          inputs.logos-module-builder.inputs.logos-rust-sdk.follows = "logos-rust-sdk";
           outputs = inputs@{ logos-module-builder, ... }:
             logos-module-builder.lib.mkLogosModule {
               src = ./.;
@@ -451,21 +455,21 @@ sections:
             fn echo_double(&mut self, v: f64) -> f64 { v }
             fn echo_bool(&mut self, v: bool) -> bool { v }
             fn echo_any(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_string_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_int_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_uint_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_double_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_bool_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_bytes_list(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_bytes_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_int_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_unordered_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
-            fn echo_nested(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_string_list(&mut self, v: Vec<String>) -> Vec<String> { v }
+            fn echo_int_list(&mut self, v: Vec<i64>) -> Vec<i64> { v }
+            fn echo_uint_list(&mut self, v: Vec<u64>) -> Vec<u64> { v }
+            fn echo_double_list(&mut self, v: Vec<f64>) -> Vec<f64> { v }
+            fn echo_bool_list(&mut self, v: Vec<bool>) -> Vec<bool> { v }
+            fn echo_list(&mut self, v: Vec<serde_json::Value>) -> Vec<serde_json::Value> { v }
+            fn echo_map(&mut self, v: std::collections::BTreeMap<String, serde_json::Value>) -> std::collections::BTreeMap<String, serde_json::Value> { v }
+            fn echo_bytes_list(&mut self, v: Vec<Vec<u8>>) -> Vec<Vec<u8>> { v }
+            fn echo_bytes_map(&mut self, v: std::collections::BTreeMap<String, Vec<u8>>) -> std::collections::BTreeMap<String, Vec<u8>> { v }
+            fn echo_int_map(&mut self, v: std::collections::BTreeMap<String, i64>) -> std::collections::BTreeMap<String, i64> { v }
+            fn echo_unordered_map(&mut self, v: std::collections::BTreeMap<String, i64>) -> std::collections::BTreeMap<String, i64> { v }
+            fn echo_nested(&mut self, v: Vec<Vec<i64>>) -> Vec<Vec<i64>> { v }
             fn echo_entry(&mut self, v: Entry) -> Entry { v }
             fn echo_entries(&mut self, v: Vec<Entry>) -> Vec<Entry> { v }
-            fn echo_entry_map(&mut self, v: serde_json::Value) -> serde_json::Value { v }
+            fn echo_entry_map(&mut self, v: std::collections::BTreeMap<String, Entry>) -> std::collections::BTreeMap<String, Entry> { v }
             fn echo_batch(&mut self, v: Batch) -> Batch { v }
             fn echo_optional(&mut self, v: Option<String>) -> Option<String> { v }
             fn do_void(&mut self) {}
