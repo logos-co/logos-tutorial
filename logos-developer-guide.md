@@ -1901,9 +1901,11 @@ families:
 Collections and records can nest; bytes keep their tagged base64url encoding
 at every depth. Optional record fields omit the key when empty, while empty
 positional optionals use null. The Rust example uses a committed LIDL contract
-to expose records, typed maps and optional returns; these exceed what the
+to expose records, map contracts and optional returns; these exceed what the
 Rust-first trait frontend can derive. Client collection signatures may differ
-from provider signatures, as detailed in the walkthrough.
+from provider signatures, as detailed in the walkthrough. Rust's generated
+method signatures currently expose most collections as `serde_json::Value`, even
+though LIDL validates their declared element types at the call boundary.
 
 ## Part 9: Advanced Topics
 

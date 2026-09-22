@@ -21,7 +21,8 @@ Build two modules that expose the supported parameter and return type families, 
 
 ## The supported type surface
 
-This table describes the current Qt-free C++ and Rust **provider** surfaces.
+This table describes the current Qt-free C++ and Rust **generated provider
+method signatures**.
 Every `echo*` method below takes and returns the indicated type. Containers can
 nest: the examples include bytes inside lists/maps/records, a list and map of
 records, a nested record and an array of arrays.
@@ -54,6 +55,13 @@ records, a nested record and an array of arrays.
 | `?tstr` | `std::optional<std::string>` | `Option<String>` |
 | `void` (return only) | `void` | `()` |
 | `result` (return only) | `StdLogosResult` | `Result<serde_json::Value, String>` |
+
+The Rust column describes the generated API, not the available wire types.
+LIDL still validates a `[int]` or `{tstr: int}` argument against its declared
+shape before passing it to a Rust method as `serde_json::Value`. The method
+can deserialize that value into `Vec<i64>` or `BTreeMap<String, i64>` when it
+needs an owned type. This is a generator signature limitation; record fields
+are already generated as recursively typed Rust values.
 
 Rust uses a **committed LIDL contract** here. The Rust-first trait frontend used
 in the [introductory tutorial](tutorial-rust-module.md) does not derive record or
