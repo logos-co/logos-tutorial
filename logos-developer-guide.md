@@ -1032,7 +1032,15 @@ Once your module is packaged and installed into a `modules/` directory (see Part
 
 ### 6.1 Running with `logoscore`
 
-The **`logoscore`** CLI (from `logos-liblogos`) is a headless runtime that can load modules and invoke their methods from the command line.
+The **`logoscore`** CLI is a headless runtime that can load modules and invoke
+their methods from the command line. Its daemon and client are plain C++ and
+use the local `qt_remote_plain` transport. Current modules built with
+`qt_remote` still interoperate unchanged because their Qt plugin loading and Qt
+runtime stay inside the separate `logos_host_qt` compatibility process.
+
+This Qt-free CLI release supports local RPC. Network `tcp` and `tcp_ssl`
+configuration is rejected until those transports have equivalent plain C ABI
+client and provider implementations.
 
 #### Building logoscore
 
