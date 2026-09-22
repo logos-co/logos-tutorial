@@ -1033,6 +1033,22 @@ nix build 'github:logos-co/logos-package-downloader#cli' --out-link ./downloader
 
 Once your module is packaged and installed into a `modules/` directory (see Parts 3 and 4), you can run it with `logoscore`.
 
+On Windows, the dedicated `logos_host_qt` from
+[`logos-module-loader-qt`](https://github.com/logos-co/logos-module-loader-qt)
+registers the plugin's directory for DLL searching before loading the plugin.
+The registration lasts for the host process's lifetime, including libraries
+loaded later by bare name, such as `libpq.dll`. Bundle these libraries and their
+dependencies beside the plugin; use metadata `include` for libraries that are
+only loaded at runtime and therefore absent from the import table.
+
+The host also searches its executable directory and System32. It excludes the
+current working directory and `PATH` from DLL searching, so adding a directory
+to `PATH` is not a way to supply a missing module dependency. This policy applies
+to the dedicated Qt module host, not shared-process loaders, `lm`, or `ui-host`.
+Older host builds require their existing search-path workaround; deploy the
+updated host before removing that workaround from a module. Linux and macOS
+continue to use the runtime paths embedded by the build and packaging tools.
+
 ### 6.1 Running with `logoscore`
 
 The **`logoscore`** CLI (from `logos-liblogos`) is a headless runtime that can load modules and invoke their methods from the command line.
