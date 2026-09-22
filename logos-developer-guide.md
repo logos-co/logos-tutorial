@@ -1090,6 +1090,13 @@ Older host builds require their existing search-path workaround; deploy the
 updated host before removing that workaround from a module. Linux and macOS
 continue to use the runtime paths embedded by the build and packaging tools.
 
+`logosctl`'s daemon and client are plain C++ and use the local
+`qt_remote_plain` transport. Modules built with `qt_remote` still interoperate
+unchanged, because their Qt plugin loading and Qt runtime stay inside the
+separate `logos_host_qt` compatibility process. This Qt-free runtime supports
+local RPC; network `tcp` and `tcp_ssl` configuration is rejected until those
+transports have equivalent plain C ABI client and provider implementations.
+
 ### 6.1 Running with `logosctl`
 
 **`logosctl`** (from [`logos-logoscore-cli`](https://github.com/logos-co/logos-logoscore-cli)) runs modules from the command line. It runs the Logos Core runtime as a daemon, installs packages into the daemon's session, and loads and calls modules on request. The [Logos CLI reference](https://docs.logos.co/core/reference/logos-cli-reference) lists every command and option.
