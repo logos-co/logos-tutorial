@@ -1,0 +1,16 @@
+{
+  "name": "api_cpp",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "example",
+  "description": "C++ types, errors and per-call deadlines",
+  "main": "api_cpp_plugin",
+  "interface": "universal",
+  "dependencies": [],
+  "interface_dependencies": [
+    {
+      "name": "calls",
+      "file": "interfaces/calls.lidl"
+    }
+  ]
+}

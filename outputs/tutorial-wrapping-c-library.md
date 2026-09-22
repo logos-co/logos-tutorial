@@ -1324,6 +1324,15 @@ If the external library is written in Go with C bindings (`cgo`), set `go_build:
 
 Setting `go_build: true` enables the Go toolchain and sets `CGO_ENABLED=1`.
 
+## More Types, Call Errors and Package Workflows
+
+[Method Calls and Supported Types in C++ and Rust](tutorial-method-calls-and-types.md)
+adds runnable examples for the full parameter/return type surface, domain
+errors, call failures and custom synchronous/asynchronous timeouts in both
+languages. [Producing, Merging and Signing LGX Packages](tutorial-lgx-packages.md)
+covers archive creation, variant merging, inspection, extraction, signing
+and publisher trust with `lgx`.
+
 ## Real-World Example: logos-libp2p-module
 
 The [logos-libp2p-module](https://github.com/logos-co/logos-libp2p-module) is a production module that wraps the `nim-libp2p` library (compiled to a C shared library). Key files:

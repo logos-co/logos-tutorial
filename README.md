@@ -35,6 +35,10 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Caller Identity:** [Caller Identity](outputs/tutorial-caller-identity.md) — build `calc_guarded`, whose write surface admits exactly one peer module, and `calc_agent`, which is that peer. Reads `logos::currentCaller()` from all three positions a call can come from — `host`, `module calc_agent`, and `unknown` — and watches one of them get through. Fully standalone.
 
+- **Packages:** [Producing, Merging and Signing LGX Packages](outputs/tutorial-lgx-packages.md) — use `lgx` to create, populate, merge, inspect, extract, verify and sign packages, then manage a publisher's trusted key. Explains dev and portable module outputs. Fully standalone.
+
+- **Calls and Types:** [Method Calls and Supported Types in C++ and Rust](outputs/tutorial-method-calls-and-types.md) — build `api_cpp` and `api_rust`, exercise the supported parameter/return type families, and call each language from the other. Covers call errors versus domain errors, synchronous and asynchronous custom timeouts, bytes, collections, records and optionals. Fully standalone.
+
 - **logos-dev-boost:** _(⚠️ **EXPERIMENTAL — NOT READY**)_ [Scaffolding Modules with logos-dev-boost](tutorial-dev-boost.md) — use the `logos-dev-boost` CLI to auto-generate modules from C library directories. Wraps libcalc (source-only) and sqlcipher (pre-built `.so`), including integration tests that create encrypted databases. Covers `--type module`, `--type full-app`, and `--lib-dir`.
 
 ## Executable Tutorials
@@ -122,6 +126,7 @@ Working module source code used by the tutorials:
 | `logos-calc-concurrent/` | `calc_slow` + `calc_fanout` | `core` (Rust `multi` worker + C++ driver) | Concurrent Dispatch |
 | `logos-calc-observer-module/` | `calc_observer` | `core` (optional deps + `modules_state`) | Optional Dependencies |
 | `logos-calc-guarded/` | `calc_guarded` + `calc_agent` | `core` (caller-gated surface + its peer) | Caller Identity |
+| `outputs/logos-api-examples/` | `api_cpp` + `api_rust` | `core` (C++ and Rust providers/callers) | Calls and Types |
 
 ## Regenerating the outputs
 
@@ -136,6 +141,10 @@ This:
 1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs each remaining leaf — Composing Modules, Dependency Interfaces, Writing a Module in Rust, Concurrent Dispatch, Optional Dependencies, Caller Identity — into its own subdirectory, reusing the `calc_module` the chain just built (`--workdir`, so no leaf rebuilds its `requires:` chain).
 2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/`, named after the spec. CI diffs these against the generator, so a committed `.md` that has fallen behind its spec fails the build.
 3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the persistence scratch dirs the tutorials create (`calc-data/`, `.logoscore/`).
+
+It also runs Calls and Types into `outputs/logos-api-examples/` and the LGX
+walkthrough in a temporary directory. The latter creates a disposable signing
+key, removes it at the end, and leaves no private key in `outputs/`.
 
 ### Pinning to a release tag
 

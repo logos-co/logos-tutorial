@@ -1,0 +1,23 @@
+{
+  "name": "api_rust",
+  "version": "1.0.0",
+  "type": "core",
+  "category": "example",
+  "description": "Rust types, errors and per-call deadlines",
+  "main": "api_rust_plugin",
+  "interface": "cdylib",
+  "dependencies": [],
+  "interface_dependencies": [
+    {
+      "name": "calls",
+      "file": "interfaces/calls.lidl"
+    }
+  ],
+  "codegen": {
+    "lidl": "api_rust.lidl",
+    "rust": {
+      "crate": "rust-lib",
+      "staticlib": "minimal_rust"
+    }
+  }
+}

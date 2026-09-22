@@ -1,0 +1,42 @@
+module api_rust {
+  version "1.0.0"
+type Entry {
+  label: tstr
+  payload: bstr
+  ? count: uint
+}
+type Batch {
+  entry: Entry
+  tags: [tstr]
+}
+  method echoString(v: tstr) -> tstr
+  method echoBytes(v: bstr) -> bstr
+  method echoInt(v: int) -> int
+  method echoUint(v: uint) -> uint
+  method echoDouble(v: float64) -> float64
+  method echoBool(v: bool) -> bool
+  method echoAny(v: any) -> any
+  method echoStringList(v: [tstr]) -> [tstr]
+  method echoIntList(v: [int]) -> [int]
+  method echoUintList(v: [uint]) -> [uint]
+  method echoDoubleList(v: [float64]) -> [float64]
+  method echoBoolList(v: [bool]) -> [bool]
+  method echoList(v: [any]) -> [any]
+  method echoMap(v: {tstr: any}) -> {tstr: any}
+  method echoBytesList(v: [bstr]) -> [bstr]
+  method echoBytesMap(v: {tstr: bstr}) -> {tstr: bstr}
+  method echoIntMap(v: {tstr: int}) -> {tstr: int}
+  method echoUnorderedMap(v: {tstr: int}) -> {tstr: int}
+  method echoNested(v: [[int]]) -> [[int]]
+  method echoEntry(v: Entry) -> Entry
+  method echoEntries(v: [Entry]) -> [Entry]
+  method echoEntryMap(v: {tstr: Entry}) -> {tstr: Entry}
+  method echoBatch(v: Batch) -> Batch
+  method echoOptional(v: ?tstr) -> ?tstr
+  method doVoid() -> void
+  method makeResult(ok: bool) -> result
+  method slow(ms: int) -> int
+  method checkCalls(provider: tstr) -> tstr
+  method startAsync(provider: tstr) -> tstr
+  method asyncStatus() -> tstr
+}

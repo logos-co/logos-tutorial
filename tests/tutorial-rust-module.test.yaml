@@ -491,3 +491,5 @@ sections:
       **Building a consumer does not build its dependencies.** The builder read `calc_module`'s published `.lidl`. That is why a Rust module can depend on a C++ module without a C++ toolchain entering its build, and why adding a dependency does not inherit its compile time.
 
       Next: [Composing Modules](tutorial-composing-modules.md) does the same job from C++ and covers the module context, persistence and async calls; [Dependency Interfaces](tutorial-interface-dependencies.md) removes the concrete module name from the picture entirely.
+
+      Continue with [Method Calls and Supported Types in C++ and Rust](tutorial-method-calls-and-types.md) for call errors, domain errors, custom sync/async timeouts, and the full type surface, including contract-first Rust records and collections. [Producing, Merging and Signing LGX Packages](tutorial-lgx-packages.md) covers the release package workflow.
