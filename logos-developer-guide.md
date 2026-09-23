@@ -225,9 +225,9 @@ logos-my-module/
 The key insight: **logos-module-builder** reduces ~600 lines of configuration
 across 5+ files down to ~70 lines across 2-3 files, and the `universal` pattern
 collapses the three hand-written Qt source files into one plain C++ class.
-`metadata.json` is the single source of truth. The build installs it as an
-adjacent `<main>.metadata.json` discovery sidecar; compatibility Qt plugins
-also embed it.
+`metadata.json` is the single source of truth. The build installs it beside
+the library as `lib/<name>_plugin.metadata.json`, the discovery sidecar the
+runtime reads without loading any code; compatibility Qt plugins also embed it.
 
 The `CMakeLists.txt` is minimal -- it includes `LogosModule.cmake` (provided by
 the builder) and calls the `logos_module()` macro. The macro selects the plain
@@ -282,7 +282,7 @@ The full set of available fields:
 
 | Field                            | Required                               | Default            | Description                                                                                                                                                                                                                                                    |
 | -------------------------------- | -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers)                                                                                                                                                                                                               |
+| `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers). `core` is the host's own name and is refused.                                                                                                                                                              |
 | `display_name`                   | No                                     | `name`             | Human-readable label shown in UIs (Package Manager, App Manager, `lm metadata`, `lgx manifest`). Consumers fall back to `name` when unset, so older packages keep working.                                                                                     |
 | `version`                        | No                                     | `1.0.0`            | Semantic version                                                                                                                                                                                                                                               |
 | `type`                           | No                                     | `core`             | Module type (`core`, `ui`, `ui_qml`)                                                                                                                                                                                                                           |
@@ -291,9 +291,9 @@ The full set of available fields:
 | `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the standalone app plugin directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
 | `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the module-impl C ABI (plus compatibility Qt glue when selected). `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). Omit for the older hand-written Qt-plugin pattern.                            |
-| `transport`                      | No                                     | `"qt_remote"`      | Runtime implementation. `"qt_remote_plain"` builds a Qt-free native core module for `logos_host_plain`; `"qt_remote"` preserves the current Qt plugin and `logos_host_qt`. Plain requires a non-UI `universal`/`cdylib` module and the `lp` consumer API. On Linux/macOS both transports interoperate on the same wire. Rebuild all Windows modules with plain transport. |
+| `transport`                      | No                                     | `"qt_remote"`      | Runtime implementation. `"qt_remote_plain"` builds a Qt-free native core module for `logos_host_plain`; `"qt_remote"` preserves the current Qt plugin and `logos_host_qt`. Plain requires `"type": "core"` with `universal` or `cdylib`, and the `lp` consumer API; the builder refuses anything else. Basecamp cannot host plain modules yet (see [§7.2](#72-module-types-in-logos-basecamp)). On Linux/macOS both transports interoperate on the same wire. Rebuild all Windows modules with plain transport. |
 | `codegen`                        | No (required for `cdylib`)             | `{}`               | Where the builder finds your code and your contract. `codegen.rust = { crate, trait?, source?, staticlib? }` and `codegen.nim = { crate, main?, staticlib?, link? }` select a language core; `codegen.lidl` names a committed contract; `codegen.impl_header` / `impl_class` override the `universal` defaults. See [§1.7](#17-authoring-in-rust-and-nim).                            |
-| `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
+| `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics; for a plain module, one host thread in arrival order) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module. Its canonical LIDL contract is bundled in `assets/lidl/`.                                                                                  |
@@ -368,7 +368,7 @@ int64_t MyModuleImpl::add(int64_t a, int64_t b) { return a + b; }
 3. **Events** are declared in a `logos_events:` section (the class must inherit `LogosModuleContext`). Calling the event method routes the typed args to subscribers via the host's `eventResponse` channel — outside a host (unit tests) it's a safe no-op.
 4. **Inter-module calls** also go through `LogosModuleContext`: from a method body, `modules().other_module.someMethod(arg)` calls another module using std types, with no raw `LogosAPI` and no Qt. Declare the dependency in `metadata.json`'s `dependencies` and as a flake input.
 
-You do **not** write `initLogos`, `name()`/`version()` (read from `metadata.json`), `lidl()`, `Q_INVOKABLE`, or the `eventResponse` signal — all are generated. `lidl()` returns the canonical LIDL document built into the module; it is byte-identical to the module's `.#lidl` output and its `assets/lidl/<name>.lidl` package asset. These three built-ins are deliberately omitted from that document, so it describes the authored API rather than recursively describing itself.
+You do **not** write `initLogos`, `name()`/`version()` (read from `metadata.json`), `lidl()`, `Q_INVOKABLE`, or the `eventResponse` signal — all are generated. `lidl()` returns the canonical LIDL document built into the module; it is byte-identical to the module's `.#lidl` output and its `assets/lidl/<name>.lidl` package asset. These three built-ins are deliberately omitted from that document, so it describes the authored API rather than recursively describing itself. A host asks `name()` to verify a module before it has sent tokens or a context, so the generated code answers all three from the declaration without constructing your class or running `onContextReady()`.
 
 > **Qt compatibility pattern.** Existing hand-written Qt plugins
 > (`*_interface.h` + `*_plugin.h` + `*_plugin.cpp` with `QObject`,
@@ -419,7 +419,8 @@ result/
 ### 1.6 Concurrent dispatch
 
 By default every call to a module is dispatched **one at a time** — the module's
-methods run on a single thread (the event loop), so you never have to think about
+methods run on a single thread (the event loop, or one host thread for a
+`qt_remote_plain` module), so you never have to think about
 thread-safety. This is the right default and stays the default. The downside: a
 handler that **blocks** — a download that runs for minutes, a slow RPC — stalls
 *every other caller* of that module until it returns.
@@ -465,7 +466,7 @@ once a pooled worker finishes. Excess calls remain queued behind the configured
 pool cap. The consumer side awaits that completion transparently,
 so generated clients are unchanged. The decomposition is *serialized dispatch +
 concurrent processing + serialized responses*, and it works over the default
-transport (`qt_remote` or `qt_remote_plain`). Because the host merely forwards
+`qt_remote` transport. Because the host merely forwards
 the marker and the completion, **an existing (older) daemon or app loads and runs
 a `multi` module unmodified** — this is logos-protocol **0.2**, an additive,
 backward-compatible minor bump (same MAJOR ⇒ still compatible). Caveats: (1) a
@@ -475,6 +476,13 @@ guaranteed** — don't rely on "event X always arrives before method Y returns";
 (3) a *caller* built against logos-protocol < 0.2 will see the raw pending marker
 instead of the result — rebuild callers against ≥ 0.2 (still compatible with every
 existing module) to consume a `multi` module concurrently.
+
+**With `qt_remote_plain`** there is no pending marker: the host enforces the
+mode. The loader passes the module's `concurrency` and `max_workers` to
+`logos_host_plain`, which runs up to `max_workers` calls at once (the machine's
+hardware concurrency when it is omitted), each straight through the module's
+dispatch on a transport thread. A `single` plain module's calls run one at a
+time, in arrival order, on one thread. The thread-safety rules above are the same.
 
 
 ### 1.7 Authoring in Rust and Nim
@@ -1038,9 +1046,24 @@ use the local `qt_remote_plain` transport. Current modules built with
 `qt_remote` still interoperate unchanged because their Qt plugin loading and Qt
 runtime stay inside the separate `logos_host_qt` compatibility process.
 
-This Qt-free CLI release supports local RPC. Network `tcp` and `tcp_ssl`
-configuration is rejected until those transports have equivalent plain C ABI
-client and provider implementations.
+Local same-host RPC is the default and the stable path. The daemon can also
+serve a module over `tcp` or `tcp_ssl` with `--module-transport`; expose both
+`core_service` and `capability_module`, because a remote client's handshake goes
+through the latter. A network client dials the listeners named in its own
+`client/config.json` and presents a token issued for it with
+`logoscore issue-token --name <client> [--expires 1h]`: the daemon's boot token
+is accepted on the local socket only. The
+[transports doc-test](https://github.com/logos-co/logos-logoscore-cli/blob/master/doctests/outputs/logoscore-transports.md)
+walks through both protocols, TLS certificates included.
+
+`logoscore` finds the host processes beside its own executable, or in
+`<modules dir>/../bin`. Set `LOGOS_HOST_PLAIN_PATH` to point it at a
+`logos_host_plain` elsewhere, and `LOGOS_HOST_PATH` for `logos_host_qt` (the
+plain host is also looked for beside it). A module installed without a
+`<name>_plugin.metadata.json` sidecar (a Qt plugin built before sidecars
+existed), or whose sidecar states another version than its installed
+`manifest.json`, is read through `logos_host_qt --inspect` instead, so it is
+only discovered when a `logos_host_qt` can be found.
 
 #### Building logoscore
 
@@ -1119,6 +1142,8 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 | `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
 | `--persistence-path <dir>`         | Base directory for module instance persistence       |
 | `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
+| `--module-transport NAME=PROTOCOL[,k=v...]` | Add a `tcp` or `tcp_ssl` listener to a module, beside its local socket (repeatable) |
+| `--insecure-tcp`                   | Allow plaintext `tcp` on a non-loopback address     |
 | `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
 
 **Daemon commands:**
@@ -1134,6 +1159,9 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 | `call <module> <method> [args]` | Call a method on a loaded module |
 | `watch <module> [--event]`      | Watch events from a module       |
 | `stats`                         | Show module resource usage       |
+| `issue-token --name <name> [--expires <d>]` | Issue a named token for a network client |
+| `list-tokens`                   | List issued tokens               |
+| `revoke-token <name>`           | Revoke an issued token           |
 | `stop`                          | Stop the daemon                  |
 
 ---
@@ -1177,9 +1205,11 @@ The application supports three types of modules:
 
 #### Core Modules (Backend)
 
-These are non-UI modules that provide backend functionality. Plain modules run
-in isolated `logos_host_plain` processes; current Qt plugins run in
-`logos_host_qt`. Both use the compatible QtRO wire on Linux and macOS.
+These are non-UI modules that provide backend functionality. Each runs in an
+isolated Qt host process (`logos_host_qt`, which the bundle ships as
+`logos_host`). Basecamp does not ship `logos_host_plain` yet,
+so build a module for Basecamp with the default `"transport": "qt_remote"`;
+`qt_remote_plain` modules currently run under `logoscore`.
 
 - Loaded via `logos_core_load_plugin()`
 - Placed in the **modules directory** (`--modules-dir`)
@@ -2147,7 +2177,7 @@ This happens when running a module outside the full Logos runtime (e.g., in the 
 Check that:
 
 1. The module binary is in the correct directory (modules dir for core, plugins dir for UI)
-2. The `metadata.json` file is present alongside the binary
+2. The `<name>_plugin.metadata.json` sidecar is present alongside the binary (without one, a Qt plugin is read through `logos_host_qt --inspect`)
 3. The `name` field in metadata matches the binary name (e.g., `my_module_plugin.so` for module named `my_module`)
 
 ### lgpm install fails
