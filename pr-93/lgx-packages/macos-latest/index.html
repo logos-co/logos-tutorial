@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial Execution Report</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --pass: #2ea043; --fail: #f85149; --info: #d29922;
+    --code-bg: #0b0f14;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .pill.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .pill.skip { background: rgba(210,153,34,.15); color: var(--info); }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  .tutorial-title { font-size: 20px; font-weight: 700; margin: 24px 0 8px; color: #fff; }
+  .row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden;
+  }
+  .row.preamble, .row.section { grid-template-columns: 1fr; }
+  .col { padding: 14px 18px; min-width: 0; }
+  .col.left { border-right: 1px solid var(--border); }
+  .row.preamble .col.left, .row.section .col.left { border-right: none; }
+  .col.right { background: var(--panel); }
+  /* A row containing any failed step is tinted red end-to-end so it's
+     impossible to miss when scanning the report. */
+  .row.has-fail { border-color: var(--fail); box-shadow: 0 0 0 1px var(--fail); }
+  .row.has-fail .col.left { background: rgba(248,81,73,.07); border-right-color: var(--fail); }
+  .row.has-fail .col.right { background: rgba(248,81,73,.12); }
+  .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+  .md :first-child { margin-top: 0; }
+  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 15px; }
+  .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .md :not(pre) > code { background: rgba(110,118,129,.2); padding: .15em .4em; border-radius: 4px; }
+  .md table { border-collapse: collapse; margin: 8px 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; }
+  .md blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 2px 12px; color: var(--muted); }
+  .md img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .exec { margin-bottom: 14px; }
+  .exec:last-child { margin-bottom: 0; }
+  .exec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+  .badge.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .badge.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .badge.info { background: rgba(210,153,34,.15); color: var(--info); }
+  .kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .note { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  pre.cmd { background: var(--code-bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 0 0 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  pre.output { background: #010409; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0; overflow-x: auto; max-height: 360px; overflow-y: auto; color: #b9c1ca; }
+  pre.cmd, pre.output { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+  .empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  /* GitHub-style permalinks: every heading carries a link icon in the left
+     gutter (revealed on hover/focus) that copies a deep link to that section.
+     scroll-margin-top keeps the target clear of the sticky header. */
+  .heading-anchored { position: relative; scroll-margin-top: 76px; }
+  a.anchor {
+    position: absolute; left: -18px; top: 0; width: 16px; height: 1.55em;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); opacity: 0; text-decoration: none;
+    transition: opacity .1s ease-in;
+  }
+  a.anchor svg { width: 14px; height: 14px; display: block; }
+  .heading-anchored:hover > a.anchor, a.anchor:focus { opacity: 1; }
+  a.anchor:hover { color: var(--accent); }
+  .heading-anchored.flash { animation: flash 1.4s ease-out; border-radius: 4px; }
+  @keyframes flash {
+    from { background: rgba(88,166,255,.28); box-shadow: 0 0 0 4px rgba(88,166,255,.28); }
+    to { background: transparent; box-shadow: 0 0 0 4px transparent; }
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 14px; font-size: 12.5px; z-index: 20;
+    opacity: 0; pointer-events: none; transition: opacity .15s ease-in-out;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tutorial Execution Report</h1>
+  <span id="summary"></span>
+  <label style="margin-left:auto; font-size:12px; color:var(--muted)">Tutorial
+    <select id="picker"></select>
+  </label>
+</header>
+<main id="main"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script id="report-data" type="application/json">{"generated_platform": "Darwin", "summary": {"failed": 0, "passed": 22, "skipped": 0}, "tutorials": [{"meta": {"name": "Tutorial: Producing, Merging and Signing LGX Packages", "platform": "Darwin (ext=dylib)", "release": "(none)"}, "rows": [{"execs": [], "md": "# Tutorial: Producing, Merging and Signing LGX Packages\n\nAn `.lgx` can hold several platform variants of one package. This walkthrough\nproduces two packages, merges them, inspects and extracts the result, then\nsigns it and checks its publisher against a local keyring.\n\nThe payloads here are small text fixtures, so you can learn the archive tools\non any machine without compiling for another platform. They are **not loadable\nplugins**. For real modules, use the builder outputs described below: `lgx add`\npackages files but does not compile code, resolve shared libraries, or make a\nNix-dependent binary portable.\n\n**What you'll build:** A multi-variant package signed with a disposable tutorial key.\n\n**What you'll learn:**\n\n- Produce dev and portable packages with the module builder\n- Use create, add, manifest, extract, remove, merge and verify\n- Generate a key, sign the final archive and inspect its signature\n- Distinguish package integrity, a valid signature and a trusted publisher\n\n## Prerequisites\n\n- Nix with flakes enabled\n- A fresh directory: `mkdir logos-lgx-packages && cd logos-lgx-packages`"}, {"execs": [], "md": "## Produce packages from a real module\n\nIn the [C++ module](tutorial-wrapping-c-library.md) or\n[Rust module](tutorial-rust-module.md) project, these outputs package your\ncompiled module, its metadata and canonical LIDL assets:\n\n```bash\nnix build .#lgx --out-link result-lgx\nnix build .#lgx-portable --out-link result-lgx-portable\n```\n\n`result-lgx/` contains a dev package (for example `darwin-arm64-dev`) that\nneeds the Nix store. `result-lgx-portable/` contains a portable package\n(for example `darwin-arm64`) with its runtime libraries bundled. Build on\neach target platform and collect those `.lgx` files before merging.\nLinux x86-64 variants use `linux-amd64`; Apple Silicon uses `darwin-arm64`.\nWindows is cross-built on Linux with\n`nix build .#packages.x86_64-windows.lgx-portable`.\n\nCopy packages out of the read-only build output before signing or editing\nthem, for example `cp result-lgx-portable/*.lgx ./release.lgx` followed by\n`chmod u+w release.lgx`. The builder does not supply your publisher key;\nsigning is a separate step after the final merge."}, {"execs": [], "md": "## Step 1: Create and populate two packages"}, {"execs": [{"cmd": "nix build 'github:logos-co/logos-package#lgx' --out-link ./lgx", "exit_code": 0, "kind": "run", "note": "", "output": "unpacking 'github:logos-co/logos-package/d759f34b095db14945ab0a38f6e1e924eafc3758' into the Git cache...\ncopying path '/nix/store/v1ljjaggvzhrj1cg1lrmy14wwa0b6gsn-source' from 'https://cache.nix.logos.co/public'...\ncopying path '/nix/store/jc3mfa7ybzh32bkvdj5xiib1vkx8jy6x-source' from 'https://cache.nixos.org'...\nthese 5 paths will be fetched (9.8 MiB download, 41.7 MiB unpacked):\n  /nix/store/lxzs5j6ywzl51jnd093diy1v9i7260rz-icu4c-76.1\n  /nix/store/8kq1zcyvp60zszwdadivvsgbbvcx6wl9-lgx-0.1.0\n  /nix/store/8qhdaryhrcvz2mfgvhci2j63qa22bjsl-libcxx-19.1.7\n  /nix/store/5gavp9kbhxmxx3zaj7ajblk463432any-libsodium-1.0.20\n  /nix/store/nx8r6a40877h1dmb8cm7lhl1ch2yb4jc-zlib-1.3.1\ncopying path '/nix/store/8qhdaryhrcvz2mfgvhci2j63qa22bjsl-libcxx-19.1.7' from 'https://cache.nixos.org'...\ncopying path '/nix/store/nx8r6a40877h1dmb8cm7lhl1ch2yb4jc-zlib-1.3.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/5gavp9kbhxmxx3zaj7ajblk463432any-libsodium-1.0.20' from 'https://cache.nixos.org'...\ncopying path '/nix/store/lxzs5j6ywzl51jnd093diy1v9i7260rz-icu4c-76.1' from 'https://cache.nixos.org'...\ncopying path '/nix/store/8kq1zcyvp60zszwdadivvsgbbvcx6wl9-lgx-0.1.0' from 'https://cache.nix.logos.co/public'...\n", "status": "pass"}], "md": "```bash\nnix build 'github:logos-co/logos-package#lgx' --out-link ./lgx\n```"}, {"execs": [{"cmd": "./lgx/bin/lgx --help", "exit_code": 0, "kind": "run", "note": "", "output": "lgx - LGX Package Manager\n\nUsage: lgx <command> [options]\n\nCommands:\n  add         Add files to a package variant\n  create      Create a new skeleton package\n  extract     Extract variant contents or root assets from a package\n  keygen      Generate a signing keypair\n  keyring     Manage trusted signing keys\n  manifest    Print the manifest of a package\n  merge       Merge multiple .lgx packages into one\n  publish     Publish a package (no-op)\n  remove      Remove a variant from a package\n  semver      Compare, sort and range-match versions\n  sign        Sign a package with an Ed25519 key\n  signature   Print the raw manifest.sig bytes of a package\n  verify      Verify a package is valid\n\nOptions:\n  --help, -h     Show help for a command\n  --version, -V  Show version information\n\nExamples:\n  lgx create mymodule\n  lgx add mymodule.lgx --variant linux-amd64 --files ./libfoo.so\n  lgx verify mymodule.lgx\n\nRun 'lgx <command> --help' for more information on a command.\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx --help\n```"}, {"execs": [{"cmd": "write linux/payload.txt", "kind": "file", "note": "Wrote linux/payload.txt", "status": "pass"}], "md": "### 1.1 `linux/payload.txt`\n\n```\nTutorial payload for Linux.\n```"}, {"execs": [{"cmd": "write darwin/payload.txt", "kind": "file", "note": "Wrote darwin/payload.txt", "status": "pass"}], "md": "### 1.2 `darwin/payload.txt`\n\n```\nTutorial payload for macOS.\n```"}, {"execs": [{"cmd": "write assets/README.txt", "kind": "file", "note": "Wrote assets/README.txt", "status": "pass"}], "md": "### 1.3 `assets/README.txt`\n\n```\nShared package asset, stored once outside the variants.\n```"}, {"execs": [{"cmd": "set -eu\n./lgx/bin/lgx create tutorial_package\ncp tutorial_package.lgx linux.lgx\ncp tutorial_package.lgx darwin.lgx\n./lgx/bin/lgx add linux.lgx -v linux-amd64 -f ./linux --main payload.txt --assets ./assets\n./lgx/bin/lgx add darwin.lgx -v darwin-arm64 -f ./darwin --main payload.txt --assets ./assets\n", "exit_code": 0, "kind": "run", "note": "", "output": "Created package: tutorial_package.lgx\nAdded variant 'linux-amd64' to linux.lgx\nAdded variant 'darwin-arm64' to darwin.lgx\n", "status": "pass"}], "md": "```bash\nset -eu\n./lgx/bin/lgx create tutorial_package\ncp tutorial_package.lgx linux.lgx\ncp tutorial_package.lgx darwin.lgx\n./lgx/bin/lgx add linux.lgx -v linux-amd64 -f ./linux --main payload.txt --assets ./assets\n./lgx/bin/lgx add darwin.lgx -v darwin-arm64 -f ./darwin --main payload.txt --assets ./assets\n\n```\n\n`create` takes a **package name**, without `.lgx`, and creates\n`<name>.lgx`. Both copies retain the same package identity and version.\nFor a directory payload, `--main` is relative to that directory. A\nsingle-file payload can omit `--main`. `--assets` adds shared files at\n`assets/`, outside the platform variants.\n\nAdding an existing variant **replaces the entire variant**. Use `-y`\nonly when that replacement is intended. `lgx add --help` lists the\navailable options, including `--view` for QML entry points."}, {"execs": [{"cmd": "./lgx/bin/lgx verify linux.lgx", "exit_code": 0, "kind": "run", "note": "", "output": "Package structure is valid: linux.lgx\nPackage is unsigned\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx verify linux.lgx\n```"}, {"execs": [], "md": "## Step 2: Merge, inspect and extract"}, {"execs": [{"cmd": "./lgx/bin/lgx merge linux.lgx darwin.lgx -o release.lgx", "exit_code": 0, "kind": "run", "note": "", "output": "Merged 2 packages into release.lgx (darwin-arm64, linux-amd64)\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx merge linux.lgx darwin.lgx -o release.lgx\n```\n\nAll package metadata must agree; variant-specific `main` entries may\ndiffer. Shared asset paths deduplicate only when their bytes match.\nDifferent bytes at the same asset path fail the merge.\n\nDuplicate variants fail by default. `--skip-duplicates` keeps the\n**first** copy, so use it only when that selection is intentional.\nA merge creates a fresh package and does not preserve input signatures;\nsign the merged output."}, {"execs": [{"cmd": "./lgx/bin/lgx manifest release.lgx", "exit_code": 0, "kind": "run", "note": "", "output": "Name:           tutorial_package\nDisplay name:   (unset \u2014 falls back to name)\nVersion:        0.0.1\nManifest ver.:  0.6.0\nType:           (unset)\nCategory:       (unset)\nAuthor:         (unset)\nRoot hash:      6cf34d5f7a9d9c3a028c41785ce5ff2bcb5da148bccf29b5dbba57c7b038ee68\nVariants:       darwin-arm64, linux-amd64\n                darwin-arm64 -> payload.txt\n                linux-amd64 -> payload.txt\nDependencies:   (none)\nSigned:         no\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx manifest release.lgx\n```"}, {"execs": [{"cmd": "set -eu\n./lgx/bin/lgx manifest release.lgx --json > manifest.json\ntar -tzf release.lgx\n", "exit_code": 0, "kind": "run", "note": "", "output": "assets/\nassets/README.txt\nmanifest.json\nvariants/\nvariants/darwin-arm64/\nvariants/darwin-arm64/payload.txt\nvariants/linux-amd64/\nvariants/linux-amd64/payload.txt\n", "status": "pass"}], "md": "```bash\nset -eu\n./lgx/bin/lgx manifest release.lgx --json > manifest.json\ntar -tzf release.lgx\n\n```\n\n`manifest --json` emits the original manifest bytes for tooling.\n`tar -tzf` lists archive entries; there is no `lgx list` command."}, {"execs": [{"cmd": "./lgx/bin/lgx extract release.lgx -v linux-amd64 -o extracted", "exit_code": 0, "kind": "run", "note": "", "output": "Extracted variant 'linux-amd64' to extracted\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx extract release.lgx -v linux-amd64 -o extracted\n```"}, {"execs": [{"cmd": "check file: extracted/linux-amd64/payload.txt", "kind": "check_file", "note": "Found: /tmp/doctest-test-hkpmdqzf/extracted/linux-amd64/payload.txt", "status": "pass"}], "md": "*(verification step \u2014 not shown in the published tutorial)*"}, {"execs": [{"cmd": "cmp linux/payload.txt extracted/linux-amd64/payload.txt", "exit_code": 0, "kind": "run", "note": "", "output": "", "status": "pass"}], "md": "```bash\ncmp linux/payload.txt extracted/linux-amd64/payload.txt\n```"}, {"execs": [{"cmd": "set -eu\nif ./lgx/bin/lgx merge linux.lgx linux.lgx -o duplicate.lgx > duplicate.log 2>&1; then\n  echo 'ERROR: a duplicate variant was accepted'\n  exit 1\nfi\ncat duplicate.log\n", "exit_code": 0, "kind": "run", "note": "", "output": "Error: Duplicate variant 'linux-amd64' found in 'linux.lgx' and 'linux.lgx' (use --skip-duplicates to skip)\n", "status": "pass"}], "md": "### 2.1 Try an intentional duplicate\n\n```bash\nset -eu\nif ./lgx/bin/lgx merge linux.lgx linux.lgx -o duplicate.lgx > duplicate.log 2>&1; then\n  echo 'ERROR: a duplicate variant was accepted'\n  exit 1\nfi\ncat duplicate.log\n\n```"}, {"execs": [{"cmd": "set -eu\ncp release.lgx scratch.lgx\n./lgx/bin/lgx remove scratch.lgx -v darwin-arm64 -y\n./lgx/bin/lgx verify scratch.lgx\n", "exit_code": 0, "kind": "run", "note": "", "output": "Removed variant 'darwin-arm64' from scratch.lgx\nPackage structure is valid: scratch.lgx\nPackage is unsigned\n", "status": "pass"}], "md": "### 2.2 Remove a variant from a scratch copy\n\n```bash\nset -eu\ncp release.lgx scratch.lgx\n./lgx/bin/lgx remove scratch.lgx -v darwin-arm64 -y\n./lgx/bin/lgx verify scratch.lgx\n\n```"}, {"execs": [], "md": "## Step 3: Sign the final package\n\nThese commands use project-local key directories so the exercise has its\nown key and trust store. The `.jwk` file contains the private key: keep it\nout of source control and never include it in a package. The `.pub` and\n`.did` files are public. For a release, use your publisher's retained key\nrather than generating a new identity each time."}, {"execs": [{"cmd": "write .gitignore", "kind": "file", "note": "Wrote .gitignore", "status": "pass"}], "md": "### 3.1 `.gitignore`\n\n```\nkeys/\ntrusted-keys/\n*.lgx\n*.sig\n```"}, {"execs": [{"cmd": "./lgx/bin/lgx keygen --name tutorial --output-dir ./keys", "exit_code": 0, "kind": "run", "note": "", "output": "did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V2RBZlN0ZHBFWkphcWotaWJ5S1pHOURQbDBWaGdOS1dxcHNCSFNtclUifQ\nKeypair generated: ./keys/tutorial.{jwk,pub,did}\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx keygen --name tutorial --output-dir ./keys\n```"}, {"execs": [{"cmd": "./lgx/bin/lgx sign release.lgx --key tutorial --keys-dir ./keys --name 'Tutorial Publisher'", "exit_code": 0, "kind": "run", "note": "", "output": "Package signed: release.lgx\nSigner DID: did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V2RBZlN0ZHBFWkphcWotaWJ5S1pHOURQbDBWaGdOS1dxcHNCSFNtclUifQ\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx sign release.lgx --key tutorial --keys-dir ./keys --name 'Tutorial Publisher'\n```"}, {"execs": [{"cmd": "set -eu\nmkdir -p trusted-keys\n./lgx/bin/lgx verify release.lgx --keyring-dir ./trusted-keys\n", "exit_code": 0, "kind": "run", "note": "", "output": "Package structure is valid: release.lgx\nSignature is valid\nSigner DID: did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V2RBZlN0ZHBFWkphcWotaWJ5S1pHOURQbDBWaGdOS1dxcHNCSFNtclUifQ\nSigner name (self-asserted): Tutorial Publisher\nSigner DID is NOT in trusted keyring\n", "status": "pass"}], "md": "```bash\nset -eu\nmkdir -p trusted-keys\n./lgx/bin/lgx verify release.lgx --keyring-dir ./trusted-keys\n\n```\n\nVerification checks the content hashes and, when present, the Ed25519\nsignature over the manifest. **Exit 0 does not require a signature or\na trusted signer**: an unsigned package or a valid untrusted signature\ncan pass. Check the reported trust status when deciding whether to\ninstall. A signer's display name is self-asserted."}, {"execs": [{"cmd": "set -eu\n./lgx/bin/lgx keyring add tutorial \"$(cat keys/tutorial.did)\" --dir ./trusted-keys\n./lgx/bin/lgx keyring list --dir ./trusted-keys\n./lgx/bin/lgx verify release.lgx --keyring-dir ./trusted-keys\n", "exit_code": 0, "kind": "run", "note": "", "output": "Added trusted key: tutorial\nDID: did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V2RBZlN0ZHBFWkphcWotaWJ5S1pHOURQbDBWaGdOS1dxcHNCSFNtclUifQ\ntutorial\n  DID: did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V...\n  Added: 2026-09-23T21:54:29Z\nPackage structure is valid: release.lgx\nSignature is valid\nSigner DID: did:jwk:eyJjcnYiOiJFZDI1NTE5Iiwia3R5IjoiT0tQIiwieCI6InE3V2RBZlN0ZHBFWkphcWotaWJ5S1pHOURQbDBWaGdOS1dxcHNCSFNtclUifQ\nSigner name (self-asserted): Tutorial Publisher\nSigner is trusted: tutorial\n", "status": "pass"}], "md": "```bash\nset -eu\n./lgx/bin/lgx keyring add tutorial \"$(cat keys/tutorial.did)\" --dir ./trusted-keys\n./lgx/bin/lgx keyring list --dir ./trusted-keys\n./lgx/bin/lgx verify release.lgx --keyring-dir ./trusted-keys\n\n```\n\nIn this exercise you generated the key yourself. When trusting someone\nelse's publisher key, obtain the DID through a channel you already\ntrust; copying a DID from an unknown archive does not establish trust."}, {"execs": [{"cmd": "./lgx/bin/lgx signature release.lgx > manifest.sig", "exit_code": 0, "kind": "run", "note": "", "output": "", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx signature release.lgx > manifest.sig\n```"}, {"execs": [{"cmd": "check file: manifest.sig", "kind": "check_file", "note": "Found: /tmp/doctest-test-hkpmdqzf/manifest.sig", "status": "pass"}], "md": "*(verification step \u2014 not shown in the published tutorial)*"}, {"execs": [{"cmd": "set -eu\n./lgx/bin/lgx signature linux.lgx > unsigned.sig\ntest ! -s unsigned.sig\n", "exit_code": 0, "kind": "run", "note": "", "output": "", "status": "pass"}], "md": "```bash\nset -eu\n./lgx/bin/lgx signature linux.lgx > unsigned.sig\ntest ! -s unsigned.sig\n\n```\n\n`signature` emits raw `manifest.sig` JSON. An unsigned package produces\nan empty stream and exits 0. Editing or replacing content after signing\nrequires signing the resulting package again."}, {"execs": [{"cmd": "./lgx/bin/lgx keyring remove tutorial --dir ./trusted-keys", "exit_code": 0, "kind": "run", "note": "", "output": "Removed trusted key: tutorial\n", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx keyring remove tutorial --dir ./trusted-keys\n```"}, {"execs": [], "md": "## Version helpers and distribution\n\n`lgx semver` supplies version comparison, sorting and range matching; see\n`lgx semver --help`. Use `lgpm install --file release.lgx` to install a\n**real module package**, matching the runtime's dev or portable variant.\n`lgpd` downloads published packages. `lgx publish` is currently a no-op;\nit does not upload an archive."}, {"execs": [{"cmd": "./lgx/bin/lgx semver satisfies 1.4.0 '^1.2.0'", "exit_code": 0, "kind": "run", "note": "", "output": "", "status": "pass"}], "md": "```bash\n./lgx/bin/lgx semver satisfies 1.4.0 '^1.2.0'\n```\n\n`satisfies` exits 0 for a match and 1 for a non-match; it prints no answer."}, {"execs": [], "md": "## Clean up the tutorial identity"}, {"execs": [{"cmd": "rm -rf ./keys ./trusted-keys", "exit_code": 0, "kind": "run", "note": "", "output": "", "status": "pass"}], "md": "```bash\nrm -rf ./keys ./trusted-keys\n```\n\nThese are the disposable directories created by this exercise. Keep\nyour real publisher key in your release signing environment."}]}], "version": 1}</script>
+<script>
+  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+  if (window.marked) { marked.setOptions({ gfm: true, breaks: false }); }
+  const mdToHtml = (s) => window.marked ? marked.parse(s || "") : ("<pre>" + (s || "") + "</pre>");
+
+  const sum = DATA.summary;
+  document.getElementById("summary").innerHTML =
+    `<span class="pill pass">${sum.passed} passed</span> ` +
+    (sum.failed ? `<span class="pill fail">${sum.failed} failed</span> ` : "") +
+    (sum.skipped ? `<span class="pill skip">${sum.skipped} skipped</span>` : "");
+
+  const picker = document.getElementById("picker");
+  DATA.tutorials.forEach((t, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = t.meta.name; picker.appendChild(o);
+  });
+
+  function execHtml(e) {
+    const badge = `<span class="badge ${e.status}">${e.status.toUpperCase()}</span>`;
+    const kind = `<span class="kind">${e.kind}${e.platform ? " · " + e.platform : ""}${e.exit_code !== undefined ? " · exit " + e.exit_code : ""}</span>`;
+    let h = `<div class="exec"><div class="exec-head">${badge}${kind}</div>`;
+    if (e.note) h += `<div class="note">${escapeHtml(e.note)}</div>`;
+    if (e.cmd) h += `<pre class="cmd">${escapeHtml(e.cmd)}</pre>`;
+    const out = (e.output || "").trim();
+    if (out) {
+      const long = out.split("\n").length > 12;
+      if (long) {
+        h += `<details><summary>output (${out.split("\n").length} lines)</summary><pre class="output">${escapeHtml(out)}</pre></details>`;
+      } else {
+        h += `<pre class="output">${escapeHtml(out)}</pre>`;
+      }
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function render(idx) {
+    const t = DATA.tutorials[idx];
+    const main = document.getElementById("main");
+    main.innerHTML = "";
+    const h = document.createElement("div");
+    h.className = "tutorial-title";
+    h.textContent = t.meta.name + "  —  " + t.meta.platform;
+    main.appendChild(h);
+
+    t.rows.forEach(row => {
+      const isStructural = row.execs.length === 0 &&
+        (/^#\s|^##\s/.test(row.md.trim()));
+      const div = document.createElement("div");
+      const hasExec = row.execs.length > 0;
+      const hasFail = row.execs.some(e => e.status === "fail");
+      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble")) +
+        (hasFail ? " has-fail" : "");
+
+      const left = document.createElement("div");
+      left.className = "col left";
+      left.innerHTML = `<div class="md">${mdToHtml(row.md)}</div>`;
+      div.appendChild(left);
+
+      if (hasExec || !isStructural) {
+        const right = document.createElement("div");
+        right.className = "col right";
+        if (hasExec) {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            row.execs.map(execHtml).join("");
+        } else {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            `<div class="empty">No commands run for this step.</div>`;
+        }
+        div.appendChild(right);
+      }
+      main.appendChild(div);
+    });
+
+    addAnchors(main, slug(t.meta.name));
+  }
+
+  function slug(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  // Octicon "link" — the same glyph GitHub puts next to markdown headings.
+  const LINK_ICON =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d=' +
+    '"M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 ' +
+    '.75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25Zm-4.69 ' +
+    '9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 ' +
+    '2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0Z"></path></svg>';
+
+  // Give every heading a stable slug id (deduplicated the way GitHub does, with
+  // -1/-2 suffixes) and a permalink whose href is "#<tutorial>/<heading>".
+  function addAnchors(container, tutSlug) {
+    const used = new Map();
+    const nodes = container.querySelectorAll(
+      ".tutorial-title, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6"
+    );
+    nodes.forEach(node => {
+      const text = node.textContent.trim();
+      const isTitle = node.classList.contains("tutorial-title");
+      let href = "#" + tutSlug;
+      if (!isTitle) {
+        const base = slug(text) || "section";
+        const n = (used.get(base) || 0) + 1;
+        used.set(base, n);
+        node.id = n > 1 ? base + "-" + n : base;
+        href += "/" + node.id;
+      }
+      node.classList.add("heading-anchored");
+      const a = document.createElement("a");
+      a.className = "anchor";
+      a.href = href;
+      a.title = "Copy link to this section";
+      a.setAttribute("aria-label", "Permalink: " + text);
+      a.innerHTML = LINK_ICON;
+      node.insertBefore(a, node.firstChild);
+    });
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+  }
+
+  // navigator.clipboard needs a secure context; reports are often opened over
+  // file://, so fall back to the old execCommand path there.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(
+        () => toast("Link copied"),
+        () => toast(text)
+      );
+      return;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    toast(ok ? "Link copied" : text);
+  }
+
+  function scrollToId(id) {
+    if (!id) { window.scrollTo(0, 0); return; }
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    el.classList.remove("flash");
+    void el.offsetWidth;  // restart the animation on a repeat click
+    el.classList.add("flash");
+  }
+
+  document.addEventListener("click", ev => {
+    const a = ev.target.closest && ev.target.closest("a.anchor");
+    if (!a) return;
+    ev.preventDefault();
+    const href = a.getAttribute("href");
+    copyText(location.href.split("#")[0] + href);
+    if (location.hash === href) scrollToId(a.parentNode.id);
+    else location.hash = href;  // hashchange scrolls
+  });
+
+  // "#<tutorial>" (name, slug, or index) optionally followed by "/<heading>".
+  function parseHash() {
+    const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if (!raw) return { idx: 0, frag: "" };
+    const cut = raw.indexOf("/");
+    const tut = cut >= 0 ? raw.slice(0, cut) : raw;
+    const frag = cut >= 0 ? raw.slice(cut + 1) : "";
+    if (/^\d+$/.test(tut) && +tut < DATA.tutorials.length) return { idx: +tut, frag };
+    const i = DATA.tutorials.findIndex(
+      t => slug(t.meta.name) === tut || t.meta.name === tut
+    );
+    if (i >= 0) return { idx: i, frag };
+    // No tutorial matched: treat a bare hash as a heading in the current one.
+    return { idx: currentIdx >= 0 ? currentIdx : 0, frag: cut >= 0 ? frag : raw };
+  }
+
+  let currentIdx = -1;
+  function show(idx, frag) {
+    if (idx !== currentIdx) {
+      picker.value = idx;
+      render(idx);
+      currentIdx = idx;
+    }
+    if (frag) requestAnimationFrame(() => scrollToId(frag));
+  }
+  picker.addEventListener("change", () => {
+    location.hash = slug(DATA.tutorials[+picker.value].meta.name);
+    show(+picker.value);
+  });
+  window.addEventListener("hashchange", () => {
+    const h = parseHash();
+    show(h.idx, h.frag);
+  });
+  const initial = parseHash();
+  show(initial.idx, initial.frag);
+  // Inlined screenshots have no intrinsic size until decoded, so the first
+  // scroll can land short; re-anchor once everything has loaded.
+  if (initial.frag) {
+    window.addEventListener("load", () => scrollToId(initial.frag), { once: true });
+  }
+</script>
+</body>
+</html>
