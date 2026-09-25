@@ -1063,19 +1063,22 @@ presented. Your module sees an operator: `Operator{name: "auto"}` for the local
 boot token, or the name given to `issue-token`. Forwarded calls to
 `capability_module` and `core_service` are refused (`unauthorized`), so the CLI
 can't mint module tokens. The package modules are called as `core_service`.
-The daemon's bundled `capability_module` runs in its process and issues every
-credential; a daemon without it does not start.
+The daemon runs its runtime in a process of its own, `logos_runtime`: the bundled
+`capability_module` runs there and issues every credential, so the daemon holds
+none but its own. A daemon whose runtime has no `capability_module` does not
+start.
 
-**Running modules in the daemon's process.** A plain (`qt_remote_plain`) module
-can run inside the daemon's process instead of `logos_host_plain` when three
-things hold:
+**Running modules in the runtime's process.** A plain (`qt_remote_plain`) module
+can run inside the runtime's process (`logos_runtime`) instead of
+`logos_host_plain` when three things hold:
 - it comes from a bundled directory;
 - its build stamped it `inproc_eligible` (see `in_process` in §1.3);
 - the placement policy puts it there.
 
-The daemon's own `capability_module`, `modules_state` and package modules
-already run this way. Any other name that the runtime reserves (see `name` in
-§1.3) loads only from a bundled directory.
+The runtime's own `capability_module` and `modules_state` already run this way.
+The package modules never do, whatever the policy says: they download and unpack
+packages, so each gets a host of its own. Any other name that the runtime
+reserves (see `name` in §1.3) loads only from a bundled directory.
 
 ```bash
 ./logos/bin/logoscore -D -m ./modules \
@@ -1085,14 +1088,16 @@ already run this way. Any other name that the runtime reserves (see `name` in
 
 Calls into an in-process module keep socket semantics: the same tokens and caller
 identity, with results delivered asynchronously. Other processes still reach it
-over the local socket. It does share the daemon's fate:
-- a crash takes the daemon down;
+over the local socket. It does share the runtime's fate:
+- a crash takes the runtime, and with it every module, down;
 - it reports no CPU or memory figures of its own;
 - unloading doesn't unmap it, so loading it again needs a restart.
 
-Only bundle what you trust as much as the daemon.
+Only bundle what you trust as much as the runtime, which holds every module's
+credential.
 
-`logoscore` finds the host processes beside its own executable, or in
+`logoscore` finds `logos_runtime` beside its own executable (or at
+`LOGOS_RUNTIME_PATH`), and the runtime finds the host processes beside it, or in
 `<modules dir>/../bin`. Set `LOGOS_HOST_PLAIN_PATH` to point it at a
 `logos_host_plain` elsewhere, and `LOGOS_HOST_PATH` for `logos_host_qt` (the
 plain host is also looked for beside it). A module installed without a
@@ -2125,7 +2130,7 @@ lm methods <plugin-file> [--json]             # List Q_INVOKABLE methods
 # Daemon mode
 logoscore -D -m <modules-dir>                 # Start daemon
 logoscore -D -m <dir> --bundled-modules-dir <dir> --placement '{"default":"inproc"}'
-                                              # ...hosting bundled plain modules in-process
+                                              # ...hosting bundled plain modules in the runtime's process
 logoscore load-module <name>                  # Load a module
 logoscore call <module> <method> [args]       # Call a method
 logoscore list-modules [--loaded]             # List modules
@@ -2340,7 +2345,7 @@ If the module doesn't appear, check:
 
 ### Capability module not found
 
-logos-basecamp requires the `capability` module to be installed. It is bundled with basecamp and installed on first launch. It runs inside the app's process as the runtime's token authority, and a copy in the user modules directory is ignored in favour of the bundled one. If you see errors about it:
+logos-basecamp requires the `capability` module to be installed. It is bundled with basecamp and installed on first launch. It runs as the token authority inside the runtime's process (`logos_runtime`, which Basecamp starts beside itself), not in Basecamp's, and a copy in the user modules directory is ignored in favour of the bundled one. If you see errors about it:
 
 1. Check that the `modules/` and `plugins/` directories exist next to `bin/` and `lib/` in the basecamp build output
 2. Check that the capability module was extracted to the modules directory
