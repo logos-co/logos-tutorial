@@ -282,7 +282,7 @@ The full set of available fields:
 
 | Field                            | Required                               | Default            | Description                                                                                                                                                                                                                                                    |
 | -------------------------------- | -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers). `core` is the host's own name and is refused.                                                                                                                                                              |
+| `name`                           | Yes                                    | --                 | Module name (used for filenames and identifiers). `core` is the host's own name and is refused. The runtime reserves its own names, compared without case: `core_service`, `capability_module`, `modules_state`, `package_manager`, `package_downloader`, any `logos_*` name, and the shell names `logoscore`, `basecamp`, `standalone` and `module_viewer`. A module by one of these names loads only from the runtime's bundled directories.                                                                                                                                                              |
 | `display_name`                   | No                                     | `name`             | Human-readable label shown in UIs (Package Manager, App Manager, `lm metadata`, `lgx manifest`). Consumers fall back to `name` when unset, so older packages keep working.                                                                                     |
 | `version`                        | No                                     | `1.0.0`            | Semantic version                                                                                                                                                                                                                                               |
 | `type`                           | No                                     | `core`             | Module type (`core`, `ui`, `ui_qml`)                                                                                                                                                                                                                           |
@@ -291,10 +291,11 @@ The full set of available fields:
 | `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the standalone app plugin directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
 | `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the module-impl C ABI (plus compatibility Qt glue when selected). `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). Omit for the older hand-written Qt-plugin pattern.                            |
-| `transport`                      | No                                     | `"qt_remote"`      | Runtime implementation. `"qt_remote_plain"` builds a Qt-free native core module for `logos_host_plain`; `"qt_remote"` preserves the current Qt plugin and `logos_host_qt`. Plain requires `"type": "core"` with `universal` or `cdylib`, and the `lp` consumer API; the builder refuses anything else. Basecamp cannot host plain modules yet (see [§7.2](#72-module-types-in-logos-basecamp)). On Linux/macOS both transports interoperate on the same wire. Rebuild all Windows modules with plain transport. |
+| `transport`                      | No                                     | `"qt_remote"`      | Runtime implementation. `"qt_remote_plain"` builds a Qt-free native core module for `logos_host_plain`; `"qt_remote"` preserves the current Qt plugin and `logos_host_qt`. Plain requires `"type": "core"` with `universal` or `cdylib`, and the `lp` consumer API; the builder refuses anything else. A runtime may also host a plain module in its own process; see `in_process`. On Linux/macOS both transports interoperate on the same wire. Rebuild all Windows modules with plain transport. |
 | `codegen`                        | No (required for `cdylib`)             | `{}`               | Where the builder finds your code and your contract. `codegen.rust = { crate, trait?, source?, staticlib? }` and `codegen.nim = { crate, main?, staticlib?, link? }` select a language core; `codegen.lidl` names a committed contract; `codegen.impl_header` / `impl_class` override the `universal` defaults. See [§1.7](#17-authoring-in-rust-and-nim).                            |
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics; for a plain module, one host thread in arrival order) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
+| `in_process`                     | No (`qt_remote_plain` only)            | `true`             | Whether a runtime may load this plain module into its own process instead of `logos_host_plain`. The builder stamps `inproc_eligible` into the sidecar when the image allows it: it exports only `logos_module_*`, has no weak definitions, and carries no Go or Nim runtime. `false` opts out for a module that JIT-compiles, forks, installs signal handlers or owns other process-wide state. Eligible is not trusted: the runtime loads a module in-process only when it comes from one of its bundled directories and its placement policy puts it there (see [§6.1](#61-running-with-logoscore)). In-process modules share the host's fate: a crash takes the host down. |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module. Its canonical LIDL contract is bundled in `assets/lidl/`.                                                                                  |
 | `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded and never a load failure when absent. Its runtime package is not auto-bundled; its canonical LIDL contract is. See [Optional dependencies](#optional-dependencies). |
@@ -302,7 +303,7 @@ The full set of available fields:
 | `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }`; its canonical contract is bundled in `assets/lidl/`. See [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
-| `host_services`                  | No                                     | `[]`               | Privileged host capabilities granted into the module's own image. Closed set: `token_registry`, `token_delivery` — both trust-root, and both hard-allowlisted to `capability_module` alone, because a build-time allowlist a module could extend from its own metadata would not be an allowlist. An ungranted module asking for one gets `LP_ERR_UNSUPPORTED` at runtime, however loudly its metadata asked.                            |
+| `host_services`                  | No                                     | `[]`               | Privileged host capabilities granted into the module's own image. Closed set: `token_registry`, `token_delivery` — both trust-root, and both granted only to `capability_module`, and only to the copy in the runtime's bundled directories, because a build-time allowlist a module could extend from its own metadata would not be an allowlist. An ungranted module asking for one gets `LP_ERR_UNSUPPORTED` at runtime, however loudly its metadata asked.                            |
 | `platforms`                      | No                                     | `[]`               | Platform-keyed overlays merged into this metadata before anything else reads it. See [§9.4 Platform-keyed metadata](#94-platform-keyed-metadata).                            |
 | `include`                        | No                                     | `[]`               | Runtime files to stage beside the plugin that nothing links against — in practice, **`dlopen`'d libraries**. Nothing else can stage these: a library reached only through `dlopen` has no import-table or `DT_NEEDED` entry for the build to follow. Names are looked up in this module's `nix.packages.runtime` and resolved external libraries, under both `lib/` and `bin/`. A name that matches nothing is **normal** — the list is a deliberate cross-platform superset (`.so`, `.dylib` and `.dll` side by side), so at most one spelling can match.                                                                                                                                      |
 | `nix.packages.build`             | No                                     | `[]`               | Nix packages for build time                                                                                                                                                                                                                                    |
@@ -1056,6 +1057,42 @@ is accepted on the local socket only. The
 [transports doc-test](https://github.com/logos-co/logos-logoscore-cli/blob/master/doctests/outputs/logoscore-transports.md)
 walks through both protocols, TLS certificates included.
 
+**What your module sees.** `logoscore call` and `watch` go through the daemon's
+`core_service`, which forwards them under the name of the token the client
+presented. Your module sees an operator: `Operator{name: "auto"}` for the local
+boot token, or the name given to `issue-token`. Forwarded calls to
+`capability_module` and `core_service` are refused (`unauthorized`), so the CLI
+can't mint module tokens. The package modules are called as `core_service`.
+This is how the shipped `logoscore` runs, because its bundled `capability_module`
+runs in the daemon's process and issues every credential. A daemon started
+without it forwards as the runtime, and your module sees `Host`.
+
+**Running modules in the daemon's process.** A plain (`qt_remote_plain`) module
+can run inside the daemon's process instead of `logos_host_plain` when three
+things hold:
+- it comes from a bundled directory;
+- its build stamped it `inproc_eligible` (see `in_process` in §1.3);
+- the placement policy puts it there.
+
+The daemon's own `capability_module`, `modules_state` and package modules
+already run this way. Any other name that the runtime reserves (see `name` in
+§1.3) loads only from a bundled directory.
+
+```bash
+./logos/bin/logoscore -D -m ./modules \
+  --bundled-modules-dir ./trusted --placement '{"default":"inproc"}'
+./logos/bin/logoscore module-info my_module     # Placement: inproc
+```
+
+Calls into an in-process module keep socket semantics: the same tokens and caller
+identity, with results delivered asynchronously. Other processes still reach it
+over the local socket. It does share the daemon's fate:
+- a crash takes the daemon down;
+- it reports no CPU or memory figures of its own;
+- unloading doesn't unmap it, so loading it again needs a restart.
+
+Only bundle what you trust as much as the daemon.
+
 `logoscore` finds the host processes beside its own executable, or in
 `<modules dir>/../bin`. Set `LOGOS_HOST_PLAIN_PATH` to point it at a
 `logos_host_plain` elsewhere, and `LOGOS_HOST_PATH` for `logos_host_qt` (the
@@ -1143,6 +1180,8 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
 | `--persistence-path <dir>`         | Base directory for module instance persistence       |
 | `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
 | `--module-transport NAME=PROTOCOL[,k=v...]` | Add a `tcp` or `tcp_ssl` listener to a module, beside its local socket (repeatable) |
+| `--bundled-modules-dir <dir>`      | A directory whose modules count as bundled: scanned, and allowed to run in-process (repeatable) |
+| `--placement <json>`               | Placement policy, e.g. `'{"default":"inproc","modules":{"big":"subprocess"}}'` |
 | `--insecure-tcp`                   | Allow plaintext `tcp` on a non-loopback address     |
 | `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
 
@@ -1206,12 +1245,14 @@ The application supports three types of modules:
 #### Core Modules (Backend)
 
 These are non-UI modules that provide backend functionality. Each runs in an
-isolated Qt host process (`logos_host_qt`, which the bundle ships as
-`logos_host`). Basecamp does not ship `logos_host_plain` yet,
-so build a module for Basecamp with the default `"transport": "qt_remote"`;
-`qt_remote_plain` modules currently run under `logoscore`.
+isolated host process: a Qt plugin in `logos_host_qt` (which the bundle ships as
+`logos_host`), a `qt_remote_plain` module in `logos_host_plain`. Basecamp's own
+modules (`capability_module`, `modules_state` and the package modules) run inside
+the app's process.
 
-- Loaded via `logos_core_load_plugin()`
+- Loaded through the runtime's `core_service`, which Basecamp calls as the
+  `basecamp` shell. A module that Basecamp calls sees `Module{name: "basecamp"}`,
+  not `Host` (see [Who Is Calling](#who-is-calling--caller-identity)).
 - Placed in the **modules directory** (`--modules-dir`)
 - Have `"type": "core"` in metadata
 
@@ -1541,18 +1582,21 @@ a claim the caller makes — an unauthorized call never reaches your handler at 
 
 | Arm | Carries | Seen when |
 | --- | --- | --- |
-| `Host` | **nothing** | the runtime itself — including a `logoscore call`, which the daemon relays under the host anchor |
-| `Module` | `name`, optional `instance` | one module calling another |
+| `Host` | **nothing** | the runtime itself, for example feeding `modules_state` |
+| `Module` | `name`, optional `instance` | one module calling another. An app's shell (`basecamp`, `standalone`, `module_viewer`, `logoscore`) and a UI plugin's backend each call under their own name too. |
 | `Derived` | `parent`, `leaf` | a derived identity, e.g. a UI plugin under its module |
-| `Operator` | `name` | a named operator token |
+| `Operator` | `name` | a `logoscore call` or `watch`, named after the client's token (`auto` for the local boot token) |
 | `Unknown` | — | everything else |
 
 with `isHost()`, `isModule()`, `isModule(name)` (which ignores the instance, so a
 restarted module is still itself), `isDerived()`, `isOperator()` and `isUnknown()`.
 
-**`Host` carries no name, ever.** `"core"` and `"capability_module"` hold the same
-token value under two keys, so a name there would be a coin flip presented as a
-fact. Ask `isHost()`; do not go looking for which part of the runtime called.
+**`Host` carries no name, ever.** It is the runtime acting for itself, however the
+call reached you. Ask `isHost()`; do not go looking for which part of the runtime
+called. Apps don't call as the host any more. Basecamp and the other shells have
+names of their own, issued by `capability_module` like any module's, so a gate
+that let Basecamp in through `isHost()` should name it: `caller.isModule("basecamp")`.
+Likewise, a person at the CLI is an `Operator`, not the host.
 
 **`Unknown` is the fail-closed answer, and it is in band.** It covers an unnamed
 caller, a document this build cannot read, an arm from a newer protocol, and *no
@@ -1677,6 +1721,12 @@ LogosModeConfig::setMode(LogosMode::Local);
 // For desktop (each module in its own process) -- this is the default
 LogosModeConfig::setMode(LogosMode::Remote);
 ```
+
+A third path needs no setting. When a runtime hosts a plain module in its own
+process (see §6.1), a client configured for the local socket, which is the
+default, reaches it over `inproc`. The transport is resolved on each connection.
+Results still arrive asynchronously, and tokens and caller identity work as they
+do over the socket.
 
 ### 8.5 App-to-App Intents
 
@@ -2075,10 +2125,12 @@ lm methods <plugin-file> [--json]             # List Q_INVOKABLE methods
 ```bash
 # Daemon mode
 logoscore -D -m <modules-dir>                 # Start daemon
+logoscore -D -m <dir> --bundled-modules-dir <dir> --placement '{"default":"inproc"}'
+                                              # ...hosting bundled plain modules in-process
 logoscore load-module <name>                  # Load a module
 logoscore call <module> <method> [args]       # Call a method
 logoscore list-modules [--loaded]             # List modules
-logoscore module-info <name>                  # Show module details
+logoscore module-info <name>                  # Show module details (incl. placement)
 logoscore status                              # Daemon health
 logoscore stop                                # Stop daemon
 ```
@@ -2243,7 +2295,7 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 - `logos-standalone-app` is now bundled inside `logos-module-builder` — UI module flakes no longer need it as a separate input.
 - No `logosStandalone` parameter is needed in `mkLogosQmlModule`, `mkLogosModule`, or `mkLogosQmlModule` calls.
 - Dependencies (including transitive ones) are automatically resolved from the flake input tree, bundled as LGX packages at build time, and extracted into the modules directory at runtime.
-- The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
+- The standalone app loads each module with its dependencies through the runtime's `core_service` (`loadModule` with `required_and_optional`), which resolves the full transitive dependency graph from the modules' `metadata.json`.
 
 **Example C++ UI module `flake.nix` (view module — C++ backend + QML view):**
 
@@ -2289,7 +2341,7 @@ If the module doesn't appear, check:
 
 ### Capability module not found
 
-logos-basecamp requires the `capability` module to be installed. It is bundled with basecamp and installed on first launch. If you see errors about it:
+logos-basecamp requires the `capability` module to be installed. It is bundled with basecamp and installed on first launch. It runs inside the app's process as the runtime's token authority, and a copy in the user modules directory is ignored in favour of the bundled one. If you see errors about it:
 
 1. Check that the `modules/` and `plugins/` directories exist next to `bin/` and `lib/` in the basecamp build output
 2. Check that the capability module was extracted to the modules directory

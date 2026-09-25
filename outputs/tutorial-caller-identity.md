@@ -6,14 +6,14 @@ It already does. By the time your handler runs, the caller has presented a token
 
 This tutorial builds two modules — one with an open read surface and a guarded write surface, and one that calls it — and reads the identity from all three positions a call can come from.
 
-**What you'll build:** `calc_guarded`, whose `setLimit` admits exactly one peer module and refuses everything else, and `calc_agent`, which is that peer. You watch the same guard answer `host`, `module calc_agent` and `unknown`, and see one of those three get through.
+**What you'll build:** `calc_guarded`, whose `setLimit` admits exactly one peer module and refuses everything else, and `calc_agent`, which is that peer. You watch the same guard answer `operator auto`, `module calc_agent` and `unknown`, and see one of those three get through.
 
 **What you'll learn:**
 
 - How to read the caller with `logos::currentCaller()`, and what the five arms mean
 - Why the identity is ambient rather than a parameter — and why that makes it unforgeable
 - Why `unknown` is the fail-closed answer and is *in band*, not an error
-- That a `logoscore call` arrives as the **host anchor** — so a host-gated surface is open to anyone at the CLI
+- That a `logoscore call` arrives as an **operator** named after your token, not as the host, so your guard can name the CLI and refuse it
 - The two ways a build can silently read `unknown` forever
 
 ## Prerequisites
@@ -138,8 +138,8 @@ std::string CalcGuardedImpl::setLimit(int64_t n) {
     const logos::LogosCaller caller = logos::currentCaller();
 
     // isModule(name) ignores the instance, so a restarted calc_agent is
-    // still calc_agent. Anything that is not that module — including the
-    // host, and including `unknown` — falls through and is refused.
+    // still calc_agent. Anything that is not that module — the host, an
+    // operator at the CLI, `unknown` — falls through and is refused.
     if (!caller.isModule("calc_agent"))
         return "refused: " + describe(caller);
 
@@ -349,10 +349,10 @@ Loading `calc_agent` brings `calc_guarded` up with it — it is a required depen
 ```
 
 ```json
-{"method":"whoIsCalling","module":"calc_guarded","result":"host","status":"ok"}
+{"method":"whoIsCalling","module":"calc_guarded","result":"operator auto","status":"ok"}
 ```
 
-**`host`** — not `operator`. Your `logoscore call` was relayed by the daemon, and it arrives under the host anchor. Worth knowing before you gate anything on `isHost()`: on this path, that is a gate anyone with access to the CLI passes.
+**`operator auto`**, not `host`. The daemon forwarded your `logoscore call` under the name of the token you presented: `auto` is the boot token it issues for local use, and a token from `logoscore issue-token --name alice` would read `operator alice`. The CLI is a caller your guard can name, and it is never the runtime itself.
 
 ### 4.3 From another module
 
@@ -389,7 +389,7 @@ The same method, a different answer. `calc_agent` did not pass a name — the gu
 ```
 
 ```json
-{"method":"setLimit","module":"calc_guarded","result":"refused: host","status":"ok"}
+{"method":"setLimit","module":"calc_guarded","result":"refused: operator auto","status":"ok"}
 ```
 
 Refused, and the refusal **names what the caller actually was**. A guard that just says "no" leaves you unable to tell a genuine rejection from a build that reads `unknown` for a reason you have not found yet.
@@ -420,13 +420,13 @@ Same method, same daemon, same second — and the value changed only for the cal
 
 | Arm | Carries | Seen when |
 |---|---|---|
-| `Host` | **nothing** | the runtime itself — including a relayed `logoscore call` |
-| `Module` | `name`, optional `instance` | one module calling another |
+| `Host` | **nothing** | the runtime itself, for example feeding `modules_state` |
+| `Module` | `name`, optional `instance` | one module calling another. An app's shell (`basecamp`, `standalone`, …) and a UI plugin's backend call under their own names too. |
 | `Derived` | `parent`, `leaf` | a call from a derived identity, e.g. a UI plugin under its module |
-| `Operator` | `name` | a named operator token |
+| `Operator` | `name` | a `logoscore call` or `watch`, named after the client's token |
 | `Unknown` | — | everything else |
 
-**`Host` has no name, ever.** Not an oversight: `"core"` and `"capability_module"` hold the same token value under two keys, so a name there would be a coin flip presented as a fact. If you need to admit the runtime, ask `isHost()` — do not go looking for which part of it called.
+**`Host` has no name, ever.** It is the runtime acting for itself, however the call reached you. If you need to admit the runtime, ask `isHost()` — do not go looking for which part of it called. Apps don't call as the host: Basecamp is `module basecamp`, so a guard that should let it in names it.
 
 **`Unknown` is fail-closed and in band.** It covers an unnamed caller, a document this build cannot read, an arm from a newer protocol, and *no dispatch in flight on this thread* — a spawned worker, a timer, `onContextReady`, an event emission. Handle it on the refusal path, never as an error.
 
