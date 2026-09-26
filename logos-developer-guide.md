@@ -2168,6 +2168,25 @@ Your provider module sees such calls as `Remote{peer, name}`
 state; `peer remove` unpairs and revokes every route. Local operators (`auto`
 included) manage peering; a remote operator only reads.
 
+**Operating a daemon from another computer.** With `operator: true` in the
+daemon's `peering` section, its `core_service` also listens on `tls_tcp` for the
+clients it paired as operators. Mint an operator invite on the daemon (valid 15
+minutes), redeem it on the other computer, and accept it on the daemon once the
+display ID it shows matches the one the client printed:
+
+```bash
+logoscore peer invite --operator > invite.txt   # daemon
+logoscore remote pair invite.txt                # client: waits for the daemon
+logoscore peer pending                          # daemon: then peer accept <id>
+logoscore --remote node status                  # client: any command, on the daemon
+logoscore --remote node module load my_module
+```
+
+The client keeps its own key in `<config dir>/remote` and needs no daemon or token
+of its own; each run takes a fresh route. On the daemon it is the operator
+`@peer:<id>`: it may load, unload and call modules and stop the daemon, and it only
+reads the daemon's peering.
+
 ---
 
 ## Reference: Repository Map
