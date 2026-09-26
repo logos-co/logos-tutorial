@@ -2129,13 +2129,13 @@ next load, when it gets a `tls_tcp` listener beside its local one.
 compare the six digits both show, and accept on both:
 
 ```bash
-logoscore peer pair-window 300                  # provider
-logoscore peer pair 192.168.1.5 7443            # consumer: prints the code and an id
-logoscore peer accept <id>                      # both, once the codes match (`peer pending`)
+logosctl peer pair-window 300                  # provider
+logosctl peer pair 192.168.1.5 7443            # consumer: prints the code and an id
+logosctl peer accept <id>                      # both, once the codes match (`peer pending`)
 ```
 
-Or mint a single-use invite (`logoscore peer invite`) and redeem it on the other
-side from a file or stdin, never argv: `logoscore peer redeem invite.txt`. On one
+Or mint a single-use invite (`logosctl peer invite`) and redeem it on the other
+side from a file or stdin, never argv: `logosctl peer redeem invite.txt`. On one
 machine, `control: { local_invite: true }` keeps such an invite in
 `<config dir>/peering/local-invite`, a file only the same user can read,
 redeemable over loopback only — "link a daemon on this computer" with no code.
@@ -2146,8 +2146,8 @@ export (or only the modules listed), so no `peer policy set` is needed for it.
 may call; the provider says which of the consumer's modules may reach what:
 
 ```bash
-logoscore peer import my_module --from office --allow my_ui   # consumer
-logoscore peer policy set policy.json                          # provider:
+logosctl peer import my_module --from office --allow my_ui   # consumer
+logosctl peer policy set policy.json                          # provider:
 #   {"<consumer runtime id>/my_ui": ["my_module"]}
 ```
 
@@ -2169,7 +2169,7 @@ failed remote call returns `{"code":"dispatch_failed","message":"remote/…"}`.
 Your provider module sees such calls as `Remote{peer, name}`
 ([Caller Identity](#who-is-calling--caller-identity)).
 
-`logoscore peer status | ls | pending | exports | imports | routes` show the
+`logosctl peer status | ls | pending | exports | imports | routes` show the
 state (`peer status` also says why an enabled control endpoint is not listening);
 `peer remove` unpairs and revokes every route. Local operators (`auto`
 included) manage peering; a remote operator only reads.
@@ -2181,11 +2181,11 @@ minutes), redeem it on the other computer, and accept it on the daemon once the
 display ID it shows matches the one the client printed:
 
 ```bash
-logoscore peer invite --operator > invite.txt   # daemon
-logoscore remote pair invite.txt                # client: waits for the daemon
-logoscore peer pending                          # daemon: then peer accept <id>
-logoscore --remote node status                  # client: any command, on the daemon
-logoscore --remote node module load my_module
+logosctl peer invite --operator > invite.txt   # daemon
+logosctl remote pair invite.txt                # client: waits for the daemon
+logosctl peer pending                          # daemon: then peer accept <id>
+logosctl --remote node status                  # client: any command, on the daemon
+logosctl --remote node module load my_module
 ```
 
 The client keeps its own key in `<config dir>/remote` and needs no daemon or token
@@ -2232,8 +2232,8 @@ logoscore call <module> <method> [args]       # Call a method
 logoscore list-modules [--loaded]             # List modules
 logoscore module-info <name>                  # Show module details (incl. placement)
 logoscore status                              # Daemon health
-logoscore peer status | ls | pair | invite | redeem | import | export | policy
-                                              # Link with other runtimes (§9.6)
+logosctl peer status | ls | pair | invite | redeem | import | export | policy
+                                              # Link with other runtimes (§9.6; logosctl only)
 logoscore stop                                # Stop daemon
 ```
 
