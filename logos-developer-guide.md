@@ -53,6 +53,8 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [9.4 Platform-keyed metadata](#94-platform-keyed-metadata)
   - [9.5 Finishing before teardown](#95-finishing-before-teardown)
   - [9.6 Linking runtimes (peering)](#96-linking-runtimes-peering)
+  - [9.7 Consuming modules from a standalone app](#97-consuming-modules-from-a-standalone-app)
+  - [9.8 Android](#98-android)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
   - [`lm` -- Module Inspector](#lm----module-inspector)
@@ -2135,7 +2137,10 @@ logosctl peer accept <id>                      # both, once the codes match (`pe
 ```
 
 Or mint a single-use invite (`logosctl peer invite`) and redeem it on the other
-side from a file or stdin, never argv: `logosctl peer redeem invite.txt`. On one
+side from a file or stdin, never argv: `logosctl peer redeem invite.txt`. An
+invite minted with `--allow my_module` also lets whoever redeems it call those
+exports, and so does `logosctl peer accept <id> --allow my_module` for a pairing
+by code; without `--allow` they grant nothing until `peer policy set`. On one
 machine, `control: { local_invite: true }` keeps such an invite in
 `<config dir>/peering/local-invite`, a file only the same user can read,
 redeemable over loopback only — "link a daemon on this computer" with no code.
@@ -2192,6 +2197,150 @@ The client keeps its own key in `<config dir>/remote` and needs no daemon or tok
 of its own; each run takes a fresh route. On the daemon it is the operator
 `@peer:<id>`: it may load, unload and call modules and stop the daemon, and it only
 reads the daemon's peering.
+
+### 9.7 Consuming modules from a standalone app
+
+An app that is not a module (a desktop or phone app with a UI of its own) can
+run a Logos runtime and call modules through the same generated clients modules
+use, without Qt. The app is that runtime's **shell**: it spawns `logos_runtime`,
+which hosts the app's modules, and its clients call them as the shell. A module
+the app runs and one it imports from a daemon (§9.6) look the same to it: each is
+a module of the app's runtime, reached by name. Which one it is, is configuration.
+
+An app ships these beside itself (`logosctl`'s `ctl` package has them all):
+
+| What | How the app points at it |
+| ---- | ------------------------ |
+| `logos_runtime` | `LOGOS_RUNTIME_PATH` |
+| `logos_host_plain`, and `logos_host_remote` for imports | `LOGOS_HOST_PLAIN_PATH`, `LOGOS_HOST_REMOTE_PATH` |
+| `liblogos_core` and `liblogos_protocol_plain` | the app links both, from the same `lib/` |
+| the bundled modules (`capability_module`, `modules_state`, `peering_*`) | the bundled modules directory |
+
+The protocol library must be the one liblogos links: the runtime hands the shell's
+credential to that image, and the generated clients find it there. Sockets live
+under `TMPDIR`, and a socket path holds about 104 bytes, so keep it short
+(macOS's own TMPDIR is already half of that).
+
+**C++.** Generate Qt-free clients from the contracts of the modules you call, and
+let `LogosCore` (logos-cpp-sdk's header-only `logos_host_core.h`) run the runtime:
+
+```cmake
+find_package(logos-cpp-sdk REQUIRED)
+add_executable(my-app main.cpp)
+logos_generate_clients(TARGET my-app LIDL my_module.lidl peering_module.lidl TYPED_COLLECTIONS)
+target_link_libraries(my-app PRIVATE logos-cpp-sdk::logos_host
+    "${RUNTIME}/lib/liblogos_core.so" "${RUNTIME}/lib/liblogos_protocol_plain.so")
+```
+
+```cpp
+#include "my_module_api.h"
+#include <logos_host_core.h>
+
+logos::host::LogosCore::Config config;
+config.shellName = "my_app";                  // no logos_ prefix
+config.modulesDirs = {myModulesDir};
+config.bundledModulesDirs = {runtimeDir + "/modules"};
+config.persistenceBasePath = dataDir;
+config.peeringConfigJson = R"({"name": "My app"})";   // peering on
+logos::host::LogosCore core(argc, argv, config);
+core.start();                                 // spawns logos_runtime
+
+auto mine = core.client<MyModule>();          // calls as the shell
+logos::CallError error;
+auto reply = mine.doSomething("hello", &error);
+auto sub = mine.onSomethingHappened([](const std::string& data) { /* ... */ });
+```
+
+`TYPED_COLLECTIONS` types `[T]`, `{tstr: T}` and `?T` as `std::vector`, `std::map`
+and `std::optional` rather than JSON. Without CMake it is
+`logos-cpp-generator --lidl my_module.lidl --api-style lp --typed-collections --output-dir gen/`;
+in Nix, `logos-cpp-sdk.lib.mkClients`.
+
+**Rust.** logos-rust-sdk's `host` feature does the same. Its build script links
+liblogos from `LOGOS_HOST_LIB_DIR` (the runtime's `lib/`):
+
+```rust
+use logos_rust_sdk::host::{Config, LoadDeps, LogosCore};
+
+let core = LogosCore::start(
+    Config::new("my_app")
+        .modules_dir(&my_modules_dir)
+        .bundled_modules_dir(runtime.join("modules"))
+        .persistence(&data_dir)
+        .peering(serde_json::json!({ "name": "My app" }))
+        .runtime_path(runtime.join("bin/logos_runtime"))
+        .host_plain_path(runtime.join("bin/logos_host_plain"))
+        .host_remote_path(runtime.join("bin/logos_host_remote"))
+        .tmp_dir("/tmp/my-app"),
+)?;
+core.load_module("my_module", LoadDeps::Required)?;
+let reply = MyModuleClient::new().do_something("hello")?;    // generated
+let _sub = core.subscribe("my_module", "somethingHappened", |_, data| println!("{data}"))?;
+```
+
+Generate a client with `logos-lidl-gen my_module.lidl -o src/clients/my_module.rs`,
+or all of them with `logos-rust-sdk.lib.mkClients { system; lidls = { my_module =
+./my_module.lidl; }; }`, and commit the result: `lib.clientsUpToDate` is a check
+that fails when the committed clients drift from the contracts.
+
+**A daemon's module.** Pair the app's runtime with the daemon, then import:
+
+```rust
+let peering = PeeringModuleClient::new();
+// This computer: the daemon's local invite (control.local_invite), re-read each time.
+peering.redeem_invite(&std::fs::read_to_string(logosctl_dir.join("peering/local-invite"))?, None)?;
+// Another computer: an invite minted there with `logosctl peer invite --allow my_module`.
+let rule: BTreeMap<String, Value> = serde_json::from_value(json!({
+    "from": daemon_runtime_id, "module": "my_module",
+    "allowed_callers": ["my_app", "my_consumer_module"], "events": true,
+}))?;
+peering.set_import("my_module", &rule)?;
+```
+
+Once `import_states()` reports `my_module` as `ready`, `MyModuleClient::new()`
+reaches the daemon's module, and a module of the app that depends on `my_module`
+resolves to the import too (load it after the import is ready). The daemon decides
+what the app may call: the local invite's `allow` list, or `--allow` on
+`peer invite` or `peer accept`. That grant is per module: a paired app may call
+every method of a module it was granted.
+
+### 9.8 Android
+
+The same app runs on Android with its runtime on the phone. Android lets an app
+execute only what the package manager extracted from its APK, and it extracts
+only `lib*.so` files into the app's native library directory. So an APK ships
+`logos_runtime`, `logos_host_plain` and `logos_host_remote` as
+`liblogos_runtime.so` and so on, every plugin as `lib<name>_plugin.so`, and every
+library under an unversioned name (`libssl.so.3` becomes `libssl.so`). At start
+the app:
+
+- sets `LOGOS_RUNTIME_PATH` and the two host paths to those files, and `TMPDIR`
+  to its cache directory;
+- lays out `<files>/modules/<name>/` from its assets: `manifest.json` and the
+  sidecar as files, and the plugin as a symlink into the native library
+  directory;
+- sends its stdout and stderr to logcat, so the runtime's and the hosts' logs
+  land there too.
+
+The stack's repositories publish `packages.aarch64-android` (the Qt-free parts
+only), built on the build system logos-nix names for Android. A plain module gets
+one from `mkLogosModule`; a Qt-transport module has none. logos-nix's
+`mkNativeActivityApk` makes the APK without Gradle or Java code: a
+`NativeActivity` that loads your library. It follows every `DT_NEEDED` Android
+does not provide, renames versioned sonames in place, and refuses the APK if a
+library still points into `/nix/store` or has LOAD segments aligned below
+16 KB.
+
+Nobody types an invite on a phone. Give the activity a `logos-pair:` intent filter
+(and `launchMode = "singleTask"`: `android_main` runs once per process), and read
+the launch intent's data at start. A QR code of the invite, scanned by the
+camera, then opens the app with it. An emulator reaches the host computer as
+`10.0.2.2`: pair by code with that host, or open an invite whose host is
+`10.0.2.2`:
+
+```bash
+adb shell am start -a android.intent.action.VIEW -d "$(cat invite.txt)" co.example.app
+```
 
 ---
 
