@@ -2136,9 +2136,9 @@ logoscore peer accept <id>                      # both, once the codes match (`p
 
 Or mint a single-use invite (`logoscore peer invite`) and redeem it on the other
 side from a file or stdin, never argv: `logoscore peer redeem invite.txt`. On one
-machine, `control: { local_invite: true }` keeps such an invite in a file only the
-same user can read, redeemable over loopback only — "link a daemon on this
-computer" with no code.
+machine, `control: { local_invite: true }` keeps such an invite in
+`<config dir>/peering/local-invite`, a file only the same user can read,
+redeemable over loopback only — "link a daemon on this computer" with no code.
 
 **Importing and allowing.** The consumer imports and names which of its modules
 may call; the provider says which of the consumer's modules may reach what:
