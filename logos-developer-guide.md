@@ -54,6 +54,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [9.5 Finishing before teardown](#95-finishing-before-teardown)
   - [9.6 Linking runtimes (peering)](#96-linking-runtimes-peering)
   - [9.7 Consuming modules from a standalone app](#97-consuming-modules-from-a-standalone-app)
+  - [9.8 Android](#98-android)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
   - [`lm` -- Module Inspector](#lm----module-inspector)
@@ -2197,8 +2198,6 @@ of its own; each run takes a fresh route. On the daemon it is the operator
 `@peer:<id>`: it may load, unload and call modules and stop the daemon, and it only
 reads the daemon's peering.
 
----
-
 ### 9.7 Consuming modules from a standalone app
 
 An app that is not a module (a desktop or phone app with a UI of its own) can
@@ -2304,6 +2303,44 @@ resolves to the import too (load it after the import is ready). The daemon decid
 what the app may call: the local invite's `allow` list, or `--allow` on
 `peer invite` or `peer accept`. That grant is per module: a paired app may call
 every method of a module it was granted.
+
+### 9.8 Android
+
+The same app runs on Android with its runtime on the phone. Android lets an app
+execute only what the package manager extracted from its APK, and it extracts
+only `lib*.so` files into the app's native library directory. So an APK ships
+`logos_runtime`, `logos_host_plain` and `logos_host_remote` as
+`liblogos_runtime.so` and so on, every plugin as `lib<name>_plugin.so`, and every
+library under an unversioned name (`libssl.so.3` becomes `libssl.so`). At start
+the app:
+
+- sets `LOGOS_RUNTIME_PATH` and the two host paths to those files, and `TMPDIR`
+  to its cache directory;
+- lays out `<files>/modules/<name>/` from its assets: `manifest.json` and the
+  sidecar as files, and the plugin as a symlink into the native library
+  directory;
+- sends its stdout and stderr to logcat, so the runtime's and the hosts' logs
+  land there too.
+
+The stack's repositories publish `packages.aarch64-android` (the Qt-free parts
+only), built on the build system logos-nix names for Android. A plain module gets
+one from `mkLogosModule`; a Qt-transport module has none. logos-nix's
+`mkNativeActivityApk` makes the APK without Gradle or Java code: a
+`NativeActivity` that loads your library. It follows every `DT_NEEDED` Android
+does not provide, renames versioned sonames in place, and refuses the APK if a
+library still points into `/nix/store` or has LOAD segments aligned below
+16 KB.
+
+Nobody types an invite on a phone. Give the activity a `logos-pair:` intent filter
+(and `launchMode = "singleTask"`: `android_main` runs once per process), and read
+the launch intent's data at start. A QR code of the invite, scanned by the
+camera, then opens the app with it. An emulator reaches the host computer as
+`10.0.2.2`: pair by code with that host, or open an invite whose host is
+`10.0.2.2`:
+
+```bash
+adb shell am start -a android.intent.action.VIEW -d "$(cat invite.txt)" co.example.app
+```
 
 ---
 
