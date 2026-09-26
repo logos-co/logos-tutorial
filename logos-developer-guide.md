@@ -2151,10 +2151,15 @@ logoscore peer policy set policy.json                          # provider:
 #   {"<consumer runtime id>/my_ui": ["my_module"]}
 ```
 
-`--allow '*'` admits any of the consumer's modules. In Basecamp, Settings →
-Peering does the same: turn linking on (it applies at the next start), link the
-daemon on this computer or pair with another by code, then import what a linked
-runtime shares.
+`--allow '*'` admits any of the consumer's modules. The provider's
+`capability_module` decides every route from that policy: a consumer it does not
+list gets no route, and a narrower policy ends the routes it no longer allows.
+
+In Basecamp, Settings → Peering does the same: turn linking on (it applies at the
+next start), link the daemon on this computer or pair with another by code, then
+import what a linked runtime shares. With `control` on in Basecamp's
+`peering.json`, **Accept pairing for 5 min** opens a pairing window, and each
+request that arrives asks for consent in a dialog showing the code to compare.
 
 The import is a **facade**: a module named `my_module` on the consumer, hosted by
 `logos_host_remote`, that forwards each call to the provider's module on a
@@ -2165,7 +2170,8 @@ Your provider module sees such calls as `Remote{peer, name}`
 ([Caller Identity](#who-is-calling--caller-identity)).
 
 `logoscore peer status | ls | pending | exports | imports | routes` show the
-state; `peer remove` unpairs and revokes every route. Local operators (`auto`
+state (`peer status` also says why an enabled control endpoint is not listening);
+`peer remove` unpairs and revokes every route. Local operators (`auto`
 included) manage peering; a remote operator only reads.
 
 **Operating a daemon from another computer.** With `operator: true` in the
