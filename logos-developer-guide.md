@@ -2139,6 +2139,8 @@ side from a file or stdin, never argv: `logoscore peer redeem invite.txt`. On on
 machine, `control: { local_invite: true }` keeps such an invite in
 `<config dir>/peering/local-invite`, a file only the same user can read,
 redeemable over loopback only — "link a daemon on this computer" with no code.
+`local_invite: { allow: ["*"] }` also lets whatever pairs through it call every
+export (or only the modules listed), so no `peer policy set` is needed for it.
 
 **Importing and allowing.** The consumer imports and names which of its modules
 may call; the provider says which of the consumer's modules may reach what:
@@ -2148,6 +2150,11 @@ logoscore peer import my_module --from office --allow my_ui   # consumer
 logoscore peer policy set policy.json                          # provider:
 #   {"<consumer runtime id>/my_ui": ["my_module"]}
 ```
+
+`--allow '*'` admits any of the consumer's modules. In Basecamp, Settings →
+Peering does the same: turn linking on (it applies at the next start), link the
+daemon on this computer or pair with another by code, then import what a linked
+runtime shares.
 
 The import is a **facade**: a module named `my_module` on the consumer, hosted by
 `logos_host_remote`, that forwards each call to the provider's module on a
