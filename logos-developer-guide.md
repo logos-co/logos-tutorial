@@ -52,6 +52,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [9.3 Exposing OpenMetrics / Prometheus Metrics](#93-exposing-openmetrics--prometheus-metrics)
   - [9.4 Platform-keyed metadata](#94-platform-keyed-metadata)
   - [9.5 Finishing before teardown](#95-finishing-before-teardown)
+  - [9.6 Linking runtimes (peering)](#96-linking-runtimes-peering)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
   - [`lm` -- Module Inspector](#lm----module-inspector)
@@ -1100,7 +1101,9 @@ credential.
 `LOGOS_RUNTIME_PATH`), and the runtime finds the host processes beside it, or in
 `<modules dir>/../bin`. Set `LOGOS_HOST_PLAIN_PATH` to point it at a
 `logos_host_plain` elsewhere, and `LOGOS_HOST_PATH` for `logos_host_qt` (the
-plain host is also looked for beside it). A module installed without a
+plain host is also looked for beside it). An import from another runtime
+([§9.6](#96-linking-runtimes-peering)) is hosted by `logos_host_remote`, found the
+same way or at `LOGOS_HOST_REMOTE_PATH`. A module installed without a
 `<name>_plugin.metadata.json` sidecar (a Qt plugin built before sidecars
 existed), or whose sidecar states another version than its installed
 `manifest.json`, is read through `logos_host_qt --inspect` instead, so it is
@@ -1582,7 +1585,7 @@ opts in. By the time your handler runs the caller has presented a token this
 module itself issued, so the identity is a fact the callee possesses rather than
 a claim the caller makes — an unauthorized call never reaches your handler at all.
 
-`LogosCaller` has five arms:
+`LogosCaller` has six arms:
 
 | Arm | Carries | Seen when |
 | --- | --- | --- |
@@ -1590,10 +1593,13 @@ a claim the caller makes — an unauthorized call never reaches your handler at 
 | `Module` | `name`, optional `instance` | one module calling another. An app's shell (`basecamp`, `standalone`, `module_viewer`, `logoscore`) and a UI plugin's backend each call under their own name too. |
 | `Derived` | `parent`, `leaf` | a derived identity, e.g. a UI plugin under its module |
 | `Operator` | `name` | a `logoscore call` or `watch`, named after the client's token (`auto` for the local boot token) |
+| `Remote` | `peer`, `name` | a consumer on another runtime calling your exported module ([§9.6](#96-linking-runtimes-peering)): `peer` is that runtime's id, `name` the consumer there |
 | `Unknown` | — | everything else |
 
 with `isHost()`, `isModule()`, `isModule(name)` (which ignores the instance, so a
-restarted module is still itself), `isDerived()`, `isOperator()` and `isUnknown()`.
+restarted module is still itself), `isDerived()`, `isOperator()`, `isRemote()` and
+`isUnknown()`. A remote `wallet_ui` is never `isModule("wallet_ui")`: that name
+belongs to this runtime.
 
 **`Host` carries no name, ever.** It is the runtime acting for itself, however the
 call reached you. Ask `isHost()`; do not go looking for which part of the runtime
@@ -1618,7 +1624,7 @@ links and loads. Neither warns you — which is why a refusal should name what i
 saw.
 
 In Rust the surface is `logos_rust_sdk::current_caller()`, returning
-`Unknown | HostAnchor | Module{name, instance} | Derived{parent, leaf} | Operator{name}`,
+`Unknown | HostAnchor | Module{name, instance} | Derived{parent, leaf} | Operator{name} | Remote{peer, name}`,
 with `is_module(name)`, `identity()` for a map key and `describe_for_human()` for
 a log line.
 
@@ -2097,6 +2103,96 @@ and is torn down anyway.
 > teardown is never relayed — and a silent probe looks exactly like a hook that
 > never fired. Write to a file instead.
 
+### 9.6 Linking runtimes (peering)
+
+A module on one runtime can call a module on another — a Basecamp calling a
+daemon's module on the same machine or across the LAN — as it calls a local one.
+The two runtimes pair once; the providing side **exports** the module and the
+consuming side **imports** it. Every call between them is a module call over
+`tls_tcp` (mutual TLS 1.3, pinned keys, one-shot route tickets). The bundled
+`peering_module` and `peering_identity` do the work; their contract is
+[logos-peering's docs/api.md](https://github.com/logos-co/logos-peering/blob/main/docs/api.md).
+
+Everything is off until the daemon's config has a `peering` section:
+
+```yaml
+peering:
+  name: office                                  # shown to others while pairing
+  control: { enabled: true, host: 0.0.0.0, port: 7443 }
+  exports: { enabled: true, modules: { my_module: { events: true } } }
+```
+
+Only a `qt_remote_plain` module can be exported; it takes effect at the module's
+next load, when it gets a `tls_tcp` listener beside its local one.
+
+**Pairing.** Open a window on the providing side, start pairing from the other,
+compare the six digits both show, and accept on both:
+
+```bash
+logosctl peer pair-window 300                  # provider
+logosctl peer pair 192.168.1.5 7443            # consumer: prints the code and an id
+logosctl peer accept <id>                      # both, once the codes match (`peer pending`)
+```
+
+Or mint a single-use invite (`logosctl peer invite`) and redeem it on the other
+side from a file or stdin, never argv: `logosctl peer redeem invite.txt`. On one
+machine, `control: { local_invite: true }` keeps such an invite in
+`<config dir>/peering/local-invite`, a file only the same user can read,
+redeemable over loopback only — "link a daemon on this computer" with no code.
+`local_invite: { allow: ["*"] }` also lets whatever pairs through it call every
+export (or only the modules listed), so no `peer policy set` is needed for it.
+
+**Importing and allowing.** The consumer imports and names which of its modules
+may call; the provider says which of the consumer's modules may reach what:
+
+```bash
+logosctl peer import my_module --from office --allow my_ui   # consumer
+logosctl peer policy set policy.json                          # provider:
+#   {"<consumer runtime id>/my_ui": ["my_module"]}
+```
+
+`--allow '*'` admits any of the consumer's modules. The provider's
+`capability_module` decides every route from that policy: a consumer it does not
+list gets no route, and a narrower policy ends the routes it no longer allows.
+
+In Basecamp, Settings → Peering does the same: turn linking on (it applies at the
+next start), link the daemon on this computer or pair with another by code, then
+import what a linked runtime shares. With `control` on in Basecamp's
+`peering.json`, **Accept pairing for 5 min** opens a pairing window, and each
+request that arrives asks for consent in a dialog showing the code to compare.
+
+The import is a **facade**: a module named `my_module` on the consumer, hosted by
+`logos_host_remote`, that forwards each call to the provider's module on a
+session of its own for each consumer. Its state follows the import: `ready`
+while the provider answers, `error` (with the reason) while it does not. A
+failed remote call returns `{"code":"dispatch_failed","message":"remote/…"}`.
+Your provider module sees such calls as `Remote{peer, name}`
+([Caller Identity](#who-is-calling--caller-identity)).
+
+`logosctl peer status | ls | pending | exports | imports | routes` show the
+state (`peer status` also says why an enabled control endpoint is not listening);
+`peer remove` unpairs and revokes every route. Local operators (`auto`
+included) manage peering; a remote operator only reads.
+
+**Operating a daemon from another computer.** With `operator: true` in the
+daemon's `peering` section, its `core_service` also listens on `tls_tcp` for the
+clients it paired as operators. Mint an operator invite on the daemon (valid 15
+minutes), redeem it on the other computer, and accept it on the daemon once the
+display ID it shows matches the one the client printed:
+
+```bash
+logosctl peer invite --operator > invite.txt   # daemon
+logosctl remote pair invite.txt                # client: waits for the daemon
+logosctl peer pending                          # daemon: then peer accept <id>
+logosctl --remote node status                  # client: any command, on the daemon
+logosctl --remote node module load my_module
+```
+
+The client keeps its own key in `<config dir>/remote` and needs no daemon or token
+of its own; each run takes a fresh route. On the daemon it is the operator
+`@peer:<id>`: it may load, unload and call modules and stop the daemon, and it only
+reads the daemon's peering.
+
 ---
 
 ## Reference: Repository Map
@@ -2136,6 +2232,8 @@ logoscore call <module> <method> [args]       # Call a method
 logoscore list-modules [--loaded]             # List modules
 logoscore module-info <name>                  # Show module details (incl. placement)
 logoscore status                              # Daemon health
+logosctl peer status | ls | pair | invite | redeem | import | export | policy
+                                              # Link with other runtimes (§9.6; logosctl only)
 logoscore stop                                # Stop daemon
 ```
 
