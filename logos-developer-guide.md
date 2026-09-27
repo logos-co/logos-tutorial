@@ -2455,6 +2455,12 @@ or all of them with `logos-rust-sdk.lib.mkClients { system; lidls = { my_module 
 ./my_module.lidl; }; }`, and commit the result: `lib.clientsUpToDate` is a check
 that fails when the committed clients drift from the contracts.
 
+**Fewer processes.** `.placement_policy(serde_json::json!({ "single_process": true }))`
+keeps every module in the runtime's own process, peering's and each import's facade
+included (placement, §6.1): the app then has one child process, not one per module.
+The app's own modules must then come from a bundled directory:
+`.bundled_modules_dir(&my_modules_dir)` instead of `.modules_dir(..)`.
+
 **A daemon's module.** Pair the app's runtime with the daemon, then import:
 
 ```rust
