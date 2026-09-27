@@ -1103,7 +1103,9 @@ continue to use the runtime paths embedded by the build and packaging tools.
 `logosctl`'s daemon and client are plain C++ and use the local
 `qt_remote_plain` transport. Modules built with `qt_remote` still interoperate
 unchanged, because their Qt plugin loading and Qt runtime stay inside the
-separate `logos_host_qt` compatibility process.
+separate `logos_host_qt` compatibility process. The daemon listens on its local
+socket only: to operate it from another computer, or to call its modules from
+another runtime, see [§9.6](#96-linking-runtimes-peering).
 
 The daemon finds `logos_runtime` beside its own executable (or at
 `LOGOS_RUNTIME_PATH`), and the runtime finds the host processes beside it, or in
@@ -1234,7 +1236,7 @@ credential.
 
 #### `logoscore`
 
-`logoscore` is the same runtime without package management or sessions: its daemon loads modules straight from a directory (`logoscore -D -m ./modules`) and keeps its state in `~/.logoscore`. It is no longer released. Build it from source with `nix build 'github:logos-co/logos-logoscore-cli#cli'` if you need it; its client commands are the old spellings of the ones above (`load-module`, `module-info`, `list-modules`, `status`, `stop`). Its daemon takes the placement policy and bundled directories as `--placement` and `--bundled-modules-dir`.
+`logoscore` is the same runtime without package management or sessions: its daemon loads modules straight from a directory (`logoscore -D -m ./modules`) and keeps its state in `~/.logoscore`. It is no longer released. Build it from source with `nix build 'github:logos-co/logos-logoscore-cli#cli'` if you need it; its client commands are the old spellings of the ones above (`load-module`, `module-info`, `list-modules`, `status`, `stop`). Its daemon takes the placement policy and bundled directories as `--placement` and `--bundled-modules-dir`. Since logos-protocol 0.15 it too listens on its local socket only, and refuses the `tcp` and `tcp_ssl` flags it used to take.
 
 ---
 
