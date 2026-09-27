@@ -1216,10 +1216,11 @@ bundled_modules_dirs: [./trusted]
 
 `placement: '{"single_process":true}'` is for a deployment with no other
 processes, such as an app on a phone: every module runs in the runtime's process
-or does not load, so a module loads only when the first two conditions hold, and
-the package modules never load. `peering_module` and `peering_identity`, which
-otherwise always get hosts of their own, run there too, and so does each
-import's facade ([§9.6](#96-linking-runtimes-peering)).
+or does not load. So an app's own modules must come from a bundled directory
+(`bundled_modules_dirs:`) and be stamped eligible, and the package modules never
+load. `peering_module` and `peering_identity`, which otherwise always get hosts
+of their own, run there too, and so does each import's facade
+([§9.6](#96-linking-runtimes-peering)).
 
 Calls into an in-process module keep socket semantics: the same tokens and caller
 identity, with results delivered asynchronously. Other processes still reach it
