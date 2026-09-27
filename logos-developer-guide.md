@@ -2236,6 +2236,14 @@ Every one of these also exists per system, including the cross target:
 **pseudo-system** — it evaluates anywhere but only realises on `x86_64-linux`,
 because Windows is cross-built.
 
+On that target `.#unit-tests` is built but not run. It cross-builds the test
+executables and writes a manifest, `share/logos-tests/<module>.json`, which
+[logos-windows-ci](https://github.com/logos-co/logos-windows-ci) runs on a
+Windows runner. A module opts in from its Windows workflow with
+`targets: default unit-tests` and `tests: true`. Tests that link a real shared
+external library don't build for Windows yet; mock the library with
+`tests.mockCLibs`.
+
 ---
 
 ## Troubleshooting
