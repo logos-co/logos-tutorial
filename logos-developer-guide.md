@@ -2506,7 +2506,10 @@ library still points into `/nix/store` or has LOAD segments aligned below
 Nobody types an invite on a phone. Give the activity a `logos-pair:` intent filter
 (and `launchMode = "singleTask"`: `android_main` runs once per process), and read
 the launch intent's data at start. A QR code of the invite, scanned by the
-camera, then opens the app with it. An emulator reaches the host computer as
+camera, then opens the app with it. NativeActivity drops `onNewIntent`, so for a
+link that arrives while the app runs, ship a small subclass that keeps it, and
+poll it from the UI thread over JNI. `mkNativeActivityApk` compiles it:
+`javaSources` go into `classes.dex`, and `activity` names the subclass. An emulator reaches the host computer as
 `10.0.2.2`: pair by code with that host, or open an invite whose host is
 `10.0.2.2`:
 
