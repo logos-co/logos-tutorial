@@ -58,6 +58,8 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [9.6 Linking runtimes (peering)](#96-linking-runtimes-peering)
   - [9.7 Consuming modules from a standalone app](#97-consuming-modules-from-a-standalone-app)
   - [9.8 Android](#98-android)
+  - [9.9 Windows](#99-windows)
+  - [9.10 iOS](#910-ios)
 - [Reference: Repository Map](#reference-repository-map)
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
   - [`lgx` -- Package Tool](#lgx----package-tool)
@@ -2461,6 +2463,14 @@ included (placement, §6.1): the app then has one child process, not one per mod
 The app's own modules must then come from a bundled directory:
 `.bundled_modules_dir(&my_modules_dir)` instead of `.modules_dir(..)`.
 
+**No process at all.** `.embedded(true)` runs the runtime inside the app
+(`logos_runtime_embed` in the C API) instead of spawning `logos_runtime`, and
+`{ "single_process": true, "local_endpoints": false }` keeps every module there
+without a local socket: the app then has no child process and binds nothing in
+`TMPDIR`. A process embeds a runtime once and cannot start it again; stop it
+before the process exits, since exiting with its modules still live is not safe.
+iOS needs this (§9.10).
+
 **A daemon's module.** Pair the app's runtime with the daemon, then import:
 
 ```rust
@@ -2535,6 +2545,38 @@ they and the modules import in the same directory: Windows finds an import by it
 name in the program's own directory, and nothing records where it came from. Local
 endpoints are named pipes, so no socket path limit applies. `single_process` has no
 in-process facades on Windows yet.
+
+### 9.10 iOS
+
+iOS lets an app start no process, so an iOS app embeds its runtime (§9.7): on iOS,
+logos-rust-sdk's `Config::new` presets `embedded` and `single_process`, and
+`LogosCore::start` refuses a spawned runtime. liblogos compiles process creation
+out there (`LOGOS_CORE_NO_SUBPROCESS`, on by default when `CMAKE_SYSTEM_NAME` is
+`iOS`): `logos_runtime_spawn` refuses and no `logos_runtime` is built. It links
+logos-container's `none` implementation, whose container seams all answer
+nullptr, and logos-module-loader-qt without its host programs
+(`LOGOS_BUILD_PLAIN_HOST=OFF`, also the iOS default). Every module then runs in
+the app's process, so each has to be bundled and in-process eligible.
+
+Everything is compiled with Xcode's clang through logos-nix's `mkIosPkgs` and
+`xcodeClang` (nixpkgs' cc-wrapper does not target iOS). The Logos libraries are
+dylibs, and their third-party dependencies static archives, except OpenSSL: it
+stays one shared image, as on the desktop, so no TLS object crosses two copies.
+CMake's iOS platform confines every search to the SDK, so dependencies in
+`/nix/store` need `CMAKE_FIND_ROOT_PATH_MODE_{PACKAGE,LIBRARY,INCLUDE}=BOTH`. A
+module is its `generate` output (the builder's code generation, run on the
+build machine) compiled with `LogosModule.cmake` for the target, with the same
+`LOGOS_MODULE_TRANSPORT` and `LOGOS_API_STYLE` as its native build; its sidecar
+is stamped in-process eligible from the iOS image. liblgx normalizes paths with
+CoreFoundation there (`LGX_UNICODE_CF`, since the SDK has no ICU headers) and
+names the variants `ios-arm64` and `ios-sim-arm64`: a development build finds a
+module through `ios-sim-arm64-dev` in its manifest's `main`.
+
+The `.app` carries those libraries in `Frameworks/` and the modules in
+`modules/<name>/`, each with its `manifest.json` and sidecar, every image naming
+its libraries by `@rpath` and ad-hoc signed. Slint draws with Skia over Metal
+there (femtovg needs OpenGL). The simulator shares the Mac's network, so a daemon
+on the Mac is `127.0.0.1` to the app. Builds target the simulator only, so far.
 
 ---
 
