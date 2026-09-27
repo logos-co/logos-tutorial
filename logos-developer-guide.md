@@ -1644,7 +1644,7 @@ a claim the caller makes — an unauthorized call never reaches your handler at 
 | `Host` | **nothing** | the runtime itself, for example feeding `modules_state` |
 | `Module` | `name`, optional `instance` | one module calling another. An app's shell (`basecamp`, `standalone`, `module_viewer`, and `logoscore` for the `logosctl` daemon) and a UI plugin's backend each call under their own name too. |
 | `Derived` | `parent`, `leaf` | a derived identity, e.g. a UI plugin under its module |
-| `Operator` | `name` | a `logosctl call` or `watch`, named after the client's token (`auto` for the local boot token) |
+| `Operator` | `name` | a `logosctl call` or `watch`, named after the client's token (`auto` for the local boot token), or `@peer:<runtime id>:<consumer>` for a remote client's call through the daemon ([§9.6](#96-linking-runtimes-peering)) |
 | `Remote` | `peer`, `name` | a consumer on another runtime calling your exported module ([§9.6](#96-linking-runtimes-peering)): `peer` is that runtime's id, `name` the consumer there |
 | `Unknown` | — | everything else |
 
@@ -2312,26 +2312,49 @@ Your provider module sees such calls as `Remote{peer, name}`
 `logosctl peer status | ls | pending | exports | imports | routes` show the
 state (`peer status` also says why an enabled control endpoint is not listening);
 `peer remove` unpairs and revokes every route. Local operators (`auto`
-included) manage peering; a remote operator only reads.
+included) manage peering; a remote client cannot reach it.
 
-**Operating a daemon from another computer.** With `operator: true` in the
-daemon's `peering` section, its `core_service` also listens on `tls_tcp` for the
-clients it paired as operators. Mint an operator invite on the daemon (valid 15
-minutes), redeem it on the other computer, and accept it on the daemon once the
-display ID it shows matches the one the client printed:
+**Operating a daemon from another computer** (Remote Runtime Control). With
+`runtime_control: true` in the daemon's `peering` section, its `core_service` also
+listens on `tls_tcp`, as the endpoint `logos_runtime_control`. Mint a
+runtime-control invite on the daemon (valid 15 minutes), redeem it on the other
+computer, and accept it on the daemon once the display ID it shows matches the
+one the client printed:
 
 ```bash
-logosctl peer invite --operator > invite.txt   # daemon
-logosctl remote pair invite.txt                # client: waits for the daemon
-logosctl peer pending                          # daemon: then peer accept <id>
-logosctl --remote node status                  # client: any command, on the daemon
-logosctl --remote node module load my_module
+logosctl peer invite --runtime-control > invite.txt   # daemon
+logosctl remote pair invite.txt                       # client: waits for the daemon
+logosctl peer pending                                 # daemon: then peer accept <id>
 ```
 
-The client keeps its own key in `<config dir>/remote` and needs no daemon or token
-of its own; each run takes a fresh route. On the daemon it is the operator
-`@peer:<id>`: it may load, unload and call modules and stop the daemon, and it only
-reads the daemon's peering.
+Pairing grants nothing by itself. The daemon's remote policy names the
+`core_service` methods the client may call, as the consumer `logosctl` of its
+runtime; anything else is refused with `NOT_AUTHORISED`:
+
+```json
+{"<client runtime id>/logosctl": {
+  "core_service": ["getStatus", "listModules", "getModuleInfo",
+                   "loadModule", "unloadModule", "callModuleMethod"],
+  "my_module": ["doSomething"]}}
+```
+
+```bash
+logosctl peer policy set policy.json                  # daemon
+logosctl --remote node status                         # client: runs on the daemon
+logosctl --remote node module load my_module
+logosctl --remote node call my_module doSomething hi  # callModuleMethod and my_module.doSomething
+```
+
+A policy value is a list of modules (every method of each) or an object naming
+methods per module: `"*"` for all, `[]` for none. The exact
+`<runtime id>/<consumer>` key wins over `<runtime id>/*`, and `"*"` as a module
+covers user modules (for an import, every export), never `core_service`, which
+must be named. The shell's and peering's own `core_service` methods are never a
+remote client's, and a call it forwards never reaches the runtime's own modules
+(`modules_state`, the package and peering modules). A module it calls through
+the daemon sees the operator `@peer:<client runtime id>:logosctl`. The client
+keeps its own key in `<config dir>/remote` and needs no daemon or token of its
+own.
 
 ---
 
