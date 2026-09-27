@@ -2523,6 +2523,19 @@ poll it from the UI thread over JNI. `mkNativeActivityApk` compiles it:
 adb shell am start -a android.intent.action.VIEW -d "$(cat invite.txt)" co.example.app
 ```
 
+### 9.9 Windows
+
+A Windows app is cross-built on x86_64-linux like everything else for
+`x86_64-windows` (§6). For a Rust app, `logos-rust-sdk.lib.hostBuildSupportWindows
+{ liblogosLib; windowsPkgs; }` gives cargo the MinGW linker, pthreads and the C
+toolchain for `x86_64-pc-windows-gnu`; bring a toolchain with that target's std.
+Ship the app beside `logos_runtime.exe`, `logos_host_plain.exe` and, to import,
+`logos_host_remote.exe` (logos-peering's `packages.x86_64-windows`), with every DLL
+they and the modules import in the same directory: Windows finds an import by its
+name in the program's own directory, and nothing records where it came from. Local
+endpoints are named pipes, so no socket path limit applies. `single_process` has no
+in-process facades on Windows yet.
+
 ---
 
 ## Reference: Repository Map
