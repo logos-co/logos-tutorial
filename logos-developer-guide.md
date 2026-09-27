@@ -1214,6 +1214,13 @@ bundled_modules_dirs: [./trusted]
 
 `logosctl module show my_module` then reads `Placement: inproc`.
 
+`placement: '{"single_process":true}'` is for a deployment with no other
+processes, such as an app on a phone: every module runs in the runtime's process
+or does not load, so a module loads only when the first two conditions hold, and
+the package modules never load. `peering_module` and `peering_identity`, which
+otherwise always get hosts of their own, run there too, and so does each
+import's facade ([§9.6](#96-linking-runtimes-peering)).
+
 Calls into an in-process module keep socket semantics: the same tokens and caller
 identity, with results delivered asynchronously. Other processes still reach it
 over the local socket. It does share the runtime's fate:
@@ -2302,10 +2309,11 @@ import what a linked runtime shares. With `control` on in Basecamp's
 request that arrives asks for consent in a dialog showing the code to compare.
 
 The import is a **facade**: a module named `my_module` on the consumer, hosted by
-`logos_host_remote`, that forwards each call to the provider's module on a
-session of its own for each consumer. Its state follows the import: `ready`
-while the provider answers, `error` (with the reason) while it does not. A
-failed remote call returns `{"code":"dispatch_failed","message":"remote/…"}`.
+`logos_host_remote` (a single-process runtime runs it itself), that forwards each
+call to the provider's module on a session of its own for each consumer. Its
+state follows the import: `ready` while the provider answers, `error` (with the
+reason) while it does not. A failed remote call returns
+`{"code":"dispatch_failed","message":"remote/…"}`.
 Your provider module sees such calls as `Remote{peer, name}`
 ([Caller Identity](#who-is-calling--caller-identity)).
 
