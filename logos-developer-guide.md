@@ -1663,6 +1663,31 @@ arm you did not think about lands on the refusal path.
 **The identity is valid for one dispatch, on the dispatching thread.** A handler
 that needs it later must copy it at the top.
 
+**`scoped`: the deployer granted this method.** A version 2 access policy can
+grant a caller individual methods of your module:
+
+```json
+{"version": 2, "mode": "explicit",
+ "restrictions": {"my_thing": {"allowedCallers": {
+   "admin_module": "*",
+   "ops_cli":      ["setLimit"],
+   "*":            ["getLimit"]}}}}
+```
+
+The runtime refuses a method outside a caller's list with `not_authorised` before
+your handler runs, and marks a call it checked against a list: `caller.scoped` is
+`true` (in Rust, `logos_rust_sdk::current_caller_scoped()`). A `"*"` grant, or a
+plain list of callers, is not scoped. That lets a deployer extend a gate without
+a rebuild:
+
+```cpp
+if (!(caller.scoped || caller.isModule("admin_module")))
+    return "refused";
+```
+
+Only your module's own runtime writes the mark, from the grant it matched, so a
+caller cannot claim it.
+
 Two builds read `Unknown` forever, quietly. A **legacy `Q_INVOKABLE` Qt plugin**
 has no generated glue, so nothing pushes the identity in. And a module generated
 below **logos-protocol 0.6** has no caller machinery at all, yet still compiles,
@@ -2236,6 +2261,36 @@ and is torn down anyway.
 > stdout and stderr *before* it sends the stop signal, so anything you print during
 > teardown is never relayed — and a silent probe looks exactly like a hook that
 > never fired. Write to a file instead.
+
+### 9.6 Configuration a module starts with
+
+A deployment can give a module one JSON document of configuration. The module
+reads it from its context:
+
+```cpp
+void MyModuleImpl::onContextReady() {
+    const std::string text = configuration();   // "" when none was given
+    if (!text.empty()) m_endpoint = nlohmann::json::parse(text).value("endpoint", "");
+}
+```
+
+In Rust it is `ctx.configuration` (a `String`, empty when none) in
+`on_context_ready`.
+
+- **When.** The host hands it over before the context is set, so before
+  `onContextReady()`, and before anything can call the module. It happens again on
+  every start: a load, a reload, and a start after a crash.
+- **Where it comes from.** The deployer, before the runtime starts:
+  `module_config:` in `logosctl`'s daemon config, `--module-config` for
+  Basecamp, or `logos_core_set_module_config` for an embedder. Each module's
+  document is replaced whole, never merged.
+- **Fail closed.** A module given a configuration fails to load, before it is
+  published, when it cannot take it: a build from before
+  `logos_module_set_configuration` (the generator exports it for you), a
+  document the module refuses, a host too old for `--configuration-source`, or a
+  Qt plugin module.
+- **Never authority.** Who may call what belongs in the access policy; a module
+  must not grant anything because its configuration says so.
 
 ---
 
