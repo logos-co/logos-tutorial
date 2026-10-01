@@ -183,6 +183,8 @@ jobs:
     uses: logos-co/logos-windows-ci/.github/workflows/windows-ci.yml@v1
     secrets: inherit
     with:
+      # One call per spec in this run: without it they cancel each other.
+      instance: ${{ matrix.id }}
       targets: ${{ matrix.targets }}
       extra-nix-args: ${{ needs.plan.outputs.override-inputs }}
       doctest-spec: tests/${{ matrix.spec }}.test.yaml
