@@ -1,6 +1,6 @@
 # Tutorial: Composing Modules with the Module Context
 
-This tutorial builds `calc_aggregator`, a **core module that depends on another module** (`calc_module` from [Part 1](tutorial-wrapping-c-library.md)). It does no arithmetic of its own — instead it *composes* `calc_module`'s primitives into a single call, and along the way showcases everything the SDK's `LogosModuleContext` base class gives a universal module. There is no UI: you drive the whole thing from `logoscore` on the command line.
+This tutorial builds `calc_aggregator`, a **core module that depends on another module** (`calc_module` from [Part 1](tutorial-wrapping-c-library.md)). It does no arithmetic of its own — instead it *composes* `calc_module`'s primitives into a single call, and along the way showcases everything the SDK's `LogosModuleContext` base class gives a universal module. There is no UI: you drive the whole thing from `logosctl` on the command line.
 
 **What you'll build:** A `calc_aggregator` core module that, through the `LogosModuleContext` base class:
 
@@ -18,7 +18,7 @@ No Qt, no `LogosAPI`, no plugin boilerplate — one plain C++ class, exactly lik
 - How to use the per-instance persistence directory for durable state, set up in `onContextReady()`
 - How `modules().<dep>` gives you typed **sync** and **async** callers — no raw `LogosAPI`, no `QVariant`
 - How to subscribe to another module's `logos_events:` with a typed callback
-- How to load two modules in `logoscore` and chain calls to observe events and async replies
+- How to load two modules in `logosctl` and chain calls to observe events and async replies
 
 ## Prerequisites
 
@@ -254,7 +254,7 @@ A few things to notice:
 
 - The class inherits **`LogosModuleContext`** — that's the opt-in that gives it the context getters and `modules()`.
 - `onContextReady()` is `protected` (an override of the base hook), so it is **not** exposed over IPC — only the `public` methods are.
-- `hasInstanceID()` returns `bool` on purpose: the CLI prints a `Result:` line for any string (even empty), so a boolean is the unambiguous way to assert "the host populated the ID".
+- `hasInstanceID()` returns `bool` on purpose: the ID itself is random, and a string getter succeeds even when it returns an empty string, so a boolean is the unambiguous way to assert "the host populated the ID".
 
 ### 3.2 `src/calc_aggregator_impl.cpp` — the implementation
 
@@ -489,104 +489,101 @@ Every `public` method on the impl is here, published in the **LIDL contract** vo
 
 ---
 
-## Step 6: Run it with `logoscore`
+## Step 6: Run it with `logosctl`
 
-Now the payoff: run `calc_aggregator` **and** its `calc_module` dependency under `logoscore` and exercise every capability. We use the `logoscore` **daemon** (`-D`) — it keeps each module's process alive between `call` commands, so an event subscription registered by one call is still active when a later call triggers it, and an async reply lands before the call that reads it. (This is the same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logoscore).)
+Now the payoff: run `calc_aggregator` **and** its `calc_module` dependency under `logosctl` and exercise every capability. `logosctl` drives a **daemon** that keeps each module's process alive between `call` commands, so an event subscription registered by one call is still active when a later call triggers it, and an async reply lands before the call that reads it. (This is the same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logosctl).)
 
-### 6.1 Build the runtime and package both modules
+### 6.1 Get logosctl
 
-Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory `logoscore` can scan. The aggregator comes from this project; `calc_module` from your Part 1 checkout:
+`logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
+```
+
+### 6.2 Package both modules
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store. Build one for each module — the aggregator from this project, `calc_module` from your Part 1 checkout:
+
+```bash
+nix build '.#lgx-portable' --out-link result-aggregator-lgx
+nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx
+```
+
+### 6.3 Start the daemon and install both
+
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+```bash
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
+```
+
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking. Install the dependency together with the module that needs it:
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+logosctl install ./result-calc-lgx/*.lgx ./result-aggregator-lgx/*.lgx -y
 ```
+
+The session's `modules/` directory now holds `calc_aggregator/` and `calc_module/`, each with its plugin, libraries, and `manifest.json`.
+
+### 6.4 Load the module
 
 ```bash
-mkdir -p modules
+logosctl module load calc_aggregator
 ```
 
-### 6.2 Install calc_aggregator
-
-```bash
-nix build '.#lgx' --out-link result-aggregator-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file result-aggregator-lgx/*.lgx
+```text
+Loaded module: calc_aggregator (v1.0.0)
+  Dependencies loaded: calc_module
 ```
 
-### 6.3 Install calc_module (the dependency)
-
-```bash
-nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx
-```
-
-`modules/` now holds `calc_aggregator/` and `calc_module/`, each with its plugin, libraries, and `manifest.json`.
-
-### 6.4 Create a persistence directory and start the daemon
-
-The host only provisions a per-instance persistence path when you pass `--persistence-path`. Create a directory for it — we reuse the **same** directory across restarts so the instance ID (and therefore the persisted state) is stable:
-
-```bash
-mkdir -p calc-data
-```
-
-Start `logoscore` as a background daemon, pointed at the modules directory and the persistence directory:
-
-```bash
-./logos/bin/logoscore -D -m ./modules --persistence-path ./calc-data &
-```
-
-```bash
-sleep 4
-```
-
-Load both modules. The daemon keeps each module's process alive between `call` commands, which is what lets an event subscription (or an async reply) survive from one call to the next:
-
-```bash
-./logos/bin/logoscore load-module calc_module
-```
-
-```bash
-./logos/bin/logoscore load-module calc_aggregator
-```
+Loading `calc_aggregator` brings `calc_module` up with it — it is a declared dependency. The daemon keeps each module's process alive between `call` commands, which is what lets an event subscription (or an async reply) survive from one call to the next.
 
 ### 6.5 Read the context properties
 
 `moduleDir()` / `hasInstanceID()` / `persistenceDir()` return the values the host stamped onto the module. We can't predict the absolute path, but `moduleDir()` must contain the module name:
 
 ```bash
-./logos/bin/logoscore call calc_aggregator moduleDir
+logosctl call calc_aggregator moduleDir
 ```
 
-`hasInstanceID()` returns a bool, so a non-empty instance ID shows as `"result":true` — an unambiguous signal the host populated `instanceId()` (a plain string getter would read as empty either way):
+`hasInstanceID()` returns a bool, so a non-empty instance ID shows as `true` — an unambiguous signal the host populated `instanceId()` (the ID itself, which `instanceID()` returns, is a random string such as `8a69bb677f2c`, so there is no fixed value to check):
 
 ```bash
-./logos/bin/logoscore call calc_aggregator hasInstanceID
+logosctl call calc_aggregator hasInstanceID
 ```
 
 ```bash
-./logos/bin/logoscore call calc_aggregator persistenceDir
+logosctl call calc_aggregator persistenceDir
 ```
 
-- `moduleDir()` → the directory the plugin loaded from (contains `calc_aggregator`)
-- `hasInstanceID()` → `"result":true` — the host populated `instanceId()`
-- `persistenceDir()` → a path under your `calc-data/` directory, namespaced by module name and instance ID
+- `moduleDir()` → the directory the plugin loaded from, the session's `modules/calc_aggregator`
+- `hasInstanceID()` → `true` — the host populated `instanceId()`
+- `persistenceDir()` → a path under the session's `data/` directory, namespaced by module name and instance ID: `session/data/calc_aggregator/<instance-id>`
 
 ### 6.6 Compose calc_module synchronously
 
 `computeReport(a, b, n)` fans out to five typed `calc_module` calls and returns them as one map. With `a=3, b=5, n=10`:
 
 ```bash
-./logos/bin/logoscore call calc_aggregator computeReport 3 5 10
+logosctl call calc_aggregator computeReport 3 5 10
 ```
 
 One call, five composed results:
 
-```json
-{"method":"computeReport","module":"calc_aggregator","result":{"factorial":3628800,"fibonacci":55,"libVersion":"1.0.0","product":15,"sum":8},"status":"ok"}
+```text
+{
+  "factorial": 3628800,
+  "fibonacci": 55,
+  "libVersion": "1.0.0",
+  "product": 15,
+  "sum": 8
+}
 ```
 
 `sum = 3+5`, `product = 3*5`, `factorial = 10!`, `fibonacci = fib(10)`, and `libVersion` read straight from `calc_module` — all through the generated `modules().calc_module` sync wrappers.
@@ -596,7 +593,7 @@ One call, five composed results:
 `startAsyncFibonacci(n)` fires `calc_module.fibonacciAsync(n)` and returns `"queued"` immediately. The reply arrives on the daemon's event loop; the next call, `asyncResult()`, reads what the callback stashed. With `n=20`, `fib(20) = 6765`:
 
 ```bash
-./logos/bin/logoscore call calc_aggregator startAsyncFibonacci 20
+logosctl call calc_aggregator startAsyncFibonacci 20
 ```
 
 ```bash
@@ -604,7 +601,7 @@ sleep 1
 ```
 
 ```bash
-./logos/bin/logoscore call calc_aggregator asyncResult
+logosctl call calc_aggregator asyncResult
 ```
 
 `startAsyncFibonacci` returned before the answer existed; by the time `asyncResult()` runs, the async callback has fired and stored `6765`. That's the typed **async** caller — same wrapper, `<method>Async(..., callback)`.
@@ -614,11 +611,11 @@ sleep 1
 The typed event subscription. `subscribeVersion()` registers the callback, `calc_module.libVersionNotify()` makes `calc_module` emit its `versionReady` event, and `lastVersionEvent()` reads what the subscription captured. Because the daemon keeps both modules loaded, the event fires between the calls:
 
 ```bash
-./logos/bin/logoscore call calc_aggregator subscribeVersion
+logosctl call calc_aggregator subscribeVersion
 ```
 
 ```bash
-./logos/bin/logoscore call calc_module libVersionNotify
+logosctl call calc_module libVersionNotify
 ```
 
 ```bash
@@ -626,7 +623,7 @@ sleep 1
 ```
 
 ```bash
-./logos/bin/logoscore call calc_aggregator lastVersionEvent
+logosctl call calc_aggregator lastVersionEvent
 ```
 
 `subscribeVersion()` returned `ok`; the event fired in between; `lastVersionEvent()` returned `1.0.0` — the payload `calc_module` emitted, delivered to the typed callback you registered with `modules().calc_module.onVersionReady(...)`.
@@ -636,55 +633,47 @@ sleep 1
 `bumpRunCount()` increments a counter saved in the persistence directory. Call it twice — `1`, then `2`:
 
 ```bash
-./logos/bin/logoscore call calc_aggregator bumpRunCount
+logosctl call calc_aggregator bumpRunCount
 ```
 
 ```bash
-./logos/bin/logoscore call calc_aggregator bumpRunCount
+logosctl call calc_aggregator bumpRunCount
 ```
 
-Now stop the daemon and start a **brand-new** one against the same persistence directory. `onContextReady()` loads the persisted `2` from disk, so the next bump is `3`:
+Now stop the daemon and start a **brand-new** one in the same session. The session keeps the installed packages and each module's data directory, and with it the module's instance ID, so `onContextReady()` loads the persisted `2` from disk and the next bump is `3`:
 
 ```bash
-./logos/bin/logoscore stop
-```
-
-```bash
-sleep 2
+logosctl daemon stop
 ```
 
 ```bash
-./logos/bin/logoscore -D -m ./modules --persistence-path ./calc-data &
+logosctl daemon start --detach
 ```
 
 ```bash
-sleep 4
+logosctl module load calc_aggregator
 ```
 
 ```bash
-./logos/bin/logoscore load-module calc_aggregator
-```
-
-```bash
-./logos/bin/logoscore call calc_aggregator bumpRunCount
+logosctl call calc_aggregator bumpRunCount
 ```
 
 The count survived a full process restart — proof the persistence directory is host-owned and durable, and that `onContextReady()` is the right place to rehydrate per-instance state.
 
 ```bash
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
-That completes the tour: context properties, durable persistence, sync **and** async typed dependency calls, and a typed event subscription — every capability of `LogosModuleContext`, driven entirely from `logoscore`.
+That completes the tour: context properties, durable persistence, sync **and** async typed dependency calls, and a typed event subscription — every capability of `LogosModuleContext`, driven entirely from `logosctl`.
 
 ---
 
 ## Recap
 
-| Capability                       | In the code                                              | Seen via `logoscore`                                |
+| Capability                       | In the code                                              | Seen via `logosctl`                                 |
 | -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
 | `modulePath()`                   | `moduleDir()`                                            | path contains `calc_aggregator`                     |
-| `instanceId()`                   | `instanceID()` / `hasInstanceID()`                       | `"result":true`                                     |
+| `instanceId()`                   | `instanceID()` / `hasInstanceID()`                       | `true`                                              |
 | `instancePersistencePath()`      | `persistenceDir()` + `bumpRunCount()` + `onContextReady` | counter climbs `1 → 2 → 3` across a restart         |
 | Typed **sync** dependency call   | `computeReport()` → `calc.add(...)`, …                  | one map of five composed results                    |
 | Typed **async** dependency call  | `startAsyncFibonacci()` → `fibonacciAsync(..., cb)`     | `queued`, then `6765`                               |

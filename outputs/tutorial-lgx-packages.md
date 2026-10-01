@@ -239,7 +239,8 @@ requires signing the resulting package again.
 ## Version helpers and distribution
 
 `lgx semver` supplies version comparison, sorting and range matching; see
-`lgx semver --help`. Use `lgpm install --file release.lgx` to install a
+`lgx semver --help`. Use `logosctl install ./release.lgx -y` (or the standalone
+`lgpm install --file release.lgx`) to install a
 **real module package**, matching the runtime's dev or portable variant.
 `lgpd` downloads published packages. `lgx publish` is currently a no-op;
 it does not upload an archive.

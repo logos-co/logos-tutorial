@@ -5,6 +5,7 @@
   "type": "core",
   "interface": "cdylib",
   "concurrency": "single",
+  "max_workers": 4,
   "category": "example",
   "description": "A deliberately slow worker that records how many calls overlap",
   "main": "calc_slow_plugin",

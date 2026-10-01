@@ -21,7 +21,7 @@ public:
     //
     // A doc comment directly above a method becomes that method's
     // `description` in the module's method introspection — surfaced
-    // by `lm`, `logoscore module-info`, and Basecamp's Methods list.
+    // by `lm`, `logosctl module show`, and Basecamp's Methods list.
     // Use `///` (one or more lines) or a `/** ... */` block; the
     // comment's line breaks are preserved. (Plain `//` comments like
     // this block are ignored, so they never leak into the API.)
@@ -58,8 +58,8 @@ public:
     // logos.onModuleEvent("calc_module", "versionReady").
     //
     // A `///` doc comment documents the event too — it surfaces as the
-    // event's `description` alongside methods (`lm events`, `logoscore
-    // module-info`, and Basecamp's Interface screen).
+    // event's `description` alongside methods (`lm events`, `logosctl
+    // module show`, and Basecamp's Interface screen).
 logos_events:
     /// Emitted by libVersionNotify() once the library version is known.
     /// Carries the version string read from libcalc.

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 root = Path(__file__).resolve().parent
-cli = [str(root / "logos/bin/logoscore"), "--json", "--config-dir", str(root / ".logoscore")]
+cli = [str(root / "logosctl/bin/logosctl"), "--json", "--config-dir", str(root / "session")]
 
 def command(*args):
     result = subprocess.run(cli + list(args), text=True, capture_output=True, timeout=30)
@@ -51,45 +51,30 @@ cases = [['echoString', 'hello Logos'],
  ['echoBytes', {'_bytes': ''}],
  ['echoEntry', {'label': 'absent', 'payload': {'_bytes': ''}}]]
 
-with (root / "daemon.log").open("w") as log:
-    daemon = subprocess.Popen(cli + ["-D", "-m", str(root / "modules")],
-                              stdout=log, stderr=subprocess.STDOUT)
-    try:
+# --detach returns once the daemon accepts commands; packages install
+# into its session, so it starts first.
+command("daemon", "start", "--detach")
+try:
+    packages = sorted(str(p) for p in root.glob("*/result-lgx-portable/*.lgx"))
+    command("install", *packages, "-y")
+    for module in ("api_cpp", "api_rust"):
+        command("module", "load", module)
+    for module in ("api_cpp", "api_rust"):
+        for method, value in cases:
+            arg = "json:" + json.dumps(value, separators=(",", ":"))
+            actual = call(module, method, arg)
+            assert actual == value, (module, method, value, actual)
+        print(f"{module}: {len(cases)} type round trips passed")
+    # Each caller runs against the provider written in the OTHER language.
+    for caller, provider in (("api_cpp", "api_rust"), ("api_rust", "api_cpp")):
+        assert call(caller, "checkCalls", provider) == "sync checks passed"
+        assert call(caller, "startAsync", provider) == "started"
         for attempt in range(100):
-            try:
-                command("status")
+            status = call(caller, "asyncStatus")
+            if status != "pending":
                 break
-            except (RuntimeError, subprocess.TimeoutExpired):
-                if daemon.poll() is not None:
-                    raise RuntimeError("daemon exited; read daemon.log")
-                time.sleep(0.2)
-        else:
-            raise RuntimeError("daemon did not become ready")
-        for module in ("api_cpp", "api_rust"):
-            command("load-module", module)
-        for module in ("api_cpp", "api_rust"):
-            for method, value in cases:
-                arg = "json:" + json.dumps(value, separators=(",", ":"))
-                actual = call(module, method, arg)
-                assert actual == value, (module, method, value, actual)
-            print(f"{module}: {len(cases)} type round trips passed")
-        # Each caller runs against the provider written in the OTHER language.
-        for caller, provider in (("api_cpp", "api_rust"), ("api_rust", "api_cpp")):
-            assert call(caller, "checkCalls", provider) == "sync checks passed"
-            assert call(caller, "startAsync", provider) == "started"
-            for attempt in range(100):
-                status = call(caller, "asyncStatus")
-                if status != "pending":
-                    break
-                time.sleep(0.1)
-            assert status == "async checks passed", (caller, status)
-            print(f"{caller} -> {provider}: sync and async checks passed")
-    finally:
-        try:
-            command("stop")
-        finally:
-            try:
-                daemon.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                daemon.terminate()
-                daemon.wait(timeout=10)
+            time.sleep(0.1)
+        assert status == "async checks passed", (caller, status)
+        print(f"{caller} -> {provider}: sync and async checks passed")
+finally:
+    command("daemon", "stop")
