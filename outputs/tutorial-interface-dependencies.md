@@ -546,19 +546,25 @@ logosctl call calc_via_interface lastVersion
 
 ### 7.9 Bind to a non-satisfying module (the no-validation rule)
 
-Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. Expect this call to take about 20 seconds before it fails; the reason follows the output:
+Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving:
 
 ```bash
 logosctl call calc_via_interface sumVia no_such_module 3 5
 ```
 
+The bound `no_such_module` isn't loaded, so the inner `add` call fails — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention:
+
+```text
+-1
+```
+
+A call without the out-parameter would get the type's default value plus a warning in the module log.
+
+On macOS that `-1` does not reach you yet. There, a call to a module that is not loaded waits up to 20 seconds for it to appear (the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?`). `logosctl` also waits at most 20 seconds for its reply and started first, so after about 20 seconds it reports the outer call as failed, with exit code 4:
+
 ```text
 Error: callModuleMethod('calc_via_interface','sumVia') RPC call failed.
 ```
-
-The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention, `-1`; a call without the out-parameter would get the type's default value plus a warning in the module log.
-
-That `-1` never reaches you, though. A call to a module that is not loaded waits up to 20 seconds for it to appear before it fails, as the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?` `logosctl` also waits at most 20 seconds for its reply, and its wait started first, so it gives up first and reports the outer call as failed, with exit code 4.
 
 The daemon is still serving. Swapping providers is just changing the string:
 
@@ -613,7 +619,7 @@ That's the full picture. An interface is a contract you can keep local or share 
 | Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                  |
 | Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                               |
 | Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                            |
-| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → RPC error   |
+| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `-1` (macOS: RPC timeout) |
 | Share across repos               | `interface_dependencies[].input` + flake input           | —                                                   |
 
 The interface coupled `calc_via_interface` to a *contract*, never to `calc_module`. Any module exposing that contract can be bound in its place — at runtime, by name.
