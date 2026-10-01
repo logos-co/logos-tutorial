@@ -785,7 +785,7 @@ sections:
         ui_test:
           launch: "nix run ."
           setup:
-            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
+            - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
           qt_mcp: "result-mcp"
           # `nix build .` (the runner's warm-up) builds the UI plugin, not
           # `apps.default`'s standalone-app closure, so that still compiles
