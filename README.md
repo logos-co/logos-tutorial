@@ -21,7 +21,7 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Part 2:** [Building a QML UI App](outputs/tutorial-qml-ui-app.md) -- build `calc_ui`, a QML-only `ui_qml` module that calls `calc_module` through the `logos.callModule()` bridge. No compilation needed. Scaffold: `nix flake init -t ...#ui-qml`
 
-- **Part 3:** [Building a C++ UI Module (Process-Isolated)](outputs/tutorial-cpp-ui-app.md) — build `calc_ui_cpp`, a `ui_qml` module with a C++ backend that runs in a separate `ui-host` process. Define the remote interface in a `.rep` file; the C++ backend inherits from the generated `SimpleSource`; QML accesses it via a typed replica using `logos.module()` and `QtRemoteObjects.watch()`. Scaffold: `nix flake init -t ...#ui-qml-backend`
+- **Part 3:** [Building a C++ UI Module (Process-Isolated)](outputs/tutorial-cpp-ui-app.md) — build `calc_ui_cpp`, a `ui_qml` module with a C++ backend that runs in a separate `ui-host` process. Define the remote interface in a `.rep` file; the C++ backend inherits from the generated `SimpleSource`; QML accesses it via a typed replica using `logos.module()` and `logos.watch()`. Scaffold: `nix flake init -t ...#ui-qml-backend`
 
 - **Composing Modules:** [Composing Modules with the Module Context](outputs/tutorial-composing-modules.md) — build `calc_aggregator`, a `core` module that **depends on `calc_module`** and showcases everything `LogosModuleContext` offers: the `modulePath` / `instanceId` / `instancePersistencePath` properties, per-instance persistence wired up in `onContextReady()`, typed **sync** and **async** dependency callers (`modules().calc_module`), and typed event subscribers. No UI — driven entirely from `logoscore`. Needs only Part 1.
 

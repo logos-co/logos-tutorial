@@ -48,7 +48,7 @@ nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 
 This generates skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, and a `src/` directory) pre-configured for the logos-module-builder. You then customize them for your specific library.
 
-> **Heads up — the template is the older Qt-plugin style.** As of this writing, `nix flake init` scaffolds a hand-written Qt plugin (`*_interface.h` + `*_plugin.h` + `*_plugin.cpp`). This tutorial uses the newer and simpler **pure-C++ pattern** instead: you write one plain `*_impl.h` / `*_impl.cpp` class with no Qt in it, set `"interface": "universal"` in `metadata.json`, and the build generates the Qt plugin wrapper for you. So in the steps below we **replace** the template's `src/` files entirely. We still use `nix flake init` to get the `flake.nix` / `CMakeLists.txt` skeleton and directory layout.
+> **What the template gives you.** The template already uses the **pure-C++ pattern** this tutorial follows: one plain class in `src/external_lib_impl.h` / `.cpp` with no Qt in it, `"interface": "universal"` in `metadata.json`, and a build that generates the Qt plugin wrapper for you. Its example class wraps a placeholder library, so in the steps below you **replace** it with `calc_module`'s own `src/` files. The `flake.nix` / `CMakeLists.txt` skeleton and the directory layout are what you keep.
 
 > **Note:** The generated `flake.nix` uses an unpinned `logos-module-builder` URL. Replace it with the pinned version shown in the flake.nix step below to ensure reproducible builds.
 
@@ -56,10 +56,10 @@ This generates skeleton files (`flake.nix`, `metadata.json`, `CMakeLists.txt`, a
 
 ### 1.2 Remove the template's example sources
 
-The `with-external-lib` template ships an example Qt plugin (`external_lib_*`). Delete those files — this tutorial supplies its own pure-C++ `src/` files:
+The `with-external-lib` template ships an example implementation (`src/external_lib_impl.*`). Delete it — this tutorial supplies its own `src/calc_module_impl.*`:
 
 ```bash
-rm -f src/external_lib_interface.h src/external_lib_plugin.h src/external_lib_plugin.cpp
+rm -f src/external_lib_impl.h src/external_lib_impl.cpp
 ```
 
 ---
@@ -269,7 +269,7 @@ This is the single source of truth for your module. It is embedded into the gene
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `name`                         | Module name — must be a valid C identifier (used in filenames, method calls)                                                                                                                                       |
 | `main`                         | The generated plugin's name, `<name>_plugin`. You don't write this file; the builder produces `calc_module_plugin.so` / `.dylib`                                                                                   |
-| `interface`                    | `"universal"` selects the pure-C++ pattern. The builder runs `logos-cpp-generator --from-header` over `src/calc_module_impl.h` and emits the Qt plugin glue, so you never touch Qt directly                        |
+| `interface`                    | `"universal"` selects the pure-C++ pattern. The builder parses `src/calc_module_impl.h` into a LIDL contract and generates the Qt plugin glue from it, so you never touch Qt directly                        |
 | `nix.external_libraries`       | Declares C/C++ libraries vendored in the repo. Each entry has a `name` (the CMake target) and `vendor_path` (directory with the source/binary). The build compiles the library and links it into the plugin        |
 | `nix.cmake.extra_include_dirs` | Added to the include path so your C++ code can `#include "lib/libcalc.h"`                                                                                                                                          |
 
@@ -339,7 +339,7 @@ Change `description`. Add flake inputs here if your module depends on other modu
 }
 ```
 
-That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generator, running `logos-cpp-generator --from-header`, setting up include paths, etc.). `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
+That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the SDK, the code generators, deriving the LIDL contract from your header, setting up include paths, etc.). `configFile` points to `metadata.json` (the single source of truth) and `flakeInputs = inputs` passes all flake inputs to the builder so that dependencies declared in `metadata.json` are resolved automatically.
 
 > **Naming flake inputs:** When adding module dependencies, the flake input attribute name **must match** the `name` field in that dependency's `metadata.json`. For example, if you depend on a module whose `metadata.json` has `"name": "waku_module"`, your flake input must be `waku_module.url = "github:logos-co/logos-waku-module"`.
 
@@ -548,7 +548,7 @@ The first build takes a while (5–15 minutes) as Nix downloads Qt, the Logos SD
 
 ### 4.3 Build the full package
 
-Build everything (library + generated SDK headers). For a `universal` module this is also where `logos-cpp-generator --from-header` runs over `src/calc_module_impl.h` to produce the Qt plugin glue under `generated_code/` before CMake compiles it:
+Build everything (library + generated SDK headers). For a `universal` module this is also where the builder derives the LIDL contract from `src/calc_module_impl.h` (`logos-cpp-generator --header-to-lidl`) and generates the Qt plugin glue from it under `generated_code/` before CMake compiles it:
 
 ```bash
 nix build
@@ -1356,7 +1356,7 @@ The generator only exposes `public` methods on the impl class whose parameter an
 
 ### Build error: unknown type / generator can't parse a method
 
-The `--from-header` parser reads your `*_impl.h` as text. Pulling Qt types or unusual templates into a *public method signature* will confuse it. Keep Qt out of the impl header entirely, and move any helper that needs exotic types into the `private:` section or the `.cpp`.
+The header parser (`logos-cpp-generator --header-to-lidl`) reads your `*_impl.h` as text. Pulling Qt types or unusual templates into a *public method signature* will confuse it. Keep Qt out of the impl header entirely, and move any helper that needs exotic types into the `private:` section or the `.cpp`.
 
 ### Library not found at runtime
 
