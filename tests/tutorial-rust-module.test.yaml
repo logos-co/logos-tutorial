@@ -156,7 +156,7 @@ sections:
               # generator and the logos-rust-sdk source the crate links, so there is no
               # logos-rust-sdk input to keep in sync here.
               inputs = {
-                logos-module-builder.url = "github:logos-co/logos-module-builder";
+                logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
                 calc_module.url = "path:/path/to/your/calc_module";
               };
 

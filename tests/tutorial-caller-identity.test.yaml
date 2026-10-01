@@ -289,7 +289,7 @@ sections:
               description = "calc_agent - the peer calc_guarded admits";
 
               inputs = {
-                logos-module-builder.url = "github:logos-co/logos-module-builder";
+                logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
                 calc_guarded.url = "path:/path/to/guarded";
               };
 

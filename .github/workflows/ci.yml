@@ -29,6 +29,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # tutorial-set.json is the one place that names the specs, the platforms and
+  # the repo pins — logos-release-set reads the same file. This job checks it
+  # against tests/ and turns it into the matrix below.
+  plan:
+    name: Check tutorial-set.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      doctest-args: ${{ steps.plan.outputs.doctest-args }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check pins and emit the matrix
+        id: plan
+        run: |
+          python3 scripts/tutorial-set.py check
+          echo "matrix=$(python3 scripts/tutorial-set.py matrix)" >> "$GITHUB_OUTPUT"
+          echo "doctest-args=$(python3 scripts/tutorial-set.py doctest-args)" >> "$GITHUB_OUTPUT"
+          { echo "### Repo pins"; echo; python3 scripts/tutorial-set.py pins; } >> "$GITHUB_STEP_SUMMARY"
+
   # One cell per leaf spec per OS. Leaves only — Parts 1 and 2 are pulled in by
   # tutorial-cpp-ui-app's `requires:` chain, so naming them here would build
   # them twice.
@@ -38,26 +60,16 @@ jobs:
   # step. One cell per spec keeps each tutorial inside its own budget and lets
   # a failure name itself.
   tutorial-tests:
-    name: ${{ matrix.tutorial }} (${{ matrix.os }})
+    name: ${{ matrix.id }} (${{ matrix.runner }})
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        tutorial:
-          - cpp-ui-app
-          - composing-modules
-          - interface-dependencies
-          - rust-module
-          - concurrent-dispatch
-          - modules-state
-          - caller-identity
-          - lgx-packages
-          - method-calls-and-types
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     # ATTIC_TOKEN_PUBLIC only exists in the public-cache environment; master
     # jobs must opt into it to publish to the public cache.
     environment: ${{ github.ref == 'refs/heads/master' && 'public-cache' || '' }}
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
 
     steps:
@@ -78,9 +90,14 @@ jobs:
       # is complete. The job still fails (non-zero exit) if any step failed;
       # this only changes whether we stop early.
       - name: Run tutorial
+        env:
+          DOCTEST_ARGS: ${{ needs.plan.outputs.doctest-args }}
         run: |
+          # One --release-for per pinned repo; none while every ref is empty.
+          read -r -a pins <<< "$DOCTEST_ARGS"
           nix run github:logos-co/logos-doctest -- run \
-            tests/tutorial-${{ matrix.tutorial }}.test.yaml \
+            tests/${{ matrix.spec }}.test.yaml \
+            ${pins[@]+"${pins[@]}"} \
             --verbose \
             --continue-on-fail \
             --report "${{ runner.temp }}/tutorial-report.html"
@@ -101,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tutorial-report-${{ matrix.tutorial }}-${{ matrix.os }}
+          name: tutorial-report-${{ matrix.id }}-${{ matrix.runner }}
           path: report-out/index.html
           if-no-files-found: warn
 
@@ -125,14 +142,18 @@ jobs:
         with:
           attic-token-ci: ${{ secrets.ATTIC_TOKEN_CI }}
 
+      # Generated with the same pins run.sh uses, so a pinned ref shows up in
+      # outputs/ exactly as the tutorial was run.
       - name: Generate every spec and diff against outputs/
         shell: bash
         run: |
           set -uo pipefail
+          read -r -a pins <<< "$(python3 scripts/tutorial-set.py doctest-args)"
           drift=0
           for spec in tests/*.test.yaml; do
             name="$(basename "$spec" .test.yaml)"
-            nix run github:logos-co/logos-doctest -- generate "$spec" -o "/tmp/$name.md"
+            nix run github:logos-co/logos-doctest -- generate "$spec" \
+              ${pins[@]+"${pins[@]}"} -o "/tmp/$name.md"
             if ! diff -u "outputs/$name.md" "/tmp/$name.md"; then
               echo "::error file=outputs/$name.md::outputs/$name.md is stale — regenerate it with ./run.sh (or doctest generate $spec -o outputs/$name.md)"
               drift=1
@@ -184,7 +205,7 @@ jobs:
           for dir in artifacts/tutorial-report-*/; do
             [ -f "$dir/index.html" ] || continue
             n="$(basename "$dir")"; n="${n#tutorial-report-}"
-            for os in ubuntu-latest macos-latest; do
+            for os in ubuntu-latest ubuntu-24.04-arm macos-latest; do
               case "$n" in
                 *-"$os")
                   id="${n%-$os}"
@@ -209,7 +230,7 @@ jobs:
               [ "$id" = "index.html" ] && continue
               printf '<li><strong>%s</strong> — ' "$id"
               sep=""
-              for os in ubuntu-latest macos-latest; do
+              for os in ubuntu-latest ubuntu-24.04-arm macos-latest; do
                 if [ -d "site/$BASE/$id/$os" ]; then
                   printf '%s<a href="./%s/%s/">%s</a>' "$sep" "$id" "$os" "$os"
                   sep=" · "

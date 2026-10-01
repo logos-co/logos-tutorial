@@ -376,7 +376,7 @@ sections:
       - ui_test:
           launch: "nix run ."
           setup:
-            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
+            - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
           qt_mcp: "result-mcp"
           # The runner pre-builds `nix build .` — that is `packages.default`
           # (the UI plugin). But `nix run .` launches `apps.default`, the
@@ -451,7 +451,7 @@ sections:
         ui_test:
           launch: "nix run . --override-input calc_module path:../logos-calc-module"
           setup:
-            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
+            - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
           qt_mcp: "result-mcp"
           # Overriding calc_module rebuilds the standalone app closure, which
           # the `nix build` warm-up does not cover — see the note in Step 5.
@@ -644,7 +644,7 @@ sections:
           setup:
             # The QML inspector (built into the default basecamp build) is what
             # lets us drive the UI; build the test framework it talks to.
-            - "nix build 'github:logos-co/logos-qt-mcp{release}' -o result-mcp"
+            - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
           qt_mcp: "result-mcp"
           tests:
             # Wait for the shell to finish booting. "Dashboard" is basecamp's

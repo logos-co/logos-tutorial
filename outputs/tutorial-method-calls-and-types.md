@@ -348,9 +348,7 @@ std::string ApiCppImpl::asyncStatus() {
 Scaffold Rust first to get the builder's compatible `Cargo.toml` and `Cargo.lock`.
 We replace the trait-first metadata with `codegen.lidl`; the generated scaffold
 now supplies `ApiRustModule`, `Entry` and `Batch`. The crate keeps its scaffolded
-package name (`minimal_rust`); `staticlib` below is set to match it. The
-explicit SDK input gives the builder the merged typed-collection generator
-and its matching runtime while its own lock is still catching up.
+package name (`minimal_rust`); `staticlib` below is set to match it.
 
 ```bash
 mkdir -p rust
@@ -362,8 +360,6 @@ mkdir -p rust
 ```nix
 {
   inputs.logos-module-builder.url = "github:logos-co/logos-module-builder";
-  inputs.logos-rust-sdk.url = "github:logos-co/logos-rust-sdk";
-  inputs.logos-module-builder.inputs.logos-rust-sdk.follows = "logos-rust-sdk";
   outputs = inputs@{ logos-module-builder, ... }:
     logos-module-builder.lib.mkLogosModule {
       src = ./.;

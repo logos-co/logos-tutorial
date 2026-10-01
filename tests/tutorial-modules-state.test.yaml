@@ -119,7 +119,7 @@ sections:
               description = "calc_observer - optional dependencies and the module registry";
 
               inputs = {
-                logos-module-builder.url = "github:logos-co/logos-module-builder";
+                logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
                 modules_state.url = "github:logos-co/logos-modules-state-module";
                 calc_module.url = "path:/path/to/your/calc_module";
               };
