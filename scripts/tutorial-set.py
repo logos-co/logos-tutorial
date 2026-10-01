@@ -9,10 +9,16 @@ this file. A repo with an empty `ref` tracks its default branch (or a global
 An override file — a JSON object of {repo: ref} — replaces individual refs.
 logos-release-set uses it to run the tutorial against the versions it pins.
 
+`windows` lists the specs with a Windows leg and the flake.nix targets
+logos-windows-ci stages for each. The flake's inputs are repos listed here, and
+`override-inputs` pins them the same way.
+
     python3 scripts/tutorial-set.py check
     python3 scripts/tutorial-set.py doctest-args [--override FILE]
     python3 scripts/tutorial-set.py pins [--override FILE] [--format markdown|json]
     python3 scripts/tutorial-set.py matrix
+    python3 scripts/tutorial-set.py windows-matrix
+    python3 scripts/tutorial-set.py override-inputs [--override FILE]
 """
 
 import argparse
@@ -34,6 +40,18 @@ RUNNERS = {
 PINNED_URL = re.compile(r"github:([^/\s]+)/([^/\s{]+)\{release\}")
 ANY_URL = re.compile(r"github:([^/\s\"'`]+)/([A-Za-z0-9_.-]+)(\{release\})?")
 REF = re.compile(r"^[A-Za-z0-9_./-]*$")
+FLAKE_INPUT = re.compile(r'inputs\.([A-Za-z0-9_-]+)\.url\s*=\s*"github:([^/"]+/[^/"#?]+)"')
+WINDOWS_TARGET = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=\s*[A-Za-z0-9_.-]+\.packages\.x86_64-windows\.", re.M)
+
+
+def flake():
+    """(inputs {name: owner/repo}, Windows target names) read from flake.nix."""
+    path = os.path.join(ROOT, "flake.nix")
+    if not os.path.exists(path):
+        return {}, set()
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    return dict(FLAKE_INPUT.findall(text)), set(WINDOWS_TARGET.findall(text))
 
 
 def load(path):
@@ -108,13 +126,29 @@ def check(spec):
                                       f"{{release}}, so its pin does not apply")
     for name in sorted(set(repos) - used):
         errors.append(f"repos[{name}]: no spec references github:{repos[name]['repo']}{{release}}")
+
+    inputs, targets = flake()
+    for name, repo in sorted(inputs.items()):
+        # An unlisted input would build at its lock, not at a pin.
+        if name not in repos or repos[name]["repo"] != repo:
+            errors.append(f"flake.nix: input {name} (github:{repo}) is not a repo in tutorial-set.json")
+    for entry in spec.get("windows", []):
+        if entry["spec"] not in spec["specs"]:
+            errors.append(f"windows[{entry['spec']}]: not in specs")
+        if not entry.get("targets"):
+            errors.append(f"windows[{entry['spec']}]: no targets")
+        for target in entry.get("targets", []):
+            if target not in targets:
+                errors.append(f"windows[{entry['spec']}]: flake.nix has no "
+                              f"packages.x86_64-windows.{target}")
     return errors
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("check", "doctest-args", "pins", "matrix"))
+    parser.add_argument("command", choices=("check", "doctest-args", "pins", "matrix",
+                                            "windows-matrix", "override-inputs"))
     parser.add_argument("--set", default=os.path.join(ROOT, "tutorial-set.json"))
     parser.add_argument("--override", default=None,
                         help="JSON object of {repo: ref} that replaces individual pins")
@@ -140,12 +174,25 @@ def main():
         print(json.dumps({"include": include}))
         return 0
 
+    if args.command == "windows-matrix":
+        include = [{"spec": e["spec"], "id": e["spec"].removeprefix("tutorial-"),
+                    "targets": " ".join(e["targets"])}
+                   for e in spec.get("windows", [])]
+        print(json.dumps({"include": include}))
+        return 0
+
     pins = effective_pins(spec, load_override(args.override))
     for name, _, ref, source in pins:
         if not REF.match(ref):
             sys.exit(f"error: {source} pins {name} to {ref!r}, which is not a tag or commit")
 
-    if args.command == "doctest-args":
+    if args.command == "override-inputs":
+        # An empty ref means the default branch, so the lock never decides.
+        refs = {name: (repo, ref) for name, repo, ref, _ in pins}
+        print(" ".join(f"--override-input {name} github:{refs[name][0]}"
+                       + (f"/{refs[name][1]}" if refs[name][1] else "")
+                       for name in sorted(flake()[0])))
+    elif args.command == "doctest-args":
         # One line, space-separated: refs never contain whitespace.
         print(" ".join(f"--release-for={name}={ref}" for name, _, ref, _ in pins if ref))
     elif args.format == "json":

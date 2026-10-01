@@ -52,7 +52,10 @@ sections:
   - title: "Create and populate two packages"
     step: true
     steps:
+      # Windows has no Nix: logos-windows-ci stages the cross-built lgx as
+      # ./lgx (flake.nix), so every step after this one runs there unchanged.
       - run: "nix build 'github:logos-co/logos-package{release}#lgx' --out-link ./lgx"
+        platform: [linux, macos]
       - run: "./lgx/bin/lgx --help"
         expect_contains: ["merge", "sign", "manifest"]
       - title: "`linux/payload.txt`"

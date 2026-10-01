@@ -1,0 +1,85 @@
+{
+  "nodes": {
+    "logos-nix": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "nixpkgs-windows": "nixpkgs-windows"
+      },
+      "locked": {
+        "lastModified": 1786399295,
+        "narHash": "sha256-Bl1A0UgsIXioZw5uEW8Jl5u7FfZcFMnpYlpsdezFwK0=",
+        "owner": "logos-co",
+        "repo": "logos-nix",
+        "rev": "6e0f4a7120fced10829b0b3a698ff619a11d4605",
+        "type": "github"
+      },
+      "original": {
+        "owner": "logos-co",
+        "repo": "logos-nix",
+        "type": "github"
+      }
+    },
+    "logos-package": {
+      "inputs": {
+        "logos-nix": "logos-nix",
+        "nixpkgs": [
+          "logos-package",
+          "logos-nix",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789597807,
+        "narHash": "sha256-YyM0F+jdr7n8goNZTlXnn+lDvbfyTDFdloM/32toDfs=",
+        "owner": "logos-co",
+        "repo": "logos-package",
+        "rev": "d759f34b095db14945ab0a38f6e1e924eafc3758",
+        "type": "github"
+      },
+      "original": {
+        "owner": "logos-co",
+        "repo": "logos-package",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1759036355,
+        "narHash": "sha256-0m27AKv6ka+q270dw48KflE0LwQYrO7Fm4/2//KCVWg=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e9f00bd893984bc8ce46c895c3bf7cac95331127",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs-windows": {
+      "locked": {
+        "lastModified": 1782723713,
+        "narHash": "sha256-oPXCU/SSUokcGaJREHibG1CBX3+s/W7orDWQOZDsEeQ=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b5aa0fbd538984f6e3d201be0005b4463d8b09f8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b5aa0fbd538984f6e3d201be0005b4463d8b09f8",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "logos-package": "logos-package"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

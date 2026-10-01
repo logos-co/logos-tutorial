@@ -171,6 +171,16 @@ A listed repo referenced *without* `{release}` fails the check — it would buil
 
 A ref must exist on its repo, or the `nix build`/`nix flake init` steps fail to resolve it. Pinning expands `github:logos-co/repo{release}#output` to `github:logos-co/repo/REF#output`.
 
+### Windows
+
+Nix does not run on Windows, so a tutorial's Windows leg is a cross-platform run: [logos-windows-ci](https://github.com/logos-co/logos-windows-ci) cross-builds on Linux and runs the spec's Windows half on a real `windows-latest` runner. The `windows` entries in `tutorial-set.json` name the specs that have one and the `flake.nix` targets each needs.
+
+- Steps that build with Nix are marked `platform: [linux, macos]`; unmarked steps run everywhere.
+- `flake.nix` exposes `packages.x86_64-windows.<name>` for each tool a spec builds with `nix build … -o <name>`. The harness stages it as `<name>/`, so the spec's `./<name>/bin/…` paths hold on both legs.
+- Every flake input is a repo in `tutorial-set.json`, overridden with its pin (`tutorial-set.py override-inputs`), so `flake.lock` never decides a version.
+
+Today the LGX tutorial runs on Windows end to end against a cross-built `lgx.exe`.
+
 To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
 
 ```bash
