@@ -40,7 +40,8 @@ RUNNERS = {
 PINNED_URL = re.compile(r"github:([^/\s]+)/([^/\s{]+)\{release\}")
 ANY_URL = re.compile(r"github:([^/\s\"'`]+)/([A-Za-z0-9_.-]+)(\{release\})?")
 REF = re.compile(r"^[A-Za-z0-9_./-]*$")
-FLAKE_INPUT = re.compile(r'inputs\.([A-Za-z0-9_-]+)\.url\s*=\s*"github:([^/"]+/[^/"#?]+)"')
+# `inputs.X.url = ...` or `X.url = ...` inside an `inputs = { }` block.
+FLAKE_INPUT = re.compile(r'^\s*(?:inputs\.)?([A-Za-z0-9_-]+)\.url\s*=\s*"github:([^/"]+/[^/"#?]+)"', re.M)
 WINDOWS_TARGET = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=\s*[A-Za-z0-9_.-]+\.packages\.x86_64-windows\.", re.M)
 
 
