@@ -1443,8 +1443,11 @@ reason `provides` carries intent names alone.
 
 Basecamp lists these under **Optional Packages** when installing a module or
 an app that depends on it. Available packages are checked by default; unavailable
-ones are disabled, and you can uncheck any available package. Selected packages
-bring their own required dependencies. `logosctl package install` and `package
+ones are disabled, and you can uncheck any available package. Optional rows show
+the resolved version and a version selector, like required-package rows; the
+selector offers versions that satisfy the dependency's constraints and have
+available required dependencies. Selected packages bring their own required
+dependencies. `logosctl package install` and `package
 upgrade` offer **all**, **only mandatory**, or **n**, with **all** as the default.
 Use `--no-optional` for a mandatory-only scripted install. Optional packages
 already installed at a compatible version are kept, and unavailable optionals
