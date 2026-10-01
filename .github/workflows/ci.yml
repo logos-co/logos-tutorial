@@ -180,7 +180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.windows-matrix) }}
-    uses: logos-co/logos-windows-ci/.github/workflows/windows-ci.yml@v1
+    uses: logos-co/logos-windows-ci/.github/workflows/windows-ci.yml@feat/instance-and-repository
     secrets: inherit
     with:
       # One call per spec in this run: without it they cancel each other.
