@@ -1463,8 +1463,14 @@ its exclusive dependencies while preserving dependencies shared by other selecte
 packages. Installation uses the versions and artifacts shown in the completed
 preview.
 
-Use `--no-optional` for a mandatory-only scripted install. Optional packages
-already installed at a compatible version are kept, and unavailable optionals
+Installed optional packages are listed too, at their installed release. In
+Basecamp, picking another version upgrades or downgrades one; for an installed
+app, optional packages it does not have start unchecked. `logosctl` lists every
+optional package with its status (the change it gets, installed, not selected,
+or unavailable) and keeps installed ones as they are; it has no per-package
+selection, so install a not-selected package by name.
+
+Use `--no-optional` for a mandatory-only scripted install. Unavailable optionals
 never prevent the mandatory packages from being installed. The requested package
 installs before the optional ones; an optional package that fails to download or
 install is reported as failed or skipped while the rest of the install continues.
