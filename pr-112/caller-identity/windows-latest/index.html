@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial Execution Report</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --pass: #2ea043; --fail: #f85149; --info: #d29922;
+    --code-bg: #0b0f14;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: var(--panel);
+    border-bottom: 1px solid var(--border); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pill { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .pill.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .pill.skip { background: rgba(210,153,34,.15); color: var(--info); }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 16px; }
+  .tutorial-title { font-size: 20px; font-weight: 700; margin: 24px 0 8px; color: #fff; }
+  .row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; overflow: hidden;
+  }
+  .row.preamble, .row.section { grid-template-columns: 1fr; }
+  .col { padding: 14px 18px; min-width: 0; }
+  .col.left { border-right: 1px solid var(--border); }
+  .row.preamble .col.left, .row.section .col.left { border-right: none; }
+  .col.right { background: var(--panel); }
+  /* A row containing any failed step is tinted red end-to-end so it's
+     impossible to miss when scanning the report. */
+  .row.has-fail { border-color: var(--fail); box-shadow: 0 0 0 1px var(--fail); }
+  .row.has-fail .col.left { background: rgba(248,81,73,.07); border-right-color: var(--fail); }
+  .row.has-fail .col.right { background: rgba(248,81,73,.12); }
+  .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 8px; }
+  .md :first-child { margin-top: 0; }
+  .md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 15px; }
+  .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  .md :not(pre) > code { background: rgba(110,118,129,.2); padding: .15em .4em; border-radius: 4px; }
+  .md table { border-collapse: collapse; margin: 8px 0; }
+  .md th, .md td { border: 1px solid var(--border); padding: 5px 10px; }
+  .md blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 2px 12px; color: var(--muted); }
+  .md img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .exec { margin-bottom: 14px; }
+  .exec:last-child { margin-bottom: 0; }
+  .exec-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+  .badge.pass { background: rgba(46,160,67,.15); color: var(--pass); }
+  .badge.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+  .badge.info { background: rgba(210,153,34,.15); color: var(--info); }
+  .badge.not_run { background: var(--bg); color: var(--muted); white-space: nowrap; }
+  .badge.running { background: rgba(248,81,73,.15); color: var(--fail); }
+  .ui-actions { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+  .ui-actions td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .ui-actions td:last-child { white-space: nowrap; color: var(--muted); }
+  .kind { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .note { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  pre.cmd { background: var(--code-bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 0 0 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  pre.output { background: #010409; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0; overflow-x: auto; max-height: 360px; overflow-y: auto; color: #b9c1ca; }
+  pre.cmd, pre.output { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+  .empty { color: var(--muted); font-style: italic; font-size: 12.5px; }
+  details summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  /* GitHub-style permalinks: every heading carries a link icon in the left
+     gutter (revealed on hover/focus) that copies a deep link to that section.
+     scroll-margin-top keeps the target clear of the sticky header. */
+  .heading-anchored { position: relative; scroll-margin-top: 76px; }
+  a.anchor {
+    position: absolute; left: -18px; top: 0; width: 16px; height: 1.55em;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); opacity: 0; text-decoration: none;
+    transition: opacity .1s ease-in;
+  }
+  a.anchor svg { width: 14px; height: 14px; display: block; }
+  .heading-anchored:hover > a.anchor, a.anchor:focus { opacity: 1; }
+  a.anchor:hover { color: var(--accent); }
+  .heading-anchored.flash { animation: flash 1.4s ease-out; border-radius: 4px; }
+  @keyframes flash {
+    from { background: rgba(88,166,255,.28); box-shadow: 0 0 0 4px rgba(88,166,255,.28); }
+    to { background: transparent; box-shadow: 0 0 0 4px transparent; }
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 14px; font-size: 12.5px; z-index: 20;
+    opacity: 0; pointer-events: none; transition: opacity .15s ease-in-out;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tutorial Execution Report</h1>
+  <span id="summary"></span>
+  <label style="margin-left:auto; font-size:12px; color:var(--muted)">Tutorial
+    <select id="picker"></select>
+  </label>
+</header>
+<main id="main"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script id="report-data" type="application/json">{"generated_platform": "windows-latest", "summary": {"failed": 0, "passed": 10, "skipped": 0}, "tutorials": [{"meta": {"name": "Tutorial: Caller Identity", "output": "tutorial-caller-identity.md"}, "rows": [{"execs": [], "md": "# Tutorial: Caller Identity\n\nSome methods should not be open to everyone. A module that holds keys, or writes the facts other modules trust, needs to know **who is calling** before it acts.\n\nIt already does. By the time your handler runs, the caller has presented a token this module itself issued \u2014 so the identity is a fact the callee possesses, not something the caller can claim. You read it with `logos::currentCaller()`. It is **ambient**: it never appears in a `.lidl`, never becomes a parameter, and no method opts in.\n\nThis tutorial builds two modules \u2014 one with an open read surface and a guarded write surface, and one that calls it \u2014 and reads the identity from all three positions a call can come from.\n\n**What you'll build:** `calc_guarded`, whose `setLimit` admits exactly one peer module and refuses everything else, and `calc_agent`, which is that peer. You watch the same guard answer `host`, `module calc_agent` and `unknown`, and see one of those three get through.\n\n\n**What you'll learn:**\n\n- How to read the caller with `logos::currentCaller()`, and what the five arms mean\n- Why the identity is ambient rather than a parameter \u2014 and why that makes it unforgeable\n- Why `unknown` is the fail-closed answer and is *in band*, not an error\n- That a `logosctl call` arrives as the **host anchor** \u2014 so a host-gated surface is open to anyone at the CLI\n- The two ways a build can silently read `unknown` forever\n\n## Prerequisites\n\n- Nix with flakes enabled\n- Basic familiarity with C++\n- No earlier tutorial is required."}, {"execs": [], "md": "## Step 1: Build the Tools\n\n`mkdir logos-calc-guarded && cd logos-calc-guarded`"}, {"execs": [], "md": "### 1.1 Get logosctl\n\nThe modules run in `logosctl`. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:\n\n```bash\nnix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl\nexport PATH=\"$PWD/logosctl/bin:$PATH\"\n```"}, {"execs": [], "md": "## Step 2: The Guarded Module (`calc_guarded`)\n\n`mkdir guarded && cd guarded`"}, {"execs": [], "md": "### 2.1 Scaffold it\n\n```bash\nmkdir guarded && cd guarded\nnix flake init -t github:logos-co/logos-module-builder\nrm -f src/minimal_impl.h src/minimal_impl.cpp\n```"}, {"execs": [], "md": "### 2.2 metadata.json\n\nNothing here declares the guard. Caller identity is not configured \u2014 it is always available to a module built with generated glue:\n\n```json\n{\n  \"name\": \"calc_guarded\",\n  \"display_name\": \"Guarded Calculator\",\n  \"version\": \"1.0.0\",\n  \"type\": \"core\",\n  \"category\": \"example\",\n  \"description\": \"An open read surface and a caller-gated write surface\",\n  \"main\": \"calc_guarded_plugin\",\n  \"interface\": \"universal\",\n  \"dependencies\": [],\n\n  \"nix\": {\n    \"packages\": { \"build\": [], \"runtime\": [] },\n    \"external_libraries\": [],\n    \"cmake\": { \"find_packages\": [], \"extra_sources\": [], \"extra_include_dirs\": [], \"extra_link_libraries\": [] }\n  }\n}\n```"}, {"execs": [], "md": "### 2.3 src/calc_guarded_impl.h\n\n```cpp\n#pragma once\n\n#include <cstdint>\n#include <string>\n\n#include <logos_module_context.h>\n\n// Two surfaces with two different audiences. The read surface is open;\n// the write surface admits exactly one peer module.\nclass CalcGuardedImpl : public LogosModuleContext {\npublic:\n    /// Reports who the caller is, as this module sees them.\n    std::string whoIsCalling();\n\n    /// Guarded: only calc_agent may change the limit.\n    std::string setLimit(int64_t n);\n\n    /// Open to everyone.\n    int64_t limit();\n\n    /// What currentCaller() answered during onContextReady().\n    std::string startupCaller();\n\n    void onContextReady() override;\n\nprivate:\n    int64_t m_limit = 10;\n    std::string m_startupCaller;\n};\n```"}, {"execs": [], "md": "### 2.4 src/calc_guarded_impl.cpp\n\n```cpp\n#include \"calc_guarded_impl.h\"\n\n#include <logos_caller.h>\n\nnamespace {\n// The five arms. `Host` deliberately carries no name \u2014 see the recap.\nstd::string describe(const logos::LogosCaller& c) {\n    switch (c.kind) {\n        case logos::CallerKind::Host:     return \"host\";\n        case logos::CallerKind::Module:   return \"module \" + c.name;\n        case logos::CallerKind::Derived:  return \"derived \" + c.parent + \"/\" + c.leaf;\n        case logos::CallerKind::Operator: return \"operator \" + c.name;\n        default:                          return \"unknown\";\n    }\n}\n}\n\nstd::string CalcGuardedImpl::whoIsCalling() {\n    return describe(logos::currentCaller());\n}\n\nstd::string CalcGuardedImpl::setLimit(int64_t n) {\n    const logos::LogosCaller caller = logos::currentCaller();\n\n    // isModule(name) ignores the instance, so a restarted calc_agent is\n    // still calc_agent. Anything that is not that module \u2014 including the\n    // host, and including `unknown` \u2014 falls through and is refused.\n    if (!caller.isModule(\"calc_agent\"))\n        return \"refused: \" + describe(caller);\n\n    m_limit = n;\n    return \"ok\";\n}\n\nint64_t CalcGuardedImpl::limit() { return m_limit; }\n\nvoid CalcGuardedImpl::onContextReady() {\n    // No inbound dispatch is in flight during startup, so there is no caller\n    // to report. That answer is `unknown`, in band and fail-closed.\n    m_startupCaller = describe(logos::currentCaller());\n}\n\nstd::string CalcGuardedImpl::startupCaller() { return m_startupCaller; }\n```\n\nThe gate is one line, and it is **structural**: authority is what the caller *is*, not what it knows. There is no shared secret to distribute, rotate or leak, and no `callerName` argument a caller could fill in with a name that is not theirs.\n\nNote the shape of the refusal. `if (!caller.isModule(\"calc_agent\"))` fails **closed** \u2014 every arm the code did not think about, including `unknown` and including an arm from a protocol newer than this build, lands on the refusal path. Written the other way round (`if (caller.isSomething()) refuse;`) it would fail open."}, {"execs": [], "md": "### 2.5 CMakeLists.txt and build\n\n```\ncmake_minimum_required(VERSION 3.14)\nproject(CalcGuardedPlugin LANGUAGES CXX)\n\nif(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})\n    include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)\nelseif(EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake\")\n    include(cmake/LogosModule.cmake)\nelse()\n    message(FATAL_ERROR \"LogosModule.cmake not found\")\nendif()\n\nlogos_module(\n    NAME calc_guarded\n    SOURCES\n        src/calc_guarded_impl.h\n        src/calc_guarded_impl.cpp\n)\n```"}, {"execs": [], "md": "```bash\ngit init && git add -A\nnix build\n```"}, {"execs": [], "md": ""}, {"execs": [], "md": "## Step 3: The Peer Module (`calc_agent`)\n\nA module that calls the guarded one, so we can see what the guard sees when the caller is a peer rather than a person at a terminal.\n\n`cd .. && mkdir agent && cd agent`"}, {"execs": [], "md": "### 3.1 Scaffold it\n\n```bash\nmkdir agent && cd agent\nnix flake init -t github:logos-co/logos-module-builder\nrm -f src/minimal_impl.h src/minimal_impl.cpp\n```"}, {"execs": [], "md": "### 3.2 metadata.json\n\n```json\n{\n  \"name\": \"calc_agent\",\n  \"display_name\": \"Calc Agent\",\n  \"version\": \"1.0.0\",\n  \"type\": \"core\",\n  \"category\": \"example\",\n  \"description\": \"Calls calc_guarded, so the guard sees a module rather than the host\",\n  \"main\": \"calc_agent_plugin\",\n  \"interface\": \"universal\",\n  \"dependencies\": [\"calc_guarded\"],\n\n  \"nix\": {\n    \"packages\": { \"build\": [], \"runtime\": [] },\n    \"external_libraries\": [],\n    \"cmake\": { \"find_packages\": [], \"extra_sources\": [], \"extra_include_dirs\": [], \"extra_link_libraries\": [] }\n  }\n}\n```\n\nThe name in `dependencies` is `calc_agent`'s own declaration of who it talks to. It is **not** what makes the guard admit it \u2014 the name the guard reads comes from the token the host minted, not from this file."}, {"execs": [], "md": "### 3.3 The module logic\n\n```cpp\n#pragma once\n\n#include <cstdint>\n#include <string>\n\n#include <logos_module_context.h>\n\nclass CalcAgentImpl : public LogosModuleContext {\npublic:\n    /// Asks calc_guarded who IT thinks is calling.\n    std::string askWhoIsCalling();\n\n    /// Forwards a setLimit through, so the guard sees a module.\n    std::string forwardSetLimit(int64_t n);\n};\n```"}, {"execs": [], "md": "```cpp\n#include \"calc_agent_impl.h\"\n\n#include \"logos_sdk.h\"\n\nstd::string CalcAgentImpl::askWhoIsCalling() {\n    return modules().calc_guarded.whoIsCalling();\n}\n\nstd::string CalcAgentImpl::forwardSetLimit(int64_t n) {\n    return modules().calc_guarded.setLimit(n);\n}\n```\n\nNeither method says who it is. The **origin** every outbound call carries is baked in by the generated scaffold from this module's own contract name, before any of your code runs \u2014 so a module cannot announce itself as something else."}, {"execs": [], "md": "### 3.4 CMakeLists.txt, flake.nix and build\n\n```\ncmake_minimum_required(VERSION 3.14)\nproject(CalcAgentPlugin LANGUAGES CXX)\n\nif(DEFINED ENV{LOGOS_MODULE_BUILDER_ROOT})\n    include($ENV{LOGOS_MODULE_BUILDER_ROOT}/cmake/LogosModule.cmake)\nelseif(EXISTS \"${CMAKE_CURRENT_SOURCE_DIR}/cmake/LogosModule.cmake\")\n    include(cmake/LogosModule.cmake)\nelse()\n    message(FATAL_ERROR \"LogosModule.cmake not found\")\nendif()\n\nlogos_module(\n    NAME calc_agent\n    SOURCES\n        src/calc_agent_impl.h\n        src/calc_agent_impl.cpp\n)\n```"}, {"execs": [], "md": "```nix\n{\n  description = \"calc_agent - the peer calc_guarded admits\";\n\n  inputs = {\n    logos-module-builder.url = \"github:logos-co/logos-module-builder\";\n    calc_guarded.url = \"path:/path/to/guarded\";\n  };\n\n  outputs = inputs@{ logos-module-builder, ... }:\n    logos-module-builder.lib.mkLogosModule {\n      src = ./.;\n      configFile = ./metadata.json;\n      flakeInputs = inputs;\n    };\n}\n```"}, {"execs": [], "md": "```bash\ngit init && git add -A\nnix flake update --override-input calc_guarded path:../guarded\ngit add flake.lock\nnix build\n```"}, {"execs": [], "md": ""}, {"execs": [], "md": "## Step 4: Ask the Guard Who Is Calling"}, {"execs": [], "md": "### 4.1 Package both modules\n\n`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:\n\n```bash\nnix build 'path:./guarded#lgx-portable' --out-link g-lgx\nnix build 'path:./agent#lgx-portable' --out-link a-lgx\n```"}, {"execs": [], "md": "### 4.2 On Windows\n\nWindows has no Nix, so build both packages on Linux and copy them over:\n`nix build 'path:./guarded#packages.x86_64-windows.lgx-portable' --out-link g-lgx`,\nand the same for `agent` into `a-lgx`. `logosctl` itself comes from its\nWindows release. From here on, every command is the same on all three platforms."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session daemon start --detach", "exit_code": 0, "kind": "run", "output": "Daemon started (pid 8672)\nLogs: D:\\a\\logos-tutorial\\logos-tutorial\\stage\\session/logs\\daemon.log\n", "status": "pass"}], "md": "### 4.3 Start the daemon and install both\n\nThis tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:\n\n```bash\nexport LOGOSCTL_CONFIG_DIR=\"$PWD/session\"\n```\n\n`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking.\n\n```bash\nlogosctl daemon start --detach\n```"}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session install ./g-lgx/*.lgx ./a-lgx/*.lgx -y", "exit_code": 0, "kind": "run", "output": "The following changes will be made (install):\n  install    calc_guarded 1.0.0\n  install    calc_agent 1.0.0\nInstalled: calc_guarded, calc_agent\nLoad with: logosctl module load calc_guarded\n", "status": "pass"}], "md": "```bash\nlogosctl install ./g-lgx/*.lgx ./a-lgx/*.lgx -y\n```"}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session module load calc_agent", "exit_code": 0, "kind": "run", "output": "Loaded module: calc_agent (v1.0.0)\n  Dependencies loaded: calc_guarded\n", "status": "pass"}], "md": "```bash\nlogosctl module load calc_agent\n```\n\nLoading `calc_agent` brings `calc_guarded` up with it \u2014 it is a required dependency."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_guarded whoIsCalling", "exit_code": 0, "kind": "run", "output": "host\n", "status": "pass"}], "md": "### 4.4 From the command line\n\n```bash\nlogosctl call calc_guarded whoIsCalling\n```\n\n```text\nhost\n```\n\n**`host`** \u2014 not `operator`. Your `logosctl call` is relayed by the daemon, and it arrives under the host anchor. Worth knowing before you gate anything on `isHost()`: on this path, that is a gate anyone with access to the CLI passes."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_agent askWhoIsCalling", "exit_code": 0, "kind": "run", "output": "module calc_agent\n", "status": "pass"}], "md": "### 4.5 From another module\n\n```bash\nlogosctl call calc_agent askWhoIsCalling\n```\n\n```text\nmodule calc_agent\n```\n\nThe same method, a different answer. `calc_agent` did not pass a name \u2014 the guard read it off the call."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_guarded startupCaller", "exit_code": 0, "kind": "run", "output": "unknown\n", "status": "pass"}], "md": "### 4.6 From no call at all\n\n```bash\nlogosctl call calc_guarded startupCaller\n```\n\n```text\nunknown\n```\n\n`onContextReady()` runs at startup, with no inbound dispatch in flight, so there is no caller and the answer is **`unknown`**. That is not an error and not a missing value \u2014 it is one of the five arms, and it is the one everything unrecognised also lands on."}, {"execs": [], "md": "## Step 5: Watch the Gate Work"}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_guarded setLimit 99", "exit_code": 0, "kind": "run", "output": "refused: host\n", "status": "pass"}], "md": "### 5.1 The command line is refused\n\n```bash\nlogosctl call calc_guarded setLimit 99\n```\n\n```text\nrefused: host\n```\n\nRefused, and the refusal **names what the caller actually was**. A guard that just says \"no\" leaves you unable to tell a genuine rejection from a build that reads `unknown` for a reason you have not found yet."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_agent forwardSetLimit 42", "exit_code": 0, "kind": "run", "output": "ok\n", "status": "pass"}], "md": "### 5.2 The peer module is admitted\n\n```bash\nlogosctl call calc_agent forwardSetLimit 42\n```"}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session call calc_guarded limit", "exit_code": 0, "kind": "run", "output": "42\n", "status": "pass"}], "md": "```bash\nlogosctl call calc_guarded limit\n```\n\n```text\n42\n```\n\nSame method, same daemon, same second \u2014 and the value changed only for the caller the guard admits. `limit()` stayed open to everyone throughout."}, {"execs": [{"cmd": "./logosctl/bin/logosctl.exe --human --config-dir ./session daemon stop", "exit_code": 0, "kind": "run", "output": "Daemon shutdown initiated: Daemon shutting down.\n", "status": "pass"}], "md": "```bash\nlogosctl daemon stop\n```"}, {"execs": [], "md": "## Recap\n\n| Arm | Carries | Seen when |\n|---|---|---|\n| `Host` | **nothing** | the runtime itself \u2014 including a relayed `logosctl call` |\n| `Module` | `name`, optional `instance` | one module calling another |\n| `Derived` | `parent`, `leaf` | a call from a derived identity, e.g. a UI plugin under its module |\n| `Operator` | `name` | a named operator token |\n| `Unknown` | \u2014 | everything else |\n\n**`Host` has no name, ever.** Not an oversight: `\"core\"` and `\"capability_module\"` hold the same token value under two keys, so a name there would be a coin flip presented as a fact. If you need to admit the runtime, ask `isHost()` \u2014 do not go looking for which part of it called.\n\n**`Unknown` is fail-closed and in band.** It covers an unnamed caller, a document this build cannot read, an arm from a newer protocol, and *no dispatch in flight on this thread* \u2014 a spawned worker, a timer, `onContextReady`, an event emission. Handle it on the refusal path, never as an error.\n\n**The identity is valid for one dispatch, on the dispatching thread.** A handler that needs it later must copy it at the top; reading it from a thread you spawned answers `Unknown`.\n\n**You are not checking a claim.** An unauthorized call never reaches your handler at all \u2014 the identity you read is a byproduct of the authorization that already happened, which is why there is nothing for a caller to spoof.\n\n### Two ways to read `unknown` forever\n\n1. **A legacy `Q_INVOKABLE` Qt plugin.** The handler body runs in the plugin image with no generated glue, so nothing pushes the identity in. `interface: \"universal\"` and `\"cdylib\"` modules \u2014 everything in this tutorial series \u2014 are fine.\n2. **A mispinned build.** A plugin generated below logos-protocol 0.6 has no caller machinery at all: every call reads `unknown` while the module still compiles, links and loads. Nothing warns you, which is exactly why a refusal should name what it saw.\n\nIn Rust the same surface is `logos_rust_sdk::current_caller()`, returning\n`Unknown | HostAnchor | Module{name, instance} | Derived{parent, leaf} | Operator{name}`,\nwith `is_module(name)`, `identity()` for a map key and `describe_for_human()` for a log line.\n\nA real gate built exactly this way is `modules_state`, whose read surface is open to every module and whose ingest surface admits the host only \u2014 see [Optional Dependencies and the Module Registry](tutorial-modules-state.md)."}]}], "version": 1}</script>
+<script>
+  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+  if (window.marked) { marked.setOptions({ gfm: true, breaks: false }); }
+  const mdToHtml = (s) => window.marked ? marked.parse(s || "") : ("<pre>" + (s || "") + "</pre>");
+
+  const sum = DATA.summary;
+  document.getElementById("summary").innerHTML =
+    `<span class="pill pass">${sum.passed} passed</span> ` +
+    (sum.failed ? `<span class="pill fail">${sum.failed} failed</span> ` : "") +
+    (sum.skipped ? `<span class="pill skip">${sum.skipped} skipped</span>` : "");
+
+  const picker = document.getElementById("picker");
+  DATA.tutorials.forEach((t, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = t.meta.name; picker.appendChild(o);
+  });
+
+  function execHtml(e) {
+    const badge = `<span class="badge ${e.status}">${e.status.toUpperCase()}</span>`;
+    const kind = `<span class="kind">${e.kind}${e.platform ? " · " + e.platform : ""}${e.exit_code !== undefined ? " · exit " + e.exit_code : ""}</span>`;
+    let h = `<div class="exec"><div class="exec-head">${badge}${kind}</div>`;
+    if (e.note) h += `<div class="note">${escapeHtml(e.note)}</div>`;
+    if (e.cmd) h += `<pre class="cmd">${escapeHtml(e.cmd)}</pre>`;
+    if (e.runner_cmd) h += `<pre class="cmd">${escapeHtml(e.runner_cmd)}</pre>`;
+    if (e.actions) {
+      const passed = e.actions.filter(a => a.status === "pass").length;
+      h += `<div class="kind">UI actions: ${passed}/${e.actions.length} passed</div>`;
+      h += `<table class="ui-actions"><tbody>`;
+      for (const a of e.actions) {
+        const label = a.status === "not_run" ? "NOT RUN" :
+          a.status === "running" ? "INTERRUPTED" : a.status.toUpperCase();
+        h += `<tr><td>${a.index}</td><td><span class="badge ${a.status}">${label}</span></td>`;
+        h += `<td>${escapeHtml(a.description)}`;
+        if (a.error) h += `<div class="note">${escapeHtml(a.error)}</div>`;
+        h += `</td><td>${a.duration_ms !== undefined ? a.duration_ms + " ms" : ""}</td></tr>`;
+      }
+      h += `</tbody></table>`;
+    }
+    const out = (e.output || "").trim();
+    if (out) {
+      const long = out.split("\n").length > 12;
+      if (long) {
+        h += `<details><summary>output (${out.split("\n").length} lines)</summary><pre class="output">${escapeHtml(out)}</pre></details>`;
+      } else {
+        h += `<pre class="output">${escapeHtml(out)}</pre>`;
+      }
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function render(idx) {
+    const t = DATA.tutorials[idx];
+    const main = document.getElementById("main");
+    main.innerHTML = "";
+    const h = document.createElement("div");
+    h.className = "tutorial-title";
+    h.textContent = t.meta.name + "  —  " + t.meta.platform;
+    main.appendChild(h);
+
+    t.rows.forEach(row => {
+      const isStructural = row.execs.length === 0 &&
+        (/^#\s|^##\s/.test(row.md.trim()));
+      const div = document.createElement("div");
+      const hasExec = row.execs.length > 0;
+      const hasFail = row.execs.some(e => e.status === "fail");
+      div.className = "row" + (hasExec ? "" : (isStructural ? " section" : " preamble")) +
+        (hasFail ? " has-fail" : "");
+
+      const left = document.createElement("div");
+      left.className = "col left";
+      left.innerHTML = `<div class="md">${mdToHtml(row.md)}</div>`;
+      div.appendChild(left);
+
+      if (hasExec || !isStructural) {
+        const right = document.createElement("div");
+        right.className = "col right";
+        if (hasExec) {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            row.execs.map(execHtml).join("");
+        } else {
+          right.innerHTML = `<div class="col-label">Executed</div>` +
+            `<div class="empty">No commands run for this step.</div>`;
+        }
+        div.appendChild(right);
+      }
+      main.appendChild(div);
+    });
+
+    addAnchors(main, slug(t.meta.name));
+  }
+
+  function slug(s) {
+    return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  // Octicon "link" — the same glyph GitHub puts next to markdown headings.
+  const LINK_ICON =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d=' +
+    '"M7.775 3.275a.75.75 0 0 0 1.06 1.06l1.25-1.25a2 2 0 1 1 2.83 2.83l-2.5 2.5a2 2 0 0 1-2.83 0 ' +
+    '.75.75 0 0 0-1.06 1.06 3.5 3.5 0 0 0 4.95 0l2.5-2.5a3.5 3.5 0 0 0-4.95-4.95l-1.25 1.25Zm-4.69 ' +
+    '9.64a2 2 0 0 1 0-2.83l2.5-2.5a2 2 0 0 1 2.83 0 .75.75 0 0 0 1.06-1.06 3.5 3.5 0 0 0-4.95 0l-2.5 ' +
+    '2.5a3.5 3.5 0 0 0 4.95 4.95l1.25-1.25a.75.75 0 0 0-1.06-1.06l-1.25 1.25a2 2 0 0 1-2.83 0Z"></path></svg>';
+
+  // Give every heading a stable slug id (deduplicated the way GitHub does, with
+  // -1/-2 suffixes) and a permalink whose href is "#<tutorial>/<heading>".
+  function addAnchors(container, tutSlug) {
+    const used = new Map();
+    const nodes = container.querySelectorAll(
+      ".tutorial-title, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6"
+    );
+    nodes.forEach(node => {
+      const text = node.textContent.trim();
+      const isTitle = node.classList.contains("tutorial-title");
+      let href = "#" + tutSlug;
+      if (!isTitle) {
+        const base = slug(text) || "section";
+        const n = (used.get(base) || 0) + 1;
+        used.set(base, n);
+        node.id = n > 1 ? base + "-" + n : base;
+        href += "/" + node.id;
+      }
+      node.classList.add("heading-anchored");
+      const a = document.createElement("a");
+      a.className = "anchor";
+      a.href = href;
+      a.title = "Copy link to this section";
+      a.setAttribute("aria-label", "Permalink: " + text);
+      a.innerHTML = LINK_ICON;
+      node.insertBefore(a, node.firstChild);
+    });
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+  }
+
+  // navigator.clipboard needs a secure context; reports are often opened over
+  // file://, so fall back to the old execCommand path there.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(
+        () => toast("Link copied"),
+        () => toast(text)
+      );
+      return;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    toast(ok ? "Link copied" : text);
+  }
+
+  function scrollToId(id) {
+    if (!id) { window.scrollTo(0, 0); return; }
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    el.classList.remove("flash");
+    void el.offsetWidth;  // restart the animation on a repeat click
+    el.classList.add("flash");
+  }
+
+  document.addEventListener("click", ev => {
+    const a = ev.target.closest && ev.target.closest("a.anchor");
+    if (!a) return;
+    ev.preventDefault();
+    const href = a.getAttribute("href");
+    copyText(location.href.split("#")[0] + href);
+    if (location.hash === href) scrollToId(a.parentNode.id);
+    else location.hash = href;  // hashchange scrolls
+  });
+
+  // "#<tutorial>" (name, slug, or index) optionally followed by "/<heading>".
+  function parseHash() {
+    const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if (!raw) return { idx: 0, frag: "" };
+    const cut = raw.indexOf("/");
+    const tut = cut >= 0 ? raw.slice(0, cut) : raw;
+    const frag = cut >= 0 ? raw.slice(cut + 1) : "";
+    if (/^\d+$/.test(tut) && +tut < DATA.tutorials.length) return { idx: +tut, frag };
+    const i = DATA.tutorials.findIndex(
+      t => slug(t.meta.name) === tut || t.meta.name === tut
+    );
+    if (i >= 0) return { idx: i, frag };
+    // No tutorial matched: treat a bare hash as a heading in the current one.
+    return { idx: currentIdx >= 0 ? currentIdx : 0, frag: cut >= 0 ? frag : raw };
+  }
+
+  let currentIdx = -1;
+  function show(idx, frag) {
+    if (idx !== currentIdx) {
+      picker.value = idx;
+      render(idx);
+      currentIdx = idx;
+    }
+    if (frag) requestAnimationFrame(() => scrollToId(frag));
+  }
+  picker.addEventListener("change", () => {
+    location.hash = slug(DATA.tutorials[+picker.value].meta.name);
+    show(+picker.value);
+  });
+  window.addEventListener("hashchange", () => {
+    const h = parseHash();
+    show(h.idx, h.frag);
+  });
+  const initial = parseHash();
+  show(initial.idx, initial.frag);
+  // Inlined screenshots have no intrinsic size until decoded, so the first
+  // scroll can land short; re-anchor once everything has loaded.
+  if (initial.frag) {
+    window.addEventListener("load", () => scrollToId(initial.frag), { once: true });
+  }
+</script>
+</body>
+</html>
