@@ -6,7 +6,7 @@ requires:
 release: ""
 
 intro: |
-  This tutorial builds `calc_via_interface`, a **core module that depends on an *interface*, not a concrete module**. Instead of naming `calc_module` (from [Part 1](tutorial-wrapping-c-library.md)) as a dependency and getting a fixed `modules().calc_module` wrapper, it declares a small **`calculator` interface** — a list of methods and one event — and **binds that interface to a module name chosen at runtime**. Any module whose API is a *superset* of the interface can satisfy it; `calc_module` is one such provider. You drive the whole thing from `logoscore` on the command line.
+  This tutorial builds `calc_via_interface`, a **core module that depends on an *interface*, not a concrete module**. Instead of naming `calc_module` (from [Part 1](tutorial-wrapping-c-library.md)) as a dependency and getting a fixed `modules().calc_module` wrapper, it declares a small **`calculator` interface** — a list of methods and one event — and **binds that interface to a module name chosen at runtime**. Any module whose API is a *superset* of the interface can satisfy it; `calc_module` is one such provider. You drive the whole thing from `logosctl` on the command line.
 
 what_you_build: |
   A `calc_via_interface` core module that:
@@ -212,7 +212,7 @@ sections:
   - title: "Write the Module Class"
     step: true
     text: |
-      The module is one plain C++ class inheriting `LogosModuleContext` — that base gives it `modules()`, through which the generated `bind_calculator(name)` factory is reachable. Each method takes the **provider module name** as its first argument, so we can bind to different modules at runtime from `logoscore`.
+      The module is one plain C++ class inheriting `LogosModuleContext` — that base gives it `modules()`, through which the generated `bind_calculator(name)` factory is reachable. Each method takes the **provider module name** as its first argument, so we can bind to different modules at runtime from `logosctl`.
     steps:
       - title: "`src/calc_via_interface_impl.h` — the class"
         text: |
@@ -418,26 +418,30 @@ sections:
         post_text: |
           Every `public` method is here, published in the **LIDL contract** vocabulary rather than in C++ or Qt names: `int64_t` shows up as `int` and `std::string` as `tstr`. `lm` is reporting what the module says about itself, and what a module publishes is its contract.
 
-  # ── Step 7: Run it with logoscore ───────────────────────────────────────────
-  - title: "Run it with `logoscore`"
+  # ── Step 7: Run it with logosctl ────────────────────────────────────────────
+  - title: "Run it with `logosctl`"
     step: true
     text: |
-      Now the payoff: run `calc_via_interface` and bind its `calculator` interface to the real `calc_module` from Part 1. We use the `logoscore` **daemon** (`-D`) so module processes stay alive between `call` commands — needed for the async reply and the event subscription to survive from one call to the next. (Same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logoscore) and [Composing Modules](tutorial-composing-modules.md#run-it-with-logoscore).)
+      Now the payoff: run `calc_via_interface` and bind its `calculator` interface to the real `calc_module` from Part 1. `logosctl` drives a **daemon** that keeps module processes alive between `call` commands — needed for the async reply and the event subscription to survive from one call to the next. (Same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logosctl) and [Composing Modules](tutorial-composing-modules.md#step-6-run-it-with-logosctl).)
     steps:
-      - title: "Build the runtime and package both modules"
+      - title: "Get logosctl"
         text: |
-          Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory. `calc_via_interface` comes from this project; `calc_module` from your Part 1 checkout — it is the *provider* we bind to, even though this module never declared it:
-        run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"
-      - run: "nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm"
-      - run: "mkdir -p modules"
-      - title: "Install calc_via_interface"
-        run: "nix build '.#lgx' --out-link result-iface-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-iface-lgx/*.lgx"
+          `logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
+        run: "nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl"
         code_block: |
-          nix build '.#lgx' --out-link result-iface-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-iface-lgx/*.lgx
-      - title: "Install calc_module (the runtime provider)"
+          nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl
+          export PATH="$PWD/logosctl/bin:$PATH"
+        check_file: "logosctl/bin/logosctl{exe}"
+
+      - title: "Package calc_via_interface"
         text: |
-          Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)), then package and install it:
+          `logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store. Package **both** modules: `calc_via_interface` comes from this project; `calc_module` from your Part 1 checkout — it is the *provider* we bind to, even though this module never declared it:
+        run: "nix build '.#lgx-portable' --out-link result-iface-lgx"
+        code_block: |
+          nix build '.#lgx-portable' --out-link result-iface-lgx
+      - title: "Package calc_module (the runtime provider)"
+        text: |
+          Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)), then package it:
         run: "test -f ../logos-calc-module/lib/libcalc.{ext} || (cd ../logos-calc-module/lib && gcc {shared_flags} -o libcalc.{ext} libcalc.c && cd -)"
         code_block: |
           # Build libcalc if needed (Part 1, Step 1.5):
@@ -445,71 +449,112 @@ sections:
           gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
           # gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS
           cd -
-      - run: "nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx"
+      - run: "nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx"
         code_block: |
-          nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx
-        post_text: |
-          `modules/` now holds `calc_via_interface/` and `calc_module/`. Neither knows about the other at build time — they meet only at runtime, through the interface.
+          nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx
 
-      - title: "Start the daemon and load both modules"
-        run: "./logos/bin/logoscore -D -m ./modules &"
-      - run: "sleep 4"
-        post_text: "Load the provider and the consumer. The consumer declares no dependency, so we load `calc_module` explicitly:"
-      - run: "./logos/bin/logoscore load-module calc_module"
-      - run: "./logos/bin/logoscore load-module calc_via_interface"
+      - title: "Start the daemon and install both"
+        text: |
+          This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+          ```bash
+          export LOGOSCTL_CONFIG_DIR="$PWD/session"
+          ```
+
+          `--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking:
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session install ./result-iface-lgx/*.lgx ./result-calc-lgx/*.lgx -y"
+        code_block: "logosctl install ./result-iface-lgx/*.lgx ./result-calc-lgx/*.lgx -y"
+        expect_contains:
+          - "calc_via_interface"
+          - "calc_module"
+        post_text: |
+          The session's `modules/` directory now holds `calc_via_interface/` and `calc_module/`. Neither knows about the other at build time — they meet only at runtime, through the interface.
+
+      - title: "Load both modules"
+        text: "Load the provider and the consumer. The consumer declares no dependency, so loading it does not bring `calc_module` up — we load `calc_module` explicitly:"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_module"
+        code_block: "logosctl module load calc_module"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_via_interface"
+        code_block: "logosctl module load calc_via_interface"
 
       - title: "Bind and call synchronously"
         text: |
           `sumVia` / `productVia` / `versionVia` each bind `calculator` to the module name you pass, then call through the bound wrapper. Bind to `calc_module`:
-        run: "./logos/bin/logoscore call calc_via_interface sumVia calc_module 3 5"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface sumVia calc_module 3 5"
+        code_block: "logosctl call calc_via_interface sumVia calc_module 3 5"
         expect_contains:
-          - '"result":8'
-      - run: "./logos/bin/logoscore call calc_via_interface productVia calc_module 3 5"
+          - "8"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface productVia calc_module 3 5"
+        code_block: "logosctl call calc_via_interface productVia calc_module 3 5"
         expect_contains:
-          - '"result":15'
-      - run: "./logos/bin/logoscore call calc_via_interface versionVia calc_module"
+          - "15"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface versionVia calc_module"
+        code_block: "logosctl call calc_via_interface versionVia calc_module"
         expect_contains:
-          - '"result":"1.0.0"'
+          - "1.0.0"
         post_text: |
           `sumVia(calc_module, 3, 5) = 8`, `productVia(calc_module, 3, 5) = 15`, and `versionVia(calc_module) = "1.0.0"` — all through `modules().bind_calculator("calc_module")`, with `calc_module` chosen at call time.
 
       - title: "Bind and call asynchronously"
         text: |
           `startFibVia` fires `calculator.fibonacci(n)` asynchronously against the bound module and returns `"queued"`. The reply arrives on the daemon's event loop; `lastFib()` reads it. With `n = 20`, `fib(20) = 6765`:
-        run: "./logos/bin/logoscore call calc_via_interface startFibVia calc_module 20"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface startFibVia calc_module 20"
+        code_block: "logosctl call calc_via_interface startFibVia calc_module 20"
         expect_contains:
-          - '"result":"queued"'
+          - "queued"
       - run: "sleep 1"
-      - run: "./logos/bin/logoscore call calc_via_interface lastFib"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface lastFib"
+        code_block: "logosctl call calc_via_interface lastFib"
         expect_contains:
-          - '"result":6765'
+          - "6765"
         post_text: |
           The bound wrapper's generated `fibonacciAsync(..., callback)` delivered `6765` to the callback after `startFibVia` had already returned — the typed **async** path, over a runtime-bound interface.
 
       - title: "Subscribe to a bound interface event"
         text: |
           `watchVersion` subscribes to the interface's `versionReady` event on the bound module. `calc_module.libVersionNotify()` makes `calc_module` emit it, and `lastVersion()` reads what the typed callback captured:
-        run: "./logos/bin/logoscore call calc_via_interface watchVersion calc_module"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface watchVersion calc_module"
+        code_block: "logosctl call calc_via_interface watchVersion calc_module"
         expect_contains:
-          - '"result":"ok"'
-      - run: "./logos/bin/logoscore call calc_module libVersionNotify"
+          - "ok"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_module libVersionNotify"
+        code_block: "logosctl call calc_module libVersionNotify"
       - run: "sleep 1"
-      - run: "./logos/bin/logoscore call calc_via_interface lastVersion"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface lastVersion"
+        code_block: "logosctl call calc_via_interface lastVersion"
         expect_contains:
-          - '"result":"1.0.0"'
+          - "1.0.0"
         post_text: |
           `watchVersion` registered the callback via the generated `onVersionReady(...)`; the event fired in between; `lastVersion()` returned `1.0.0` — a typed event subscription on a runtime-bound interface.
 
       - title: "Bind to a non-satisfying module (the no-validation rule)"
         text: |
-          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. `sumVia` checks the wrapper's `logos::CallError` out-parameter (see its implementation above) and returns `-1` when the inner call fails; on a transport that fails slowly the outer call may instead time out (`RPC_FAILED` / `"status":"error"`). Either way `calc_module` keeps answering (we keep going with `|| true` so the tour continues):
-        run: "./logos/bin/logoscore call calc_via_interface sumVia no_such_module 3 5 2>&1 || true"
+          Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. Expect this call to take about 20 seconds before it fails; the reason follows the output:
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface sumVia no_such_module 3 5 || true"
+        code_block: "logosctl call calc_via_interface sumVia no_such_module 3 5"
         expect_contains:
-          - 'sumVia'
+          - "sumVia"
+          - "RPC call failed"
         post_text: |
-          The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention; a call without the out-parameter would get the type's default value plus a warning in the module log. Swapping providers is just changing the string: `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
-      - run: "./logos/bin/logoscore stop"
+          ```text
+          Error: callModuleMethod('calc_via_interface','sumVia') RPC call failed.
+          ```
+
+          The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention, `-1`; a call without the out-parameter would get the type's default value plus a warning in the module log.
+
+          That `-1` never reaches you, though. A call to a module that is not loaded waits up to 20 seconds for it to appear before it fails, as the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?` `logosctl` also waits at most 20 seconds for its reply, and its wait started first, so it gives up first and reports the outer call as failed, with exit code 4.
+
+          The daemon is still serving. Swapping providers is just changing the string:
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_via_interface sumVia calc_module 3 5"
+        code_block: "logosctl call calc_via_interface sumVia calc_module 3 5"
+        expect_contains:
+          - "8"
+        post_text: |
+          `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
         post_text: |
           That completes the tour: a single interface, bound at runtime to a concrete module, driven type-safely for sync calls, async calls, and events — with no build-time dependency on the provider.
 
@@ -544,7 +589,7 @@ sections:
   # ── Recap ────────────────────────────────────────────────────────────────────
   - title: "Recap"
     text: |
-      | Concept                          | In the code                                              | Seen via `logoscore`                                |
+      | Concept                          | In the code                                              | Seen via `logosctl`                                 |
       | -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
       | Interface declaration            | `interfaces/calculator.h` (methods + `logos_events:`)    | —                                                   |
       | Declared, not depended-on        | `interface_dependencies` set, `dependencies: []`         | `lm metadata` shows empty `Dependencies:`           |

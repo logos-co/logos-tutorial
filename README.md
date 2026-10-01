@@ -17,13 +17,13 @@ requesting one, and what the shell does when several apps qualify:
 
 Step-by-step tutorials that build on each other. Each creates a working module you can run.
 
-- **Part 1:** [Wrapping a C Library](outputs/tutorial-wrapping-c-library.md) -- build `calc_module`, a core module that wraps a C library (`libcalc`). Covers external library configuration, CMake integration, building, inspecting with `lm`, testing with `logoscore`, and packaging with `nix-bundle-lgx`.
+- **Part 1:** [Wrapping a C Library](outputs/tutorial-wrapping-c-library.md) -- build `calc_module`, a core module that wraps a C library (`libcalc`). Covers external library configuration, CMake integration, building, inspecting with `lm`, testing with `logosctl`, and packaging with `nix-bundle-lgx`.
 
 - **Part 2:** [Building a QML UI App](outputs/tutorial-qml-ui-app.md) -- build `calc_ui`, a QML-only `ui_qml` module that calls `calc_module` through the `logos.callModule()` bridge. No compilation needed. Scaffold: `nix flake init -t ...#ui-qml`
 
 - **Part 3:** [Building a C++ UI Module (Process-Isolated)](outputs/tutorial-cpp-ui-app.md) — build `calc_ui_cpp`, a `ui_qml` module with a C++ backend that runs in a separate `ui-host` process. Define the remote interface in a `.rep` file; the C++ backend inherits from the generated `SimpleSource`; QML accesses it via a typed replica using `logos.module()` and `logos.watch()`. Scaffold: `nix flake init -t ...#ui-qml-backend`
 
-- **Composing Modules:** [Composing Modules with the Module Context](outputs/tutorial-composing-modules.md) — build `calc_aggregator`, a `core` module that **depends on `calc_module`** and showcases everything `LogosModuleContext` offers: the `modulePath` / `instanceId` / `instancePersistencePath` properties, per-instance persistence wired up in `onContextReady()`, typed **sync** and **async** dependency callers (`modules().calc_module`), and typed event subscribers. No UI — driven entirely from `logoscore`. Needs only Part 1.
+- **Composing Modules:** [Composing Modules with the Module Context](outputs/tutorial-composing-modules.md) — build `calc_aggregator`, a `core` module that **depends on `calc_module`** and showcases everything `LogosModuleContext` offers: the `modulePath` / `instanceId` / `instancePersistencePath` properties, per-instance persistence wired up in `onContextReady()`, typed **sync** and **async** dependency callers (`modules().calc_module`), and typed event subscribers. No UI — driven entirely from `logosctl`. Needs only Part 1.
 
 - **Dependency Interfaces:** [Binding an Interface at Runtime](outputs/tutorial-interface-dependencies.md) — build `calc_via_interface`, a `core` module that declares a *calculator contract* instead of a concrete dependency and binds it to a provider chosen at runtime with `modules().bind_calculator(name)`. Its `dependencies` list is empty. Needs only Part 1.
 
@@ -140,7 +140,7 @@ This:
 
 1. **Runs** the full tutorial chain (Part 1 → 2 → 3) into `./outputs/`, executing every step so the result is verified, not just rendered. Each part lands in its own subdirectory (`outputs/logos-calc-module/`, `outputs/logos-calc-ui/`, `outputs/logos-calc-ui-cpp/`). It then runs each remaining leaf — Composing Modules, Dependency Interfaces, Writing a Module in Rust, Concurrent Dispatch, Optional Dependencies, Caller Identity — into its own subdirectory, reusing the `calc_module` the chain just built (`--workdir`, so no leaf rebuilds its `requires:` chain).
 2. **Generates** the `.md` tutorial for every `tests/*.test.yaml` spec into `outputs/`, named after the spec. CI diffs these against the generator, so a committed `.md` that has fallen behind its spec fails the build.
-3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the persistence scratch dirs the tutorials create (`calc-data/`, `.logoscore/`).
+3. **Cleans** each output project so only the source remains — it removes the per-project `.git/` directories (each tutorial `git init`s its project), the nix out-link symlinks (`lm`, `logosctl`, `logos`, `pm`, `result*`), build output (`modules/`), compiled libraries (`*.dylib`, `*.so`), and the session and persistence directories the tutorials create (`session/`, `calc-data/`, `.logoscore/`).
 
 It also runs Calls and Types into `outputs/logos-api-examples/` and the LGX
 walkthrough in a temporary directory. The latter creates a disposable signing
@@ -182,7 +182,7 @@ Nix does not run on Windows, so a tutorial's Windows leg is a cross-platform run
 Two tutorials have a Windows leg:
 
 - **LGX packages** runs end to end against a cross-built `lgx.exe`.
-- **Caller identity** installs `calc_guarded` and `calc_agent` with a portable `lgpm`, then drives them through the logoscore release bundle: daemon, load, every call. The modules are built for Windows from their committed `outputs/` source trees, so run `./run.sh` after changing a spec's module code, or that leg tests the old code.
+- **Caller identity** installs `calc_guarded` and `calc_agent` into the `logosctl` release bundle and drives them through it: daemon, install, load, every call. The modules are built for Windows from their committed `outputs/` source trees, so run `./run.sh` after changing a spec's module code, or that leg tests the old code.
 
 To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
 

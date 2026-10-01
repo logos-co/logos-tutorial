@@ -729,7 +729,7 @@ sections:
         post_text: |
           The result `8` comes back from `calc_module`: pressing **Add** calls `logos.callModule("calc_module", "add", [3, 5])`, which basecamp routes to your core module and back to the QML view. Both modules — the `calc_module` core plugin and the `calc_ui` view plugin — are loaded from the `basecamp-data` directory you installed them into.
 
-          The **Interface** screen (Settings → Module Inspector → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logoscore module-info` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
+          The **Interface** screen (Settings → Module Inspector → *Interface*) lists every method **and event** with the `description` from its doc comment — the same docs `lm` and `logosctl module show` showed in Part 1, here in the GUI. Multi-line `///` comments render as multiple lines, exactly as written.
 
           The sidebar labels each UI plugin by its `name` from `metadata.json`, which is why the tab reads `calc_ui`.
 
@@ -1026,7 +1026,7 @@ sections:
       | Files               | `*_impl.h/.cpp`, `CMakeLists.txt`, `metadata.json`     | `Main.qml`, `metadata.json`   |
       | Compilation         | Yes (CMake → `.so`)                                    | No (file copy)                |
       | `metadata.type`     | `"core"` (`interface: "universal"`)                    | `"ui_qml"`                    |
-      | Test command        | `logoscore -D -m ./modules` + `call`                   | `nix run .`                   |
+      | Test command        | `logosctl install` + `module load` + `call`            | `nix run .`                   |
       | Calls other modules | Via `LogosModuleContext` `modules()` (C++)             | Via `logos.callModule()` (JS) |
 
   # ── What's Next (prose only) ───────────────────────────────────────────────

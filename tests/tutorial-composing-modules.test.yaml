@@ -6,7 +6,7 @@ requires:
 release: ""
 
 intro: |
-  This tutorial builds `calc_aggregator`, a **core module that depends on another module** (`calc_module` from [Part 1](tutorial-wrapping-c-library.md)). It does no arithmetic of its own — instead it *composes* `calc_module`'s primitives into a single call, and along the way showcases everything the SDK's `LogosModuleContext` base class gives a universal module. There is no UI: you drive the whole thing from `logoscore` on the command line.
+  This tutorial builds `calc_aggregator`, a **core module that depends on another module** (`calc_module` from [Part 1](tutorial-wrapping-c-library.md)). It does no arithmetic of its own — instead it *composes* `calc_module`'s primitives into a single call, and along the way showcases everything the SDK's `LogosModuleContext` base class gives a universal module. There is no UI: you drive the whole thing from `logosctl` on the command line.
 
 what_you_build: |
   A `calc_aggregator` core module that, through the `LogosModuleContext` base class:
@@ -24,7 +24,7 @@ what_you_learn:
   - How to use the per-instance persistence directory for durable state, set up in `onContextReady()`
   - How `modules().<dep>` gives you typed **sync** and **async** callers — no raw `LogosAPI`, no `QVariant`
   - How to subscribe to another module's `logos_events:` with a typed callback
-  - How to load two modules in `logoscore` and chain calls to observe events and async replies
+  - How to load two modules in `logosctl` and chain calls to observe events and async replies
 
 prerequisites:
   - "Completed [Part 1](tutorial-wrapping-c-library.md) — you have a working `calc_module` whose shared library is built (`libcalc.so`/`.dylib` in `logos-calc-module/lib/`). This tutorial only needs `calc_module`; the UI tutorials (Parts 2–3) are not required."
@@ -260,7 +260,7 @@ sections:
 
           - The class inherits **`LogosModuleContext`** — that's the opt-in that gives it the context getters and `modules()`.
           - `onContextReady()` is `protected` (an override of the base hook), so it is **not** exposed over IPC — only the `public` methods are.
-          - `hasInstanceID()` returns `bool` on purpose: the CLI prints a `Result:` line for any string (even empty), so a boolean is the unambiguous way to assert "the host populated the ID".
+          - `hasInstanceID()` returns `bool` on purpose: the ID itself is random, and a string getter succeeds even when it returns an empty string, so a boolean is the unambiguous way to assert "the host populated the ID".
 
       - title: "`src/calc_aggregator_impl.cpp` — the implementation"
         text: |
@@ -484,76 +484,104 @@ sections:
         post_text: |
           Every `public` method on the impl is here, published in the **LIDL contract** vocabulary rather than in C++ or Qt names: `int64_t` shows up as `int`, `std::string` as `tstr`, and `LogosMap` (from `computeReport`) as `{tstr: any}`. `lm` is reporting what the module says about itself, and what a module publishes is its contract — the same words the generated `.lidl` uses, and the same words a Rust or Nim module implementing this contract would answer with.
 
-  # ── Step 6: Run it with logoscore ───────────────────────────────────────────
-  - title: "Run it with `logoscore`"
+  # ── Step 6: Run it with logosctl ────────────────────────────────────────────
+  - title: "Run it with `logosctl`"
     step: true
     text: |
-      Now the payoff: run `calc_aggregator` **and** its `calc_module` dependency under `logoscore` and exercise every capability. We use the `logoscore` **daemon** (`-D`) — it keeps each module's process alive between `call` commands, so an event subscription registered by one call is still active when a later call triggers it, and an async reply lands before the call that reads it. (This is the same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logoscore).)
+      Now the payoff: run `calc_aggregator` **and** its `calc_module` dependency under `logosctl` and exercise every capability. `logosctl` drives a **daemon** that keeps each module's process alive between `call` commands, so an event subscription registered by one call is still active when a later call triggers it, and an async reply lands before the call that reads it. (This is the same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logosctl).)
     steps:
-      - title: "Build the runtime and package both modules"
+      - title: "Get logosctl"
         text: |
-          Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory `logoscore` can scan. The aggregator comes from this project; `calc_module` from your Part 1 checkout:
-        run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"
-      - run: "nix build 'github:logos-co/logos-package-manager{release}#cli' --out-link ./pm"
-      - run: "mkdir -p modules"
-      - title: "Install calc_aggregator"
-        run: "nix build '.#lgx' --out-link result-aggregator-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-aggregator-lgx/*.lgx"
+          `logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
+        run: "nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl"
         code_block: |
-          nix build '.#lgx' --out-link result-aggregator-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-aggregator-lgx/*.lgx
-      - title: "Install calc_module (the dependency)"
-        run: "nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx"
-        code_block: |
-          nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx
-        post_text: |
-          `modules/` now holds `calc_aggregator/` and `calc_module/`, each with its plugin, libraries, and `manifest.json`.
+          nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl
+          export PATH="$PWD/logosctl/bin:$PATH"
+        check_file: "logosctl/bin/logosctl{exe}"
 
-      - title: "Create a persistence directory and start the daemon"
+      - title: "Package both modules"
         text: |
-          The host only provisions a per-instance persistence path when you pass `--persistence-path`. Create a directory for it — we reuse the **same** directory across restarts so the instance ID (and therefore the persisted state) is stable:
-        run: "mkdir -p calc-data"
-        post_text: "Start `logoscore` as a background daemon, pointed at the modules directory and the persistence directory:"
-      - run: "./logos/bin/logoscore -D -m ./modules --persistence-path ./calc-data &"
-      - run: "sleep 4"
-        post_text: "Load both modules. The daemon keeps each module's process alive between `call` commands, which is what lets an event subscription (or an async reply) survive from one call to the next:"
-      - run: "./logos/bin/logoscore load-module calc_module"
-      - run: "./logos/bin/logoscore load-module calc_aggregator"
+          `logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store. Build one for each module — the aggregator from this project, `calc_module` from your Part 1 checkout:
+        run: "nix build '.#lgx-portable' --out-link result-aggregator-lgx && nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx"
+        code_block: |
+          nix build '.#lgx-portable' --out-link result-aggregator-lgx
+          nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx
+
+      - title: "Start the daemon and install both"
+        text: |
+          This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+          ```bash
+          export LOGOSCTL_CONFIG_DIR="$PWD/session"
+          ```
+
+          `--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking. Install the dependency together with the module that needs it:
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session install ./result-calc-lgx/*.lgx ./result-aggregator-lgx/*.lgx -y"
+        code_block: "logosctl install ./result-calc-lgx/*.lgx ./result-aggregator-lgx/*.lgx -y"
+        expect_contains:
+          - "calc_module"
+          - "calc_aggregator"
+        post_text: |
+          The session's `modules/` directory now holds `calc_aggregator/` and `calc_module/`, each with its plugin, libraries, and `manifest.json`.
+
+      - title: "Load the module"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_aggregator"
+        code_block: "logosctl module load calc_aggregator"
+        expect_contains:
+          - "Dependencies loaded: calc_module"
+        post_text: |
+          ```text
+          Loaded module: calc_aggregator (v1.0.0)
+            Dependencies loaded: calc_module
+          ```
+
+          Loading `calc_aggregator` brings `calc_module` up with it — it is a declared dependency. The daemon keeps each module's process alive between `call` commands, which is what lets an event subscription (or an async reply) survive from one call to the next.
 
       - title: "Read the context properties"
         text: |
           `moduleDir()` / `hasInstanceID()` / `persistenceDir()` return the values the host stamped onto the module. We can't predict the absolute path, but `moduleDir()` must contain the module name:
-        run: "./logos/bin/logoscore call calc_aggregator moduleDir"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator moduleDir"
+        code_block: "logosctl call calc_aggregator moduleDir"
         expect_contains:
           - "calc_aggregator"
-        post_text: "`hasInstanceID()` returns a bool, so a non-empty instance ID shows as `\"result\":true` — an unambiguous signal the host populated `instanceId()` (a plain string getter would read as empty either way):"
-      - run: "./logos/bin/logoscore call calc_aggregator hasInstanceID"
+        post_text: "`hasInstanceID()` returns a bool, so a non-empty instance ID shows as `true` — an unambiguous signal the host populated `instanceId()` (the ID itself, which `instanceID()` returns, is a random string such as `8a69bb677f2c`, so there is no fixed value to check):"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator hasInstanceID"
+        code_block: "logosctl call calc_aggregator hasInstanceID"
         expect_contains:
-          - '"result":true'
-      - run: "./logos/bin/logoscore call calc_aggregator persistenceDir"
+          - "true"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator persistenceDir"
+        code_block: "logosctl call calc_aggregator persistenceDir"
         expect_contains:
-          - "calc-data"
-          - "calc_aggregator"
+          - "session/data/calc_aggregator"
         post_text: |
-          - `moduleDir()` → the directory the plugin loaded from (contains `calc_aggregator`)
-          - `hasInstanceID()` → `"result":true` — the host populated `instanceId()`
-          - `persistenceDir()` → a path under your `calc-data/` directory, namespaced by module name and instance ID
+          - `moduleDir()` → the directory the plugin loaded from, the session's `modules/calc_aggregator`
+          - `hasInstanceID()` → `true` — the host populated `instanceId()`
+          - `persistenceDir()` → a path under the session's `data/` directory, namespaced by module name and instance ID: `session/data/calc_aggregator/<instance-id>`
 
       - title: "Compose calc_module synchronously"
         text: |
           `computeReport(a, b, n)` fans out to five typed `calc_module` calls and returns them as one map. With `a=3, b=5, n=10`:
-        run: "./logos/bin/logoscore call calc_aggregator computeReport 3 5 10"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator computeReport 3 5 10"
+        code_block: "logosctl call calc_aggregator computeReport 3 5 10"
         expect_contains:
-          - '"sum":8'
-          - '"product":15'
-          - '"factorial":3628800'
-          - '"fibonacci":55'
-          - '"libVersion":"1.0.0"'
+          - '"sum": 8'
+          - '"product": 15'
+          - '"factorial": 3628800'
+          - '"fibonacci": 55'
+          - '"libVersion": "1.0.0"'
         post_text: |
           One call, five composed results:
 
-          ```json
-          {"method":"computeReport","module":"calc_aggregator","result":{"factorial":3628800,"fibonacci":55,"libVersion":"1.0.0","product":15,"sum":8},"status":"ok"}
+          ```text
+          {
+            "factorial": 3628800,
+            "fibonacci": 55,
+            "libVersion": "1.0.0",
+            "product": 15,
+            "sum": 8
+          }
           ```
 
           `sum = 3+5`, `product = 3*5`, `factorial = 10!`, `fibonacci = fib(10)`, and `libVersion` read straight from `calc_module` — all through the generated `modules().calc_module` sync wrappers.
@@ -561,61 +589,71 @@ sections:
       - title: "Compose calc_module asynchronously"
         text: |
           `startAsyncFibonacci(n)` fires `calc_module.fibonacciAsync(n)` and returns `"queued"` immediately. The reply arrives on the daemon's event loop; the next call, `asyncResult()`, reads what the callback stashed. With `n=20`, `fib(20) = 6765`:
-        run: "./logos/bin/logoscore call calc_aggregator startAsyncFibonacci 20"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator startAsyncFibonacci 20"
+        code_block: "logosctl call calc_aggregator startAsyncFibonacci 20"
         expect_contains:
-          - '"result":"queued"'
+          - "queued"
       - run: "sleep 1"
-      - run: "./logos/bin/logoscore call calc_aggregator asyncResult"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator asyncResult"
+        code_block: "logosctl call calc_aggregator asyncResult"
         expect_contains:
-          - '"result":6765'
+          - "6765"
         post_text: |
           `startAsyncFibonacci` returned before the answer existed; by the time `asyncResult()` runs, the async callback has fired and stored `6765`. That's the typed **async** caller — same wrapper, `<method>Async(..., callback)`.
 
       - title: "Subscribe to a calc_module event"
         text: |
           The typed event subscription. `subscribeVersion()` registers the callback, `calc_module.libVersionNotify()` makes `calc_module` emit its `versionReady` event, and `lastVersionEvent()` reads what the subscription captured. Because the daemon keeps both modules loaded, the event fires between the calls:
-        run: "./logos/bin/logoscore call calc_aggregator subscribeVersion"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator subscribeVersion"
+        code_block: "logosctl call calc_aggregator subscribeVersion"
         expect_contains:
-          - '"result":"ok"'
-      - run: "./logos/bin/logoscore call calc_module libVersionNotify"
+          - "ok"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_module libVersionNotify"
+        code_block: "logosctl call calc_module libVersionNotify"
       - run: "sleep 1"
-      - run: "./logos/bin/logoscore call calc_aggregator lastVersionEvent"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator lastVersionEvent"
+        code_block: "logosctl call calc_aggregator lastVersionEvent"
         expect_contains:
-          - '"result":"1.0.0"'
+          - "1.0.0"
         post_text: |
           `subscribeVersion()` returned `ok`; the event fired in between; `lastVersionEvent()` returned `1.0.0` — the payload `calc_module` emitted, delivered to the typed callback you registered with `modules().calc_module.onVersionReady(...)`.
 
       - title: "Persist state across a restart"
         text: |
           `bumpRunCount()` increments a counter saved in the persistence directory. Call it twice — `1`, then `2`:
-        run: "./logos/bin/logoscore call calc_aggregator bumpRunCount"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator bumpRunCount"
+        code_block: "logosctl call calc_aggregator bumpRunCount"
         expect_contains:
-          - '"result":1'
-      - run: "./logos/bin/logoscore call calc_aggregator bumpRunCount"
+          - "1"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator bumpRunCount"
+        code_block: "logosctl call calc_aggregator bumpRunCount"
         expect_contains:
-          - '"result":2'
-        post_text: "Now stop the daemon and start a **brand-new** one against the same persistence directory. `onContextReady()` loads the persisted `2` from disk, so the next bump is `3`:"
-      - run: "./logos/bin/logoscore stop"
-      - run: "sleep 2"
-      - run: "./logos/bin/logoscore -D -m ./modules --persistence-path ./calc-data &"
-      - run: "sleep 4"
-      - run: "./logos/bin/logoscore load-module calc_aggregator"
-      - run: "./logos/bin/logoscore call calc_aggregator bumpRunCount"
+          - "2"
+        post_text: "Now stop the daemon and start a **brand-new** one in the same session. The session keeps the installed packages and each module's data directory, and with it the module's instance ID, so `onContextReady()` loads the persisted `2` from disk and the next bump is `3`:"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_aggregator"
+        code_block: "logosctl module load calc_aggregator"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_aggregator bumpRunCount"
+        code_block: "logosctl call calc_aggregator bumpRunCount"
         expect_contains:
-          - '"result":3'
+          - "3"
         post_text: |
           The count survived a full process restart — proof the persistence directory is host-owned and durable, and that `onContextReady()` is the right place to rehydrate per-instance state.
-      - run: "./logos/bin/logoscore stop"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
         post_text: |
-          That completes the tour: context properties, durable persistence, sync **and** async typed dependency calls, and a typed event subscription — every capability of `LogosModuleContext`, driven entirely from `logoscore`.
+          That completes the tour: context properties, durable persistence, sync **and** async typed dependency calls, and a typed event subscription — every capability of `LogosModuleContext`, driven entirely from `logosctl`.
 
   # ── Recap (prose only) ──────────────────────────────────────────────────────
   - title: "Recap"
     text: |
-      | Capability                       | In the code                                              | Seen via `logoscore`                                |
+      | Capability                       | In the code                                              | Seen via `logosctl`                                 |
       | -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
       | `modulePath()`                   | `moduleDir()`                                            | path contains `calc_aggregator`                     |
-      | `instanceId()`                   | `instanceID()` / `hasInstanceID()`                       | `"result":true`                                     |
+      | `instanceId()`                   | `instanceID()` / `hasInstanceID()`                       | `true`                                              |
       | `instancePersistencePath()`      | `persistenceDir()` + `bumpRunCount()` + `onContextReady` | counter climbs `1 → 2 → 3` across a restart         |
       | Typed **sync** dependency call   | `computeReport()` → `calc.add(...)`, …                  | one map of five composed results                    |
       | Typed **async** dependency call  | `startAsyncFibonacci()` → `fibonacciAsync(..., cb)`     | `queued`, then `6765`                               |
