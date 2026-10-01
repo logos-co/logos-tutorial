@@ -354,7 +354,7 @@ The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited b
 - **`path:`** (used here) — a local directory on disk. Best for developing `calc_module` and its UI side by side, no network.
 - **`github:`** — fetches `calc_module` from a remote repo instead (for CI, or once it's published to its own repo), e.g. `calc_module.url = "github:your-org/your-calc-module";`.
 
-> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library) for build instructions.
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library) for build instructions.
 
 `mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in a standalone window with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
 
@@ -399,7 +399,7 @@ ls ../logos-calc-module/lib/libcalc.so    # Linux
 ls ../logos-calc-module/lib/libcalc.dylib  # macOS
 ```
 
-If the file is missing, build it first (as covered in [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+If the file is missing, build it first (as covered in [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library)):
 
 ```bash
 cd ../logos-calc-module/lib
