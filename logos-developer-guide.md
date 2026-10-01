@@ -1448,7 +1448,19 @@ the resolved version and a version selector, like required-package rows; the
 selector offers versions that satisfy the dependency's constraints and have
 available required dependencies. Selected packages bring their own required
 dependencies. `logosctl package install` and `package
-upgrade` offer **all**, **only mandatory**, or **n**, with **all** as the default.
+upgrade` offer **all**, **only mandatory**, or **n**, with **all** as the default. The all choice recursively includes required and
+optional dependencies of selected optional packages; mandatory-only excludes
+those branches unless a required package also needs them.
+
+Basecamp resolves the full selected dependency graph before enabling Install.
+Checking an optional package also adds its mandatory dependencies to Required
+Packages and discovers optional packages farther down that branch. For example,
+selecting `liblogos_rln_module` adds its required `liblogos_lez_rln_module`.
+Checkbox and version changes re-resolve the preview; unchecking a branch removes
+its exclusive dependencies while preserving dependencies shared by other selected
+packages. Installation uses the versions and artifacts shown in the completed
+preview.
+
 Use `--no-optional` for a mandatory-only scripted install. Optional packages
 already installed at a compatible version are kept, and unavailable optionals
 never prevent the mandatory packages from being installed.
