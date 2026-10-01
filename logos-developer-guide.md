@@ -33,7 +33,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
   - [5.2 Installing from Local Files](#52-installing-from-local-files)
   - [5.3 Downloading and Installing from a Registry](#53-downloading-and-installing-from-a-registry)
 - [Part 6: Running Your Module](#part-6-running-your-module)
-  - [6.1 Running with `logoscore`](#61-running-with-logoscore)
+  - [6.1 Running with `logosctl`](#61-running-with-logosctl)
 - [Part 7: Running in logos-basecamp](#part-7-running-in-logos-basecamp)
   - [7.1 Building logos-basecamp](#71-building-logos-basecamp)
   - [7.2 Module Types in logos-basecamp](#72-module-types-in-logos-basecamp)
@@ -59,7 +59,7 @@ A comprehensive guide to creating, building, testing, packaging, and distributin
 - [Reference: CLI Tools Summary](#reference-cli-tools-summary)
   - [`lgx` -- Package Tool](#lgx----package-tool)
   - [`lm` -- Module Inspector](#lm----module-inspector)
-  - [`logoscore` -- Headless Runtime](#logoscore----headless-runtime)
+  - [`logosctl` -- Command-Line Runtime](#logosctl----command-line-runtime)
   - [`lgpm` -- Local Package Manager](#lgpm----local-package-manager)
   - [`lgpd` -- Package Downloader](#lgpd----package-downloader)
   - [`logos-cpp-generator` -- SDK Code Generator](#logos-cpp-generator----sdk-code-generator)
@@ -84,14 +84,14 @@ The **Logos platform** is a modular application framework built in C++ on top of
 - **Cross-platform support** -- macOS (arm64, x86_64) and Linux (arm64, x86_64)
 - **A package format** (`.lgx`) for distributing modules with platform-specific variants
 - **A desktop application shell** (`logos-basecamp`) with a sidebar, tabbed workspace, and plugin management UI
-- **A CLI runtime** (`logoscore`) for running modules headlessly
+- **A CLI runtime** (`logosctl`) for running modules headlessly
 
 ## Architecture
 
 ```
 +---------------------------------------------------------------+
 |                     Application Layer                          |
-|   logos-basecamp (Desktop GUI)  or  logoscore (CLI Runtime)        |
+|   logos-basecamp (Desktop GUI)  or  logosctl (CLI Runtime)         |
 +---------------------------------------------------------------+
         |                    |                    |
         v                    v                    v
@@ -307,7 +307,7 @@ A minimal impl class looks like this:
 class MyModuleImpl : public LogosModuleContext {
 public:
     // Every public method is exposed: discoverable by `lm`, callable by
-    // `logoscore call`, and reachable from other modules.
+    // `logosctl call`, and reachable from other modules.
     std::string greet(const std::string& name);
     int64_t add(int64_t a, int64_t b);
 
@@ -332,7 +332,7 @@ int64_t MyModuleImpl::add(int64_t a, int64_t b) { return a + b; }
 
 **How it works:**
 
-1. **Any `public` method is exposed** — discoverable by `lm`, callable by `logoscore call`, and accessible from other modules. `private` members are not.
+1. **Any `public` method is exposed** — discoverable by `lm`, callable by `logosctl call`, and accessible from other modules. `private` members are not.
 2. **Use the supported types** so the generator can translate them onto the wire: `bool`, `int64_t`, `uint64_t`, `double`, `std::string`, bytes (`std::vector<uint8_t>`), `std::vector<T>`, string-keyed maps, `std::optional<T>`, and records declared as `struct` in the header. `LogosMap`/`LogosList` and `nlohmann::json` (from `<logos_json.h>`) provide JSON values; `void` and `StdLogosResult` (from `<logos_result.h>`) are return-only types. Use `int64_t` for integers, not `int`. See [§8.7](#87-supported-parameter-and-return-types) for the C++/Rust mapping and runnable examples.
 3. **Events** are declared in a `logos_events:` section (the class must inherit `LogosModuleContext`). Calling the event method routes the typed args to subscribers via the host's `eventResponse` channel — outside a host (unit tests) it's a safe no-op.
 4. **Inter-module calls** also go through `LogosModuleContext`: from a method body, `modules().other_module.someMethod(arg)` calls another module using std types, with no raw `LogosAPI` and no Qt. Declare the dependency in `metadata.json`'s `dependencies` and as a flake input.
@@ -445,7 +445,7 @@ existing module) to consume a `multi` module concurrently.
 
 `interface: "cdylib"` builds a module whose core is written in another language.
 The plugin the host loads is the same artifact a C++ module produces — `lm`,
-`lgx`, `lgpm`, `logoscore` and basecamp cannot tell them apart — because the
+`lgx`, `lgpm`, `logosctl` and basecamp cannot tell them apart — because the
 builder compiles your code to a static library and links it into the generated
 glue.
 
@@ -735,7 +735,7 @@ Multiple test files in `tests/` are discovered and run automatically. You can or
 
 ## Part 4: Packaging Your Module
 
-Before you can run your module with `logoscore` or install it into `logos-basecamp`, you need to package the build output into an `.lgx` package and install it into a `modules/` directory.
+Before you can run your module with `logosctl` or install it into `logos-basecamp`, you need to package the build output into an `.lgx` package.
 
 ### 4.1 The LGX Package Format
 
@@ -918,7 +918,7 @@ valid signatures from untrusted keys. Inspect its trust report separately.
 
 ### 5.1 The `lgpm` CLI
 
-The **`lgpm`** CLI (Logos Package Manager) installs, searches, and manages module packages. Installing a package extracts it into a `modules/` directory that `logoscore` and `logos-basecamp` can load from.
+The **`lgpm`** CLI (Logos Package Manager) installs, searches, and manages module packages. Installing a package extracts it into a `modules/` directory that `logos-basecamp` (or `logoscore`) can load from.
 
 #### Building lgpm
 
@@ -1031,7 +1031,7 @@ nix build 'github:logos-co/logos-package-downloader#cli' --out-link ./downloader
 
 ## Part 6: Running Your Module
 
-Once your module is packaged and installed into a `modules/` directory (see Parts 3 and 4), you can run it with `logoscore`.
+Once your module is packaged as an LGX (see Part 4), you can run it with `logosctl`, the command-line runtime that Logos releases ship.
 
 On Windows, the dedicated `logos_host_qt` from
 [`logos-module-loader-qt`](https://github.com/logos-co/logos-module-loader-qt)
@@ -1049,103 +1049,71 @@ Older host builds require their existing search-path workaround; deploy the
 updated host before removing that workaround from a module. Linux and macOS
 continue to use the runtime paths embedded by the build and packaging tools.
 
-### 6.1 Running with `logoscore`
+### 6.1 Running with `logosctl`
 
-The **`logoscore`** CLI (from `logos-liblogos`) is a headless runtime that can load modules and invoke their methods from the command line.
+**`logosctl`** (from [`logos-logoscore-cli`](https://github.com/logos-co/logos-logoscore-cli)) runs modules from the command line. It runs the Logos Core runtime as a daemon, installs packages into the daemon's session, and loads and calls modules on request. The [Logos CLI reference](https://docs.logos.co/core/reference/logos-cli-reference) lists every command and option.
 
-#### Building logoscore
+#### Getting logosctl
+
+Install the release (Linux x86_64/aarch64, macOS Apple Silicon and Windows x86_64; see the [release page](https://github.com/logos-co/logos-logoscore-cli/releases)), or build the same portable bundle with Nix:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
 ```
 
-#### Daemon Mode
+#### Sessions
 
-`logoscore` runs as a daemon that stays alive to host modules. Start it with `-D`:
+Everything `logosctl` keeps lives in a session directory: its configuration, the packages installed into it, its keyring, logs and module data. The default is `~/.logosctl`; `--config-dir DIR` (or `LOGOSCTL_CONFIG_DIR`) selects another, which is how the tutorials keep each walkthrough separate. One daemon runs per session.
 
-```bash
-# Start the daemon with a modules directory
-./logos/bin/logoscore -D -m ./modules
-```
+#### Install, load and call
 
-Once the daemon is running, use commands from another terminal:
+The released `logosctl` installs **portable** packages (`nix build '.#lgx-portable'`; see [§4.2](#42-building-lgx-packages)). The daemon must be running to install, because the package manager runs inside it:
 
 ```bash
-# Load a module
-./logos/bin/logoscore load-module my_module
+# Start the daemon; --detach returns once it accepts commands
+logosctl daemon start --detach
 
-# Call a method on a loaded module
-./logos/bin/logoscore call my_module doSomething hello
+# Install the package into the session (-y skips the confirmation prompt)
+logosctl install ./result-lgx-portable/my_module.lgx -y
 
-# List loaded modules
-./logos/bin/logoscore list-modules --loaded
+# Load the module (dependencies are resolved and loaded too)
+logosctl module load my_module
 
-# Show module details
-./logos/bin/logoscore module-info my_module
+# Call methods (positional args; @file passes a file's contents as a string)
+logosctl call my_module doSomething hello
+logosctl call my_module init @config.json
 
-# Watch events from a module
-./logos/bin/logoscore watch my_module
-
-# Show daemon and module health
-./logos/bin/logoscore status
-
-# Stop the daemon
-./logos/bin/logoscore stop
-```
-
-#### One-shot execution
-
-There is no separate single-process mode — start a clean daemon, load the
-module(s) with `load-module`, call methods with `call`, then stop the daemon:
-
-```bash
-# Start a clean daemon (loads nothing on its own)
-./logos/bin/logoscore -D -m ./modules &
-
-# Wait until the daemon is accepting commands
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
-
-# Load the module(s) you need (dependencies resolved automatically)
-./logos/bin/logoscore load-module my_module
-
-# Call methods (positional args; @file reads a parameter from a file)
-./logos/bin/logoscore call my_module doSomething hello
-./logos/bin/logoscore call my_module init @config.json
-./logos/bin/logoscore call my_module start
+# Show the module's methods and events, with their descriptions
+logosctl module show my_module
 
 # Stop the daemon when done
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
-> **Note:** The legacy inline mode (`-c "module.method(args)"` / `--quit-on-finish`,
-> which ran calls in one short-lived process) has been removed, as has the
-> `-l/--load-modules` autoload flag — the daemon starts clean and modules are
-> loaded with `load-module`. `-m`/`--persistence-path` configure daemon startup (`-D`).
+Installing does not load a module, and the daemon rescans after an install, so no restart is needed.
 
-**Daemon startup flags:**
+**Commands:**
 
-| Flag                               | Description                                          |
-| ---------------------------------- | ---------------------------------------------------- |
-| `-D`                               | Start the daemon                                     |
-| `-m, --modules-dir <dir>`          | Directory containing module libraries (repeatable)   |
-| `--persistence-path <dir>`         | Base directory for module instance persistence       |
-| `--config-dir <dir>`               | Isolate this daemon's config/state/tokens dir (run multiple instances; the client must use the same `--config-dir`) |
-| `@file.json` (as a `call` arg)     | Pass a file's contents as a method argument          |
+| Command                                 | Description                                        |
+| --------------------------------------- | -------------------------------------------------- |
+| `daemon start [--detach]`               | Start the daemon                                   |
+| `daemon status` (or `status`)           | Show daemon and module health                      |
+| `daemon stop` (or `stop`)               | Stop the daemon                                    |
+| `install FILE.lgx\|NAME -y`             | Install a package from a file or a catalogue       |
+| `package ls`                            | List the packages installed in the session         |
+| `module load\|unload\|reload <name>`    | Load, unload or reload a module                    |
+| `module ls [--loaded]`                  | List available or loaded modules                   |
+| `module show <name>`                    | Methods and events with their descriptions         |
+| `call <module> <method> [args]`         | Call a method on a loaded module                   |
+| `watch <module> [--event NAME]`         | Watch events from a module                         |
+| `stats`                                 | Show module resource usage                         |
 
-**Daemon commands:**
+Arguments to `call` are typed: decimal numbers become numbers, `true`/`false` become booleans, `json:VALUE` passes any JSON value, `str:TEXT` forces a string, and `@file` passes a file's contents. Output is human-readable in a terminal and JSON when piped; `--json` and `--human` force one or the other.
 
-| Command                         | Description                      |
-| ------------------------------- | -------------------------------- |
-| `status`                        | Show daemon and module health    |
-| `load-module <name>`            | Load a module into the daemon    |
-| `unload-module <name>`          | Unload a module                  |
-| `reload-module <name>`          | Reload (unload + load) a module  |
-| `list-modules [--loaded]`       | List available or loaded modules |
-| `module-info <name>`            | Show detailed module information |
-| `call <module> <method> [args]` | Call a method on a loaded module |
-| `watch <module> [--event]`      | Watch events from a module       |
-| `stats`                         | Show module resource usage       |
-| `stop`                          | Stop the daemon                  |
+#### `logoscore`
+
+`logoscore` is the same runtime without package management or sessions: its daemon loads modules straight from a directory (`logoscore -D -m ./modules`) and keeps its state in `~/.logoscore`. It is no longer released. Build it from source with `nix build 'github:logos-co/logos-logoscore-cli#cli'` if you need it; its client commands are the old spellings of the ones above (`load-module`, `module-info`, `list-modules`, `status`, `stop`).
 
 ---
 
@@ -1331,7 +1299,7 @@ logos-cpp-generator --metadata metadata.json --general-only --output-dir ./gener
 > **Why `--events-from` is not optional for a module that has a contract.** A
 > module built with `interface: "universal"` or `"cdylib"` publishes its
 > `getMethods()` metadata in the LIDL contract vocabulary (`tstr`, `[uint]`,
-> `result`) — that listing is what `lm` and `logoscore` show a human, and Qt
+> `result`) — that listing is what `lm` and `logosctl` show a human, and Qt
 > type names would be the wrong answer for a Qt-free module. The wrapper
 > emitter reads Qt type names, so generating from that listing would silently
 > produce a wrapper of `QVariant` / `LogosMap`. It refuses instead, naming the
@@ -1401,7 +1369,7 @@ module as a required dependency drags its whole closure into every consumer of
 it.
 
 **Something else owns the lifetime.** Loading your module does not load these, so
-whatever brings them up — the app, `logoscore -l`, a package manager — has to.
+whatever brings them up — the app, `logosctl module load`, a package manager — has to.
 Write the module so it works when they are absent.
 
 **Bound the call.** A call to a module that is not running costs the full
@@ -1554,7 +1522,7 @@ a claim the caller makes — an unauthorized call never reaches your handler at 
 
 | Arm | Carries | Seen when |
 | --- | --- | --- |
-| `Host` | **nothing** | the runtime itself — including a `logoscore call`, which the daemon relays under the host anchor |
+| `Host` | **nothing** | the runtime itself — including a `logosctl call`, which the daemon relays under the host anchor |
 | `Module` | `name`, optional `instance` | one module calling another |
 | `Derived` | `parent`, `leaf` | a derived identity, e.g. a UI plugin under its module |
 | `Operator` | `name` | a named operator token |
@@ -2070,14 +2038,14 @@ Then run the metrics server alongside your module and point it at you (daemon
 mode passes the JSON arg intact):
 
 ```bash
-# --config-dir isolates this daemon instance (config/state/tokens) from the
-# default ~/.logoscore, so it can run alongside others. -D runs in the
-# foreground, so background it and wait for it to be ready.
-logoscore -D -m <modules-dir> --config-dir /tmp/om &
-until logoscore --config-dir /tmp/om status >/dev/null 2>&1; do sleep 0.2; done
-logoscore --config-dir /tmp/om load-module my_module
-logoscore --config-dir /tmp/om load-module openmetrics
-logoscore --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
+# --config-dir gives this run its own session, apart from the default
+# ~/.logosctl, so it can run alongside others.
+logosctl --config-dir /tmp/om daemon start --detach
+logosctl --config-dir /tmp/om install ./result-lgx-portable/my_module.lgx -y
+logosctl --config-dir /tmp/om install openmetrics -y      # from the catalogue
+logosctl --config-dir /tmp/om module load my_module
+logosctl --config-dir /tmp/om module load openmetrics
+logosctl --config-dir /tmp/om call openmetrics start '{"port":9090,"modules":["my_module"]}'
 curl http://localhost:9090/metrics
 ```
 
@@ -2190,18 +2158,20 @@ lm metadata <plugin-file> [--json]            # View module metadata
 lm methods <plugin-file> [--json]             # List Q_INVOKABLE methods
 ```
 
-### `logoscore` -- Headless Runtime
+### `logosctl` -- Command-Line Runtime
 
 ```bash
-# Daemon mode
-logoscore -D -m <modules-dir>                 # Start daemon
-logoscore load-module <name>                  # Load a module
-logoscore call <module> <method> [args]       # Call a method
-logoscore list-modules [--loaded]             # List modules
-logoscore module-info <name>                  # Show module details
-logoscore status                              # Daemon health
-logoscore stop                                # Stop daemon
+logosctl daemon start --detach                # Start the daemon
+logosctl install <file.lgx|name> -y           # Install a package into the session
+logosctl module load <name>                   # Load a module
+logosctl call <module> <method> [args]        # Call a method
+logosctl module ls [--loaded]                 # List modules
+logosctl module show <name>                   # Show module details
+logosctl daemon status                        # Daemon health
+logosctl daemon stop                          # Stop the daemon
 ```
+
+See [§6.1](#61-running-with-logosctl) and the [Logos CLI reference](https://docs.logos.co/core/reference/logos-cli-reference). `logoscore`, the same runtime without package management, is no longer released.
 
 ### `lgpm` -- Local Package Manager
 
@@ -2289,7 +2259,7 @@ experimental-features = nix-command flakes
 
 ### Module loads but LogosAPI is not available
 
-This happens when running a module outside the full Logos runtime (e.g., in the module viewer). The `LogosAPI` is only available when the module is loaded by `logoscore` or `logos-basecamp`.
+This happens when running a module outside the full Logos runtime (e.g., in the module viewer). The `LogosAPI` is only available when the module is loaded by `logosctl` or `logos-basecamp`.
 
 ### Module not discovered by logos-basecamp
 
@@ -2307,24 +2277,23 @@ Check that:
 
 ### Checking if a module loaded successfully
 
-Use `logoscore` to verify your module loads and its methods are callable:
+Use `logosctl` to verify your module installs, loads and answers:
 
 ```bash
-# Start the daemon (runs in the foreground, so background it and wait)
-./logos/bin/logoscore -D -m ./modules &
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.2; done
+logosctl daemon start --detach
+logosctl install ./result-lgx-portable/my_module.lgx -y
 
-# Check if the module is listed as loaded
-./logos/bin/logoscore list-modules --loaded
+# Load the module and check that it is listed as loaded
+logosctl module load my_module
+logosctl module ls --loaded
 
-# Inspect the module
-./logos/bin/logoscore module-info my_module
-
-# Quick check: load the module, call a method, then stop the daemon
-./logos/bin/logoscore load-module my_module
-./logos/bin/logoscore call my_module greet test
-./logos/bin/logoscore stop
+# Inspect it, call a method, then stop the daemon
+logosctl module show my_module
+logosctl call my_module greet test
+logosctl daemon stop
 ```
+
+If the install fails with `Package does not contain variant for platform`, the package is a `-dev` build: build `.#lgx-portable` instead.
 
 ### UI module `nix run` fails to load dependencies
 

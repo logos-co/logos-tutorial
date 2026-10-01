@@ -1,6 +1,6 @@
 # Tutorial: Wrapping a C Library as a Logos Module
 
-This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.dylib` on macOS) as a Logos module. By the end, you will have a module that compiles, loads, and responds to method calls via `logoscore`.
+This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.dylib` on macOS) as a Logos module. By the end, you will have a module that compiles, loads, and responds to method calls via `logosctl`.
 
 **What you'll build:** A `calc_module` that wraps a tiny C calculator library (`libcalc`), exposing arithmetic functions to the Logos platform. You write a single **plain C++ class** — no Qt, no plugin boilerplate — and the build system generates the Qt plugin around it.
 
@@ -11,7 +11,7 @@ This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.d
 - Which C++ types the code generator maps onto the wire (`std::string`, `int64_t`, `bool`, …)
 - How to emit events from a plain C++ class with `logos_events:`
 - How to build, inspect, and unit-test your module (with the Logos Test Framework)
-- How `logoscore` discovers, loads, and calls your module
+- How `logosctl` installs, loads, and calls your module
 
 ## Prerequisites
 
@@ -345,7 +345,7 @@ That's it — `mkLogosModule` handles all the Nix complexity (fetching Qt, the S
 
 ### 3.4 `src/calc_module_impl.h` — The Module Class
 
-This is the **only interface you write**, and it's plain C++ — no `QObject`, no `Q_INVOKABLE`, no plugin macros, no Qt headers at all. Every `public` method becomes a method other modules (and `logoscore`) can call. The code generator parses this header as text to derive the wire signatures, so keep it to the supported types (see the table below).
+This is the **only interface you write**, and it's plain C++ — no `QObject`, no `Q_INVOKABLE`, no plugin macros, no Qt headers at all. Every `public` method becomes a method other modules (and `logosctl`) can call. The code generator parses this header as text to derive the wire signatures, so keep it to the supported types (see the table below).
 
 We also inherit `LogosModuleContext` so the class can emit events (the `logos_events:` block) and, if needed later, call other modules — without ever touching the raw `LogosAPI`.
 
@@ -373,7 +373,7 @@ public:
     //
     // A doc comment directly above a method becomes that method's
     // `description` in the module's method introspection — surfaced
-    // by `lm`, `logoscore module-info`, and Basecamp's Methods list.
+    // by `lm`, `logosctl module show`, and Basecamp's Methods list.
     // Use `///` (one or more lines) or a `/** ... */` block; the
     // comment's line breaks are preserved. (Plain `//` comments like
     // this block are ignored, so they never leak into the API.)
@@ -410,8 +410,8 @@ public:
     // logos.onModuleEvent("calc_module", "versionReady").
     //
     // A `///` doc comment documents the event too — it surfaces as the
-    // event's `description` alongside methods (`lm events`, `logoscore
-    // module-info`, and Basecamp's Interface screen).
+    // event's `description` alongside methods (`lm events`, `logosctl
+    // module show`, and Basecamp's Interface screen).
 logos_events:
     /// Emitted by libVersionNotify() once the library version is known.
     /// Carries the version string read from libcalc.
@@ -444,7 +444,7 @@ logos_events:
   that language's spelling of the same middle column.
 
 - Use `int64_t` for integers (not `int`) — that's the type the parser recognizes.
-- **Document methods with `///`.** A doc comment (`///` or `/** … */`) directly above a method becomes its `description` in the module's introspection, surfaced by `lm`, `logoscore module-info`, and Basecamp. Plain `//` comments are ignored, so only intentional docs are exposed — you'll see this in action in Step 5.
+- **Document methods with `///`.** A doc comment (`///` or `/** … */`) directly above a method becomes its `description` in the module's introspection, surfaced by `lm`, `logosctl module show`, and Basecamp. Plain `//` comments are ignored, so only intentional docs are exposed — you'll see this in action in Step 5.
 - Events are declared in a `logos_events:` section. The token is recognized by the generator before preprocessing; under a normal compile it just expands to `public`.
 
 ### 3.5 `src/calc_module_impl.cpp` — Implementation
@@ -684,7 +684,7 @@ Three things to notice:
 
 - **Signatures are in LIDL, not C++** (`int`, `tstr`) even though you wrote `int64_t` / `std::string`. `lm` reports what the module *publishes about itself*, and a module publishes its **contract** — so `int64_t add(int64_t, int64_t)` shows up as `add(int,int)`. That is the same vocabulary as the `.lidl` the build derived from your header, and it is the only vocabulary in which this question has one right answer: your module is Qt-free, and a reader in Rust or Nim asking the same module the same question gets the same words back. Note `int` here is LIDL's `int`, which is **64-bit** — each type in the contract maps to exactly one type per language, and integers are 64-bit throughout, so a value that fits your `int64_t` cannot be silently truncated on the way across.
 - **Each `Description` is your doc comment**, carried through the module's method introspection. Plain `//` comments (like the type-mapping note in the header) are deliberately ignored, so only intentional docs surface; an undocumented method simply omits it.
-- **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logoscore module-info` and Basecamp's Methods list.
+- **Line breaks are preserved** — a single-line comment renders inline; a multi-line comment (`factorial`, `libVersion`, `libVersionNotify`) keeps its breaks. The same descriptions appear in `logosctl module show` and Basecamp's Methods list.
 
 ### 5.4 JSON output
 
@@ -748,79 +748,78 @@ void versionReady(tstr version)
 
 Events have no return type (they're fire-and-forget). Running `lm`
 with no subcommand prints metadata, methods, **and** events together.
-The same event docs appear in `logoscore module-info` and Basecamp's
+The same event docs appear in `logosctl module show` and Basecamp's
 Interface screen.
 
 ---
 
-## Step 6: Test with `logoscore`
+## Step 6: Test with `logosctl`
 
-### 6.1 Build logoscore
+### 6.1 Get logosctl
 
-```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
-```
-
-### 6.2 Set up the modules directory
-
-`logoscore` expects modules in subdirectories, each with a `manifest.json`. Rather than copying files and writing the manifest manually, use the Nix derivation to create an LGX package and install it with the package manager:
+`logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build '.#lgx'
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
+```
+
+### 6.2 Package the module
+
+`logosctl` installs modules from LGX packages, which carry the plugin, its libraries and a `manifest.json`. It installs **portable** packages, whose libraries travel with them rather than pointing into the Nix store:
+
+```bash
+nix build '.#lgx-portable' --out-link result-lgx-portable
+```
+
+### 6.3 Start the daemon and install the package
+
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+```bash
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
+```
+
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking:
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+logosctl install ./result-lgx-portable/*.lgx -y
 ```
 
-```bash
-mkdir -p modules
-```
-
-```bash
-./pm/bin/lgpm --modules-dir ./modules install --file result/*.lgx
-```
-
-This extracts the plugin, external libraries, and manifest into the correct directory structure:
+This unpacks the plugin, the external library and the manifest into the session's `modules/` directory:
 
 ```
 modules/calc_module/
 ├── calc_module_plugin.dylib   # (or .so on Linux)
 ├── libcalc.dylib              # (or .so on Linux)
-├── manifest.json              # Auto-generated by lgx
-└── variant                    # Platform variant identifier
+├── assets/lidl/               # The module's interface, in LIDL
+├── manifest.json              # Package manifest
+├── variant                    # Platform variant identifier
+└── ...                        # Runtime libraries bundled by the portable build
 ```
 
-### 6.3 Start the daemon and load the module
-
-Start the daemon and load `calc_module`:
+### 6.4 Load the module
 
 ```bash
-./logos/bin/logoscore -D -m ./modules &
+logosctl module load calc_module
 ```
 
-```bash
-sleep 3
-```
+### 6.5 Inspect methods and events
+
+`module show` lists each method **and event** with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's introspection:
 
 ```bash
-./logos/bin/logoscore load-module calc_module
-```
-
-### 6.4 Inspect methods and events
-
-`module-info` lists each method **and event** with its signature and the doc-comment description you wrote — the same docs `lm` showed, here straight from the module's introspection:
-
-```bash
-./logos/bin/logoscore module-info calc_module
+logosctl module show calc_module
 ```
 
 ```
 Name:          calc_module
 Version:       v1.0.0
 Status:        loaded
-PID:           48213
-Uptime:        3s
 
 Methods:
   add(a: int, b: int) -> int
@@ -842,6 +841,8 @@ Methods:
       The module's name, as declared in its metadata.
   version() -> tstr
       The module's version, as declared in its metadata.
+  lidl() -> tstr
+      The module's canonical LIDL interface document.
 
 Events:
   versionReady(version: tstr)
@@ -853,55 +854,43 @@ Methods and events both show their doc comments (multi-line ones keep
 their line breaks). An undocumented method or event still appears, just
 without the indented description.
 
-### 6.5 Call methods
+### 6.6 Call methods
 
 Now call them:
 
 ```bash
-./logos/bin/logoscore call calc_module add 3 5
+logosctl call calc_module add 3 5
 ```
 
 ```bash
-./logos/bin/logoscore call calc_module factorial 5
+logosctl call calc_module factorial 5
 ```
 
 ```bash
-./logos/bin/logoscore call calc_module fibonacci 10
+logosctl call calc_module fibonacci 10
 ```
 
 ```bash
-./logos/bin/logoscore call calc_module libVersion
+logosctl call calc_module libVersion
 ```
 
 ```bash
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
-> For the full daemon/client workflow and other logoscore options, see the [Developer Guide -- Running with logoscore](logos-developer-guide.md#61-running-with-logoscore).
+> For every command and option, see the [Logos CLI reference](https://docs.logos.co/core/reference/logos-cli-reference).
 
 **What happens under the hood:**
 
-1. `logoscore` scans `./modules/` for subdirectories containing `manifest.json`
-2. It finds `calc_module` and extracts metadata from the plugin binary
-3. It spawns a `logos_host` process that loads `calc_module_plugin.so` (the generated wrapper around your impl class)
-4. `logos_host` calls `initLogos()` on the generated plugin, providing a `LogosAPI*` for inter-module communication
-5. The call command is parsed: module name `calc_module`, method `add`, args `[3, 5]`
-6. `logoscore` sends the call to `logos_host` via Qt Remote Objects (IPC)
-7. The generated glue converts the args and invokes `CalcModuleImpl::add(3, 5)`, which calls `calc_add(3, 5)` from libcalc
-8. The result is returned via IPC to `logoscore`
+1. `logosctl install` unpacks the package into the session's `modules/` directory, and the daemon rescans it
+2. `module load` starts a `logos_host` process that loads `calc_module_plugin` (the generated wrapper around your impl class)
+3. `logos_host` calls `initLogos()` on the generated plugin, providing a `LogosAPI*` for inter-module communication
+4. `call` parses the command: module `calc_module`, method `add`, and the arguments, which become the integers `3` and `5`
+5. `logosctl` sends the call to the daemon, which forwards it to `logos_host` over IPC
+6. The generated glue converts the arguments and invokes `CalcModuleImpl::add(3, 5)`, which calls `calc_add(3, 5)` from libcalc
+7. The result travels back to `logosctl`, which prints it
 
-You'll see debug output like:
-
-```
-Debug: Found plugin: "./modules/calc_module/calc_module_plugin.so"
-Debug: Plugin Metadata:
-Debug:  - Name: "calc_module"
-Debug:  - Version: "1.0.0"
-Debug:  - Description: "Calculator module wrapping libcalc C library"
-Debug: Loading plugin: "calc_module" in separate process
-Debug: Executing call: "calc_module" . "add" with 2 params
-Method call successful. Result: ...
-```
+The daemon writes its log, including every module's output, to `logs/daemon.log` in the session: `session/logs/daemon.log` here.
 
 ---
 
@@ -1101,13 +1090,13 @@ The build compiles your impl (`src/calc_module_impl.cpp`) against the mock libra
 
 ## Package for Distribution (Optional)
 
-The LGX package created in Step 5.2 is a **local** package — its libraries still reference `/nix/store` paths, so it only works on the machine that built it. To create a **portable** package that can be distributed to other machines:
+Step 6 built a **portable** package. The other kind, a **local** (`-dev`) package from `nix build '.#lgx'`, keeps its libraries in `/nix/store`, so it only works on a machine with that store. To build the portable package:
 
 ```bash
 nix build '.#lgx-portable'
 ```
 
-Portable LGX packages are fully self-contained with no `/nix/store` references at runtime. These are the packages used by the Logos App Package Manager UI and published to [logos-modules](https://github.com/logos-co/logos-modules) releases.
+Portable LGX packages are fully self-contained with no `/nix/store` references at runtime. These are the packages that `logosctl` and Basecamp install, and that the [module catalogue](https://github.com/logos-co/logos-modules-release) publishes.
 
 To create both dev and portable variants (the dev variant works with local `nix build` of basecamp; the portable variant works with standalone basecamp builds), use `--out-link` to avoid overwriting the `result` symlink:
 
@@ -1118,14 +1107,13 @@ nix build '.#lgx-portable' --out-link result-lgx-portable
 
 > For more bundling options (standalone bundler syntax, cross-platform packaging), see the [Developer Guide — Bundling with nix-bundle-lgx](logos-developer-guide.md#32-bundling-with-nix-bundle-lgx).
 
-To install a portable package on another machine:
+To install a portable package on another machine, as Step 6 did:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
-./pm/bin/lgpm --modules-dir ./modules install --file result-lgx-portable/*.lgx
+logosctl install ./result-lgx-portable/*.lgx -y
 ```
 
-> **Note:** Local builds of `logoscore` / `logos-basecamp` (via `nix build`) expect **local** `.lgx` packages. Portable builds (via `nix build '.#bin-bundle-dir'`, `.#bin-appimage`, or `.#bin-macos-app`) expect **portable** `.lgx` packages. See the [logos-basecamp README](https://github.com/logos-co/logos-basecamp/blob/master/README.md) for details.
+> **Note:** Released `logosctl` and Basecamp builds install **portable** `.lgx` packages. Development builds made with `nix build` (`logos-logoscore-cli#ctl`, Basecamp's `.#app`) install **local** (`-dev`) ones. See the [logos-basecamp README](https://github.com/logos-co/logos-basecamp/blob/master/README.md) for details.
 
 ## Common Wrapping Patterns
 
@@ -1371,16 +1359,16 @@ Cannot load library calc_module_plugin.so: libcalc.so: cannot open shared object
 If you emit an event (e.g. `versionReady(...)`) but a QML view or another module never receives it:
 
 1. The event must be declared in a `logos_events:` section of the impl header, and your class must inherit `LogosModuleContext`.
-2. The event only fires when the module is loaded by a host (logoscore / basecamp). Constructed standalone (unit tests), emission is a safe no-op — that's expected.
+2. The event only fires when the module is loaded by a host (`logosctl` or Basecamp). Constructed standalone (unit tests), emission is a safe no-op — that's expected.
 3. The subscriber must use the exact event name string, e.g. `logos.onModuleEvent("calc_module", "versionReady")`.
 
-### Plugin not discovered by logoscore
+### `logosctl` cannot find the module
 
 **Check:**
 
-1. The module is in a **subdirectory** of the modules dir (e.g., `modules/calc_module/`)
-2. The subdirectory contains a `manifest.json` with a valid `main` object
-3. The platform key in `main` matches your OS/arch (e.g., `linux-aarch64`, `darwin-arm64`)
+1. It is installed in this session: `logosctl package ls` lists it with the source `user`
+2. The install did not stop at the variant check. `logosctl` installs only the portable variant for its own platform; a `.#lgx` build fails with `Package does not contain variant for platform: … (package provides: …-dev)`, so build `.#lgx-portable`
+3. You load it by the `name` in `metadata.json` (`calc_module`), not by the package file name
 
 ### `nix build .#lib` does nothing or fails silently
 

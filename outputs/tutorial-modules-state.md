@@ -10,7 +10,7 @@ A module can name what it talks to in three ways, and they differ in **who picks
 
 [Composing Modules](tutorial-composing-modules.md) covers the first and [Dependency Interfaces](tutorial-interface-dependencies.md) the third. This tutorial covers the middle one — and the module you reach for once you have it.
 
-`optional_dependencies` is concrete, so you get the same typed wrapper a required dependency gives you. What you give up is the guarantee: nothing brings it up, nothing fails when it is missing, and it is **not bundled** into your package — which is usually the reason to reach for it, because a required dependency drags its whole runtime closure into every consumer of *your* module, including users who will never install it.
+`optional_dependencies` is concrete, so you get the same typed wrapper a required dependency gives you. What you give up is the guarantee: it runs only if it happens to be installed, nothing fails when it is missing, and it is **not bundled** into your package — which is usually the reason to reach for it, because a required dependency drags its whole runtime closure into every consumer of *your* module, including users who will never install it.
 
 What you take on in exchange is having to ask. `modules_state` is the module that answers: a read-only registry of every module the host knows about, and a typed event when one changes state.
 
@@ -80,7 +80,7 @@ rm -f src/minimal_impl.h src/minimal_impl.cpp
 
 `dependencies` is empty and stays empty. Three things follow from putting both names under `optional_dependencies` instead, and all of them are about lifetime:
 
-- the loader **never brings one up**, and never fails a load because one is missing;
+- the loader brings one up **only if it is installed**, and never fails a load because one is missing;
 - unloading one **does not** take its dependents down;
 - neither is **bundled** — consumers of `calc_observer` do not inherit their runtime closures.
 
@@ -283,91 +283,98 @@ git add flake.lock
 nix build
 ```
 
-### 4.2 Package it, and see what is *not* in the box
+### 4.2 Get logosctl
+
+`logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
+```
+
+### 4.3 Package it, and see what is *not* in the box
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:
+
+```bash
+nix build '.#lgx-portable' --out-link obs-lgx
+```
+
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+```bash
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
+```
+
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking:
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-nix build 'github:logos-co/logos-package-manager' --out-link ./pm
+logosctl install ./obs-lgx/*.lgx -y
 ```
 
-```bash
-nix build '.#lgx' --out-link obs-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file obs-lgx/*.lgx
+```text
+The following changes will be made (install):
+  install    calc_observer 1.0.0
+Installed: calc_observer
+Load with: logosctl module load calc_observer
 ```
 
-```bash
-ls modules/
-```
-
-```
-calc_observer
-```
-
-One module. A **required** dependency would be sitting next to it, because installing a package installs what it needs to run. Optional ones are not the package's problem — something else owns their lifetime.
+One package. Installed by name from a catalogue, this table would also list a **required** dependency, because installing a package installs what it needs to run — and would *offer* an optional one, marked `(optional)`: `-y` accepts it, `--no-optional` declines it. A path ending in `.lgx` skips the catalogue and installs exactly that file. Either way, installing only puts files on disk; an optional dependency's lifetime is something else's business.
 
 ---
 
 ## Step 5: Run With the Dependency Missing
 
-`calc_module` is built, but it was never installed into `modules/`. Start the daemon and load `calc_observer` anyway.
+`calc_module` is built, but it is not installed in this tutorial's session. Load `calc_observer` anyway.
 
-### 5.1 Start the daemon
+### 5.1 Load it — and watch the skip get reported
 
-```bash
-./logos/bin/logoscore -D -m ./modules &
-```
+Ask for `--json`: the human-readable summary names only what the load brought up, and this time the interesting part is what it left out.
 
 ```bash
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-```
-
-### 5.2 Load it — and watch the skip get reported
-
-```bash
-./logos/bin/logoscore load-module calc_observer
+logosctl module load calc_observer --json
 ```
 
 ```json
-{"dependencies_loaded":[],"module":"calc_observer",
- "optional_skipped":[{"module":"calc_module","named_by":"calc_observer","reason":"not_installed"}],
- "status":"ok","version":"1.0.0"}
+{"dependencies_loaded":[],"module":"calc_observer","optional_skipped":[{"module":"calc_module","named_by":"calc_observer","reason":"not_installed"}],"status":"ok","version":"1.0.0"}
 ```
 
 **`"status":"ok"`.** A missing optional dependency is not a load failure — but it is not silent either: the skip is reported, with the reason and who asked for it. A required dependency in the same position would have failed the load outright.
 
-Note `modules_state` is not in the skip list. It ships with the runtime and is already there.
+Note `modules_state` is in neither list. It ships with `logosctl`, which loads it when the daemon starts, so it is already there.
 
-### 5.3 Ask the module what it can see
+### 5.2 Ask the module what it can see
 
 ```bash
-./logos/bin/logoscore call calc_observer tryAdd 3 4
+logosctl call calc_observer tryAdd 3 4
 ```
 
-```json
-{"method":"tryAdd","module":"calc_observer","result":"calc_module is not running","status":"ok"}
+```text
+calc_module is not running
 ```
 
 That answer came from `err.code == "object_unavailable"` — and after 1500 ms, not the protocol's full default. The deadline is the point: an absent module is the case that costs you the whole budget.
 
 ```bash
-./logos/bin/logoscore call calc_observer stateOf calc_module
+logosctl call calc_observer stateOf calc_module
 ```
 
-```json
-{"method":"stateOf","module":"calc_observer","result":"absent","status":"ok"}
+```text
+absent
 ```
 
 `absent` — the host has never heard of it. Remember that spelling; it is about to change.
 
 ```bash
-./logos/bin/logoscore call calc_observer ready calc_module
+logosctl call calc_observer ready calc_module
 ```
 
 ```bash
-./logos/bin/logoscore call calc_observer knownModules
+logosctl call calc_observer knownModules
 ```
 
 The listing is not empty even now — the runtime's own modules are in it.
@@ -378,53 +385,44 @@ The listing is not empty even now — the runtime's own modules are in it.
 
 Nothing about `calc_observer` changes. Only its surroundings do.
 
-### 6.1 Install calc_module and restart the daemon
+### 6.1 Install calc_module into the running daemon
 
 ```bash
-nix build 'path:../logos-calc-module#lgx' --out-link calc-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file calc-lgx/*.lgx
+nix build 'path:../logos-calc-module#lgx-portable' --out-link calc-lgx
 ```
 
 ```bash
-# Wait for it to actually be gone — a daemon that is still shutting
-# down will refuse the next one, and you will keep talking to the old
-# one without noticing.
-./logos/bin/logoscore stop
-while ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
+logosctl install ./calc-lgx/*.lgx -y
 ```
 
-```bash
-./logos/bin/logoscore -D -m ./modules &
-```
-
-```bash
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-```
+No restart. The daemon rescans after an install, so the host knows `calc_module` from here on — but installing does not load it.
 
 ### 6.2 Load it again
 
+`calc_observer` is still running from Step 5. Loading it again leaves it running and resolves its dependencies afresh — and this time `calc_module` is installed:
+
 ```bash
-./logos/bin/logoscore load-module calc_observer
+logosctl module load calc_observer --json
 ```
 
 ```json
 {"dependencies_loaded":["calc_module"],"module":"calc_observer","status":"ok","version":"1.0.0"}
 ```
 
-No skip list this time. An optional dependency that *is* installed gets loaded along with its dependant — "optional" governs whether it is **required**, not whether it is wanted.
+No skip list this time. An optional dependency that *is* installed gets loaded along with its dependant — "optional" governs whether it is **required**, not whether it is wanted. (`--no-optional` loads the required dependencies only.)
 
 ### 6.3 The same three questions
 
 ```bash
-./logos/bin/logoscore call calc_observer tryAdd 3 4
+logosctl call calc_observer tryAdd 3 4
 ```
 
 ```bash
-./logos/bin/logoscore call calc_observer stateOf calc_module
+logosctl call calc_observer stateOf calc_module
 ```
 
 ```bash
-./logos/bin/logoscore call calc_observer ready calc_module
+logosctl call calc_observer ready calc_module
 ```
 
 `ready` is the state where the module is loaded **and** has published its object. `loaded` comes earlier — the host owns the process, but there may be nothing to call yet. That gap is why the predicate is spelled `is_ready` and not `isLoaded`.
@@ -432,7 +430,7 @@ No skip list this time. An optional dependency that *is* installed gets loaded a
 > **Read its limit.** `is_ready` answers *the host's* view, not "a call from me will succeed" — that additionally needs a per-caller handshake this module cannot know about, so the predicate goes true a few hundred milliseconds early. Treat a **yes** as reliable and a **no** as a hint, never the other way round.
 
 ```bash
-./logos/bin/logoscore call calc_observer stateOf nope
+logosctl call calc_observer stateOf nope
 ```
 
 A name the host has never heard of is still `absent`, of course.
@@ -446,35 +444,35 @@ The last thing an optional dependency has to survive is disappearing while you a
 ### 7.1 Subscribe to the registry's event
 
 ```bash
-./logos/bin/logoscore call calc_observer watchTransitions
+logosctl call calc_observer watchTransitions
 ```
 
 ```bash
-./logos/bin/logoscore call calc_observer lastTransition
+logosctl call calc_observer lastTransition
 ```
 
 ### 7.2 Unload calc_module out from under it
 
 ```bash
-./logos/bin/logoscore unload-module calc_module
+logosctl module unload calc_module --json
 ```
 
 ```json
 {"dependents_unloaded":[],"module":"calc_module","status":"ok"}
 ```
 
-**`"dependents_unloaded":[]`** — `calc_observer` is still running. Had this been a required dependency, it would have gone down with it. That is the whole bargain: you gave up the guarantee, and in return nothing else's lifetime is chained to yours.
+**`"dependents_unloaded":[]`** — `calc_observer` is still running. `module unload` takes a module's dependents down with it by default, so had this been a required dependency, `calc_observer` would be in that list. That is the whole bargain: you gave up the guarantee, and in return nothing else's lifetime is chained to yours.
 
 ```bash
 sleep 2
 ```
 
 ```bash
-./logos/bin/logoscore call calc_observer lastTransition
+logosctl call calc_observer lastTransition
 ```
 
-```json
-{"method":"lastTransition","module":"calc_observer","result":"calc_module: stopping -> unloaded","status":"ok"}
+```text
+calc_module: stopping -> unloaded
 ```
 
 The typed subscription saw the transition as a **pair** — where it came from and where it went. A consumer that only cares that something went away reads `new_state`; one that cares whether it was orderly reads both.
@@ -482,23 +480,23 @@ The typed subscription saw the transition as a **pair** — where it came from a
 ### 7.3 `unloaded` is not `absent`
 
 ```bash
-./logos/bin/logoscore call calc_observer stateOf calc_module
+logosctl call calc_observer stateOf calc_module
 ```
 
-```json
-{"method":"stateOf","module":"calc_observer","result":"unloaded","status":"ok"}
+```text
+unloaded
 ```
 
 Compare that with Step 5, where the same call answered `absent`. **`unloaded` means known and installed but not running; `absent` means the host has never heard of it.** An installer can act on the first and not the second, which is why they are not the same word.
 
 ```bash
-./logos/bin/logoscore call calc_observer tryAdd 3 4
+logosctl call calc_observer tryAdd 3 4
 ```
 
 And the call fails the same way it did at the start — bounded, named, and survivable.
 
 ```bash
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
 ---

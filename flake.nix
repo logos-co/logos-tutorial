@@ -6,7 +6,6 @@
   inputs = {
     logos-package.url = "github:logos-co/logos-package";
     logos-logoscore-cli.url = "github:logos-co/logos-logoscore-cli";
-    logos-package-manager.url = "github:logos-co/logos-package-manager";
     logos-module-builder.url = "github:logos-co/logos-module-builder";
   };
 
@@ -14,7 +13,7 @@
   # cross-built here instead, under the same name X: logos-windows-ci stages
   # target X as X/, and the spec's ./X/... paths hold on both legs. Windows has
   # no Nix store, so every target is the portable build.
-  outputs = { logos-package, logos-logoscore-cli, logos-package-manager, logos-module-builder, ... }:
+  outputs = { logos-package, logos-logoscore-cli, logos-module-builder, ... }:
     let
       # The modules the tutorials write, built from their committed outputs/.
       module = dir: deps: logos-module-builder.lib.mkLogosModule {
@@ -27,8 +26,7 @@
     in {
       packages.x86_64-windows = {
         lgx = logos-package.packages.x86_64-windows.lgx;
-        logos = logos-logoscore-cli.packages.x86_64-windows.cli-bundle-dir;
-        pm = logos-package-manager.packages.x86_64-windows.cli-portable;
+        logosctl = logos-logoscore-cli.packages.x86_64-windows.ctl-bundle-dir;
         g-lgx = calc_guarded.packages.x86_64-windows.lgx-portable;
         a-lgx = calc_agent.packages.x86_64-windows.lgx-portable;
       };

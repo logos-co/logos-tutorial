@@ -626,22 +626,25 @@ The async examples return to the event loop and are polled from a later call;
 shared callback state is protected by a mutex. Finish one async probe before
 starting another in the Rust example.
 
-## Step 4: Build and install both modules
+## Step 4: Build both modules
+
+### 4.1 Get logosctl
+
+The modules run in `logosctl`. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
 ```
 
-```bash
-nix build 'github:logos-co/logos-package-manager' --out-link ./pm
-```
+### 4.2 Package both modules
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:
 
 ```bash
 set -eu
-(cd cpp && git init -q && git add -A && nix build .#lgx --out-link result-lgx)
-(cd rust && git init -q && git add -A && nix build .#lgx --out-link result-lgx)
-./pm/bin/lgpm --modules-dir ./modules install --file cpp/result-lgx/*.lgx
-./pm/bin/lgpm --modules-dir ./modules install --file rust/result-lgx/*.lgx
+(cd cpp && git init -q && git add -A && nix build .#lgx-portable --out-link result-lgx-portable)
+(cd rust && git init -q && git add -A && nix build .#lgx-portable --out-link result-lgx-portable)
 
 ```
 
@@ -649,8 +652,8 @@ set -eu
 
 ## Step 5: Exercise every type and both calling directions
 
-This driver starts an isolated daemon, loads both modules, and compares every
-`--json` result with its input. The `json:` argument prefix preserves arrays,
+This driver starts a daemon in its own session (`./session`), installs and
+loads both modules, and compares every `--json` result with its input. The `json:` argument prefix preserves arrays,
 objects, null and literal strings without scalar coercion. It also checks empty values and optional
 presence, then calls Rust from C++ and C++ from Rust for synchronous and
 asynchronous success, domain errors and timeouts. It stops the daemon even if a
@@ -659,9 +662,9 @@ check fails. Python 3 is used only for these assertions.
 For an individual call in a running daemon, the equivalent commands are:
 
 ```bash
-./logos/bin/logoscore --config-dir ./.logoscore call api_cpp echoBytes 'json:{"_bytes":"AAH_"}'
-./logos/bin/logoscore --config-dir ./.logoscore call api_rust echoIntList 'json:[-2,0,3]'
-./logos/bin/logoscore --config-dir ./.logoscore call api_cpp checkCalls api_rust
+logosctl call api_cpp echoBytes 'json:{"_bytes":"AAH_"}'
+logosctl call api_rust echoIntList 'json:[-2,0,3]'
+logosctl call api_cpp checkCalls api_rust
 ```
 
 ### 5.1 `check_examples.py`
@@ -673,7 +676,7 @@ import time
 from pathlib import Path
 
 root = Path(__file__).resolve().parent
-cli = [str(root / "logos/bin/logoscore"), "--json", "--config-dir", str(root / ".logoscore")]
+cli = [str(root / "logosctl/bin/logosctl"), "--json", "--config-dir", str(root / "session")]
 
 def command(*args):
     result = subprocess.run(cli + list(args), text=True, capture_output=True, timeout=30)
@@ -720,48 +723,33 @@ cases = [['echoString', 'hello Logos'],
  ['echoBytes', {'_bytes': ''}],
  ['echoEntry', {'label': 'absent', 'payload': {'_bytes': ''}}]]
 
-with (root / "daemon.log").open("w") as log:
-    daemon = subprocess.Popen(cli + ["-D", "-m", str(root / "modules")],
-                              stdout=log, stderr=subprocess.STDOUT)
-    try:
+# --detach returns once the daemon accepts commands; packages install
+# into its session, so it starts first.
+command("daemon", "start", "--detach")
+try:
+    packages = sorted(str(p) for p in root.glob("*/result-lgx-portable/*.lgx"))
+    command("install", *packages, "-y")
+    for module in ("api_cpp", "api_rust"):
+        command("module", "load", module)
+    for module in ("api_cpp", "api_rust"):
+        for method, value in cases:
+            arg = "json:" + json.dumps(value, separators=(",", ":"))
+            actual = call(module, method, arg)
+            assert actual == value, (module, method, value, actual)
+        print(f"{module}: {len(cases)} type round trips passed")
+    # Each caller runs against the provider written in the OTHER language.
+    for caller, provider in (("api_cpp", "api_rust"), ("api_rust", "api_cpp")):
+        assert call(caller, "checkCalls", provider) == "sync checks passed"
+        assert call(caller, "startAsync", provider) == "started"
         for attempt in range(100):
-            try:
-                command("status")
+            status = call(caller, "asyncStatus")
+            if status != "pending":
                 break
-            except (RuntimeError, subprocess.TimeoutExpired):
-                if daemon.poll() is not None:
-                    raise RuntimeError("daemon exited; read daemon.log")
-                time.sleep(0.2)
-        else:
-            raise RuntimeError("daemon did not become ready")
-        for module in ("api_cpp", "api_rust"):
-            command("load-module", module)
-        for module in ("api_cpp", "api_rust"):
-            for method, value in cases:
-                arg = "json:" + json.dumps(value, separators=(",", ":"))
-                actual = call(module, method, arg)
-                assert actual == value, (module, method, value, actual)
-            print(f"{module}: {len(cases)} type round trips passed")
-        # Each caller runs against the provider written in the OTHER language.
-        for caller, provider in (("api_cpp", "api_rust"), ("api_rust", "api_cpp")):
-            assert call(caller, "checkCalls", provider) == "sync checks passed"
-            assert call(caller, "startAsync", provider) == "started"
-            for attempt in range(100):
-                status = call(caller, "asyncStatus")
-                if status != "pending":
-                    break
-                time.sleep(0.1)
-            assert status == "async checks passed", (caller, status)
-            print(f"{caller} -> {provider}: sync and async checks passed")
-    finally:
-        try:
-            command("stop")
-        finally:
-            try:
-                daemon.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                daemon.terminate()
-                daemon.wait(timeout=10)
+            time.sleep(0.1)
+        assert status == "async checks passed", (caller, status)
+        print(f"{caller} -> {provider}: sync and async checks passed")
+finally:
+    command("daemon", "stop")
 ```
 
 ```bash

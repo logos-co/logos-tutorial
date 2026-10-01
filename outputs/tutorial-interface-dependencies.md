@@ -1,6 +1,6 @@
 # Tutorial: Dependency Interfaces — Bind a Module by Contract
 
-This tutorial builds `calc_via_interface`, a **core module that depends on an *interface*, not a concrete module**. Instead of naming `calc_module` (from [Part 1](tutorial-wrapping-c-library.md)) as a dependency and getting a fixed `modules().calc_module` wrapper, it declares a small **`calculator` interface** — a list of methods and one event — and **binds that interface to a module name chosen at runtime**. Any module whose API is a *superset* of the interface can satisfy it; `calc_module` is one such provider. You drive the whole thing from `logoscore` on the command line.
+This tutorial builds `calc_via_interface`, a **core module that depends on an *interface*, not a concrete module**. Instead of naming `calc_module` (from [Part 1](tutorial-wrapping-c-library.md)) as a dependency and getting a fixed `modules().calc_module` wrapper, it declares a small **`calculator` interface** — a list of methods and one event — and **binds that interface to a module name chosen at runtime**. Any module whose API is a *superset* of the interface can satisfy it; `calc_module` is one such provider. You drive the whole thing from `logosctl` on the command line.
 
 **What you'll build:** A `calc_via_interface` core module that:
 
@@ -206,7 +206,7 @@ Because there is no concrete dependency, the only input is the builder itself. (
 
 ## Step 4: Write the Module Class
 
-The module is one plain C++ class inheriting `LogosModuleContext` — that base gives it `modules()`, through which the generated `bind_calculator(name)` factory is reachable. Each method takes the **provider module name** as its first argument, so we can bind to different modules at runtime from `logoscore`.
+The module is one plain C++ class inheriting `LogosModuleContext` — that base gives it `modules()`, through which the generated `bind_calculator(name)` factory is reachable. Each method takes the **provider module name** as its first argument, so we can bind to different modules at runtime from `logosctl`.
 
 ### 4.1 `src/calc_via_interface_impl.h` — the class
 
@@ -417,36 +417,30 @@ Every `public` method is here, published in the **LIDL contract** vocabulary rat
 
 ---
 
-## Step 7: Run it with `logoscore`
+## Step 7: Run it with `logosctl`
 
-Now the payoff: run `calc_via_interface` and bind its `calculator` interface to the real `calc_module` from Part 1. We use the `logoscore` **daemon** (`-D`) so module processes stay alive between `call` commands — needed for the async reply and the event subscription to survive from one call to the next. (Same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logoscore) and [Composing Modules](tutorial-composing-modules.md#run-it-with-logoscore).)
+Now the payoff: run `calc_via_interface` and bind its `calculator` interface to the real `calc_module` from Part 1. `logosctl` drives a **daemon** that keeps module processes alive between `call` commands — needed for the async reply and the event subscription to survive from one call to the next. (Same daemon flow as [Part 1](tutorial-wrapping-c-library.md#step-6-test-with-logosctl) and [Composing Modules](tutorial-composing-modules.md#step-6-run-it-with-logosctl).)
 
-### 7.1 Build the runtime and package both modules
+### 7.1 Get logosctl
 
-Build `logoscore` and the package manager, then install **both** modules into a `modules/` directory. `calc_via_interface` comes from this project; `calc_module` from your Part 1 checkout — it is the *provider* we bind to, even though this module never declared it:
-
-```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
-```
+`logosctl` runs modules from the command line. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-package-manager#cli' --out-link ./pm
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
 ```
+
+### 7.2 Package calc_via_interface
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store. Package **both** modules: `calc_via_interface` comes from this project; `calc_module` from your Part 1 checkout — it is the *provider* we bind to, even though this module never declared it:
 
 ```bash
-mkdir -p modules
+nix build '.#lgx-portable' --out-link result-iface-lgx
 ```
 
-### 7.2 Install calc_via_interface
+### 7.3 Package calc_module (the runtime provider)
 
-```bash
-nix build '.#lgx' --out-link result-iface-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file result-iface-lgx/*.lgx
-```
-
-### 7.3 Install calc_module (the runtime provider)
-
-Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)), then package and install it:
+Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)), then package it:
 
 ```bash
 # Build libcalc if needed (Part 1, Step 1.5):
@@ -457,56 +451,65 @@ cd -
 ```
 
 ```bash
-nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx
+nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx
 ```
 
-`modules/` now holds `calc_via_interface/` and `calc_module/`. Neither knows about the other at build time — they meet only at runtime, through the interface.
+### 7.4 Start the daemon and install both
 
-### 7.4 Start the daemon and load both modules
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
 
 ```bash
-./logos/bin/logoscore -D -m ./modules &
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
 ```
 
-```bash
-sleep 4
-```
-
-Load the provider and the consumer. The consumer declares no dependency, so we load `calc_module` explicitly:
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking:
 
 ```bash
-./logos/bin/logoscore load-module calc_module
+logosctl daemon start --detach
 ```
 
 ```bash
-./logos/bin/logoscore load-module calc_via_interface
+logosctl install ./result-iface-lgx/*.lgx ./result-calc-lgx/*.lgx -y
 ```
 
-### 7.5 Bind and call synchronously
+The session's `modules/` directory now holds `calc_via_interface/` and `calc_module/`. Neither knows about the other at build time — they meet only at runtime, through the interface.
+
+### 7.5 Load both modules
+
+Load the provider and the consumer. The consumer declares no dependency, so loading it does not bring `calc_module` up — we load `calc_module` explicitly:
+
+```bash
+logosctl module load calc_module
+```
+
+```bash
+logosctl module load calc_via_interface
+```
+
+### 7.6 Bind and call synchronously
 
 `sumVia` / `productVia` / `versionVia` each bind `calculator` to the module name you pass, then call through the bound wrapper. Bind to `calc_module`:
 
 ```bash
-./logos/bin/logoscore call calc_via_interface sumVia calc_module 3 5
+logosctl call calc_via_interface sumVia calc_module 3 5
 ```
 
 ```bash
-./logos/bin/logoscore call calc_via_interface productVia calc_module 3 5
+logosctl call calc_via_interface productVia calc_module 3 5
 ```
 
 ```bash
-./logos/bin/logoscore call calc_via_interface versionVia calc_module
+logosctl call calc_via_interface versionVia calc_module
 ```
 
 `sumVia(calc_module, 3, 5) = 8`, `productVia(calc_module, 3, 5) = 15`, and `versionVia(calc_module) = "1.0.0"` — all through `modules().bind_calculator("calc_module")`, with `calc_module` chosen at call time.
 
-### 7.6 Bind and call asynchronously
+### 7.7 Bind and call asynchronously
 
 `startFibVia` fires `calculator.fibonacci(n)` asynchronously against the bound module and returns `"queued"`. The reply arrives on the daemon's event loop; `lastFib()` reads it. With `n = 20`, `fib(20) = 6765`:
 
 ```bash
-./logos/bin/logoscore call calc_via_interface startFibVia calc_module 20
+logosctl call calc_via_interface startFibVia calc_module 20
 ```
 
 ```bash
@@ -514,21 +517,21 @@ sleep 1
 ```
 
 ```bash
-./logos/bin/logoscore call calc_via_interface lastFib
+logosctl call calc_via_interface lastFib
 ```
 
 The bound wrapper's generated `fibonacciAsync(..., callback)` delivered `6765` to the callback after `startFibVia` had already returned — the typed **async** path, over a runtime-bound interface.
 
-### 7.7 Subscribe to a bound interface event
+### 7.8 Subscribe to a bound interface event
 
 `watchVersion` subscribes to the interface's `versionReady` event on the bound module. `calc_module.libVersionNotify()` makes `calc_module` emit it, and `lastVersion()` reads what the typed callback captured:
 
 ```bash
-./logos/bin/logoscore call calc_via_interface watchVersion calc_module
+logosctl call calc_via_interface watchVersion calc_module
 ```
 
 ```bash
-./logos/bin/logoscore call calc_module libVersionNotify
+logosctl call calc_module libVersionNotify
 ```
 
 ```bash
@@ -536,23 +539,43 @@ sleep 1
 ```
 
 ```bash
-./logos/bin/logoscore call calc_via_interface lastVersion
+logosctl call calc_via_interface lastVersion
 ```
 
 `watchVersion` registered the callback via the generated `onVersionReady(...)`; the event fired in between; `lastVersion()` returned `1.0.0` — a typed event subscription on a runtime-bound interface.
 
-### 7.8 Bind to a non-satisfying module (the no-validation rule)
+### 7.9 Bind to a non-satisfying module (the no-validation rule)
 
-Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving. `sumVia` checks the wrapper's `logos::CallError` out-parameter (see its implementation above) and returns `-1` when the inner call fails; on a transport that fails slowly the outer call may instead time out (`RPC_FAILED` / `"status":"error"`). Either way `calc_module` keeps answering (we keep going with `|| true` so the tour continues):
+Binding does **not** validate that the target satisfies the interface — there is no build-time coupling to check against. A bad bind isn't caught at bind time; it surfaces when you **call** through it — no crash, and the daemon keeps serving:
 
 ```bash
-./logos/bin/logoscore call calc_via_interface sumVia no_such_module 3 5 2>&1 || true
+logosctl call calc_via_interface sumVia no_such_module 3 5
 ```
 
-The bound `no_such_module` couldn't be resolved, so the inner `add` call failed — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention; a call without the out-parameter would get the type's default value plus a warning in the module log. Swapping providers is just changing the string: `sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
+The bound `no_such_module` isn't loaded, so the inner `add` call fails — exactly like any other call to an absent module. No crash, no conformance check. Because `sumVia` passes a `logos::CallError*`, it *sees* the failure (`err.code == "object_unavailable"`) and maps it to its own error convention:
+
+```text
+-1
+```
+
+A call without the out-parameter would get the type's default value plus a warning in the module log.
+
+Expect the call to take about 20 seconds, and the `-1` may not reach you. A call to a module that is not loaded waits up to 20 seconds for it to appear (the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?`), and the outer call has its own 20-second limits, which started first. When one of those runs out before the `-1` arrives, `logosctl` reports the outer call as failed, with exit code 4:
+
+```text
+Error: callModuleMethod('calc_via_interface','sumVia') RPC call failed.
+```
+
+The daemon is still serving. Swapping providers is just changing the string:
 
 ```bash
-./logos/bin/logoscore stop
+logosctl call calc_via_interface sumVia calc_module 3 5
+```
+
+`sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` fails. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
+
+```bash
+logosctl daemon stop
 ```
 
 That completes the tour: a single interface, bound at runtime to a concrete module, driven type-safely for sync calls, async calls, and events — with no build-time dependency on the provider.
@@ -588,7 +611,7 @@ That's the full picture. An interface is a contract you can keep local or share 
 
 ## Recap
 
-| Concept                          | In the code                                              | Seen via `logoscore`                                |
+| Concept                          | In the code                                              | Seen via `logosctl`                                 |
 | -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
 | Interface declaration            | `interfaces/calculator.h` (methods + `logos_events:`)    | —                                                   |
 | Declared, not depended-on        | `interface_dependencies` set, `dependencies: []`         | `lm metadata` shows empty `Dependencies:`           |
@@ -596,7 +619,7 @@ That's the full picture. An interface is a contract you can keep local or share 
 | Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                  |
 | Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                               |
 | Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                            |
-| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → RPC error   |
+| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `-1` or an RPC timeout, after ~20 s |
 | Share across repos               | `interface_dependencies[].input` + flake input           | —                                                   |
 
 The interface coupled `calc_via_interface` to a *contract*, never to `calc_module`. Any module exposing that contract can be bound in its place — at runtime, by name.

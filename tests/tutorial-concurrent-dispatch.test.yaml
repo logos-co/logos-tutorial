@@ -37,13 +37,18 @@ sections:
   - title: "Build the Tools"
     step: true
     text: |
-      Both modules are driven from `logoscore`, and installed with `lgpm`. Create a working directory and build them first:
+      Both modules are installed into `logosctl` and driven from it. Create a working directory first:
 
       `mkdir logos-calc-concurrent && cd logos-calc-concurrent`
     steps:
-      - title: "Build logoscore and the package manager"
-        run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"
-      - run: "nix build 'github:logos-co/logos-package-manager{release}' --out-link ./pm"
+      - title: "Get logosctl"
+        text: |
+          If you installed `logosctl` from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
+        run: "nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl"
+        code_block: |
+          nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl
+          export PATH="$PWD/logosctl/bin:$PATH"
+        check_file: "logosctl/bin/logosctl{exe}"
 
   # ── Step 2: the worker ──────────────────────────────────────────────────────
   - title: "The Concurrent Worker (`calc_slow`)"
@@ -313,53 +318,65 @@ sections:
   - title: "Measure the Overlap"
     step: true
     text: |
-      Install both modules and drive them from a `logoscore` daemon.
+      Install both modules into a `logosctl` daemon and drive them from it.
     steps:
-      - title: "Install both modules"
-        run: "sh -c 'nix build path:./slow-worker#lgx --out-link worker-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx'"
+      - title: "Package both modules"
+        text: |
+          `logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:
+        run: "nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx && nix build 'path:./fanout-driver#lgx-portable' --out-link driver-lgx"
         code_block: |
-          nix build 'path:./slow-worker#lgx' --out-link worker-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx
-      - run: "sh -c 'nix build path:./fanout-driver#lgx --out-link driver-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file driver-lgx/*.lgx'"
-        code_block: |
-          nix build 'path:./fanout-driver#lgx' --out-link driver-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file driver-lgx/*.lgx
+          nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx
+          nix build 'path:./fanout-driver#lgx-portable' --out-link driver-lgx
 
-      - title: "Start the daemon and load both"
-        run: "./logos/bin/logoscore -D -m ./modules &"
-        code_block: |
-          ./logos/bin/logoscore -D -m ./modules &
-      - run: "until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done"
-        code_block: |
-          until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-      - run: "./logos/bin/logoscore load-module calc_slow"
-      - run: "./logos/bin/logoscore load-module calc_fanout"
+      - title: "Start the daemon and install both"
+        text: |
+          This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+          ```bash
+          export LOGOSCTL_CONFIG_DIR="$PWD/session"
+          ```
+
+          `--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking.
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session install ./worker-lgx/*.lgx ./driver-lgx/*.lgx -y"
+        code_block: "logosctl install ./worker-lgx/*.lgx ./driver-lgx/*.lgx -y"
+        expect_contains:
+          - "calc_slow"
+          - "calc_fanout"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_fanout"
+        code_block: "logosctl module load calc_fanout"
+        post_text: |
+          Loading `calc_fanout` brings `calc_slow` up with it — it is a required dependency.
 
       - title: "Fan out four two-second calls"
         text: |
           Four calls, two seconds of blocking each. Serialized that is eight seconds; overlapped it is two:
-        run: "./logos/bin/logoscore call calc_fanout fanOut 4 2000"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_fanout fanOut 4 2000"
+        code_block: "logosctl call calc_fanout fanOut 4 2000"
         expect_contains:
           - "fired 4"
         post_text: |
-          ```json
-          {"method":"fanOut","module":"calc_fanout","result":"fired 4","status":"ok"}
+          ```text
+          fired 4
           ```
 
           The call returned at once — `fanOut` never waited for a reply. Give the work time to finish, then ask the worker what it saw:
       - run: "sleep 4"
-      - run: "./logos/bin/logoscore call calc_slow peak"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_slow peak"
+        code_block: "logosctl call calc_slow peak"
         expect_contains:
-          - '"result":4'
+          - "4"
         post_text: |
-          ```json
-          {"method":"peak","module":"calc_slow","result":4,"status":"ok"}
+          ```text
+          4
           ```
 
           **Four calls were in flight at once.** All four replies came back too:
-      - run: "./logos/bin/logoscore call calc_fanout repliesSeen"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_fanout repliesSeen"
+        code_block: "logosctl call calc_fanout repliesSeen"
         expect_contains:
-          - '"result":4'
+          - "4"
 
   # ── Step 5: the contrast ────────────────────────────────────────────────────
   - title: "Take the Key Away"
@@ -445,44 +462,53 @@ sections:
             }
 
       - title: "Rebuild, reinstall, re-measure"
-        run: "sh -c './logos/bin/logoscore stop; cd slow-worker && git add -A && nix build && cd .. && rm -rf modules/calc_slow && nix build path:./slow-worker#lgx --out-link worker-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx'"
+        text: |
+          Stop the daemon, so the second measurement starts from fresh counters, and rebuild the worker's package:
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
+      - run: "sh -c 'cd slow-worker && git add -A && nix build' && nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx"
         code_block: |
-          ./logos/bin/logoscore stop
-
           (cd slow-worker && git add -A && nix build)
-          rm -rf modules/calc_slow
-          nix build 'path:./slow-worker#lgx' --out-link worker-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx
-      - run: "./logos/bin/logoscore -D -m ./modules &"
-        code_block: |
-          ./logos/bin/logoscore -D -m ./modules &
-      - run: "until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done"
-        code_block: |
-          until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-      - run: "./logos/bin/logoscore load-module calc_slow"
-      - run: "./logos/bin/logoscore load-module calc_fanout"
+          nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx
+      - text: |
+          Start a fresh daemon, reinstall the worker over the one in the session, and load the driver again:
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session install ./worker-lgx/*.lgx -y"
+        code_block: "logosctl install ./worker-lgx/*.lgx -y"
+        expect_contains:
+          - "reinstall"
+          - "calc_slow"
+        post_text: |
+          The version has not changed, so `logosctl` lists this as a `reinstall`: the rebuilt package replaces the one already in the session.
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_fanout"
+        code_block: "logosctl module load calc_fanout"
       - title: "The same fan-out, serialized"
-        run: "./logos/bin/logoscore call calc_fanout fanOut 4 2000"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_fanout fanOut 4 2000"
+        code_block: "logosctl call calc_fanout fanOut 4 2000"
         expect_contains:
           - "fired 4"
         post_text: |
           Eight seconds of work this time, not two, so wait longer before reading the counter:
       - run: "sleep 12"
-      - run: "./logos/bin/logoscore call calc_slow peak"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_slow peak"
+        code_block: "logosctl call calc_slow peak"
         expect_contains:
-          - '"result":1'
+          - "1"
         post_text: |
-          ```json
-          {"method":"peak","module":"calc_slow","result":1,"status":"ok"}
+          ```text
+          1
           ```
 
           **Peak 1.** The driver still fired all four at once — and all four still completed:
-      - run: "./logos/bin/logoscore call calc_fanout repliesSeen"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_fanout repliesSeen"
+        code_block: "logosctl call calc_fanout repliesSeen"
         expect_contains:
-          - '"result":4'
+          - "4"
         post_text: |
           Same driver, same calls, same replies. One metadata key decided whether they overlapped.
-      - run: "./logos/bin/logoscore stop"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
 
   # ── Recap ───────────────────────────────────────────────────────────────────
   - title: "Recap"

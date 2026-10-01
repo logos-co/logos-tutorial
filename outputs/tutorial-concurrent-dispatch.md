@@ -33,18 +33,17 @@ The driver is single-threaded, yet it drives the worker concurrently — because
 
 ## Step 1: Build the Tools
 
-Both modules are driven from `logoscore`, and installed with `lgpm`. Create a working directory and build them first:
+Both modules are installed into `logosctl` and driven from it. Create a working directory first:
 
 `mkdir logos-calc-concurrent && cd logos-calc-concurrent`
 
-### 1.1 Build logoscore and the package manager
+### 1.1 Get logosctl
+
+If you installed `logosctl` from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
-```
-
-```bash
-nix build 'github:logos-co/logos-package-manager' --out-link ./pm
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
 ```
 
 ---
@@ -317,48 +316,51 @@ nix build
 
 ## Step 4: Measure the Overlap
 
-Install both modules and drive them from a `logoscore` daemon.
+Install both modules into a `logosctl` daemon and drive them from it.
 
-### 4.1 Install both modules
+### 4.1 Package both modules
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:
 
 ```bash
-nix build 'path:./slow-worker#lgx' --out-link worker-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx
+nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx
+nix build 'path:./fanout-driver#lgx-portable' --out-link driver-lgx
+```
+
+### 4.2 Start the daemon and install both
+
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+```bash
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
+```
+
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking.
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-nix build 'path:./fanout-driver#lgx' --out-link driver-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file driver-lgx/*.lgx
-```
-
-### 4.2 Start the daemon and load both
-
-```bash
-./logos/bin/logoscore -D -m ./modules &
+logosctl install ./worker-lgx/*.lgx ./driver-lgx/*.lgx -y
 ```
 
 ```bash
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
+logosctl module load calc_fanout
 ```
 
-```bash
-./logos/bin/logoscore load-module calc_slow
-```
-
-```bash
-./logos/bin/logoscore load-module calc_fanout
-```
+Loading `calc_fanout` brings `calc_slow` up with it — it is a required dependency.
 
 ### 4.3 Fan out four two-second calls
 
 Four calls, two seconds of blocking each. Serialized that is eight seconds; overlapped it is two:
 
 ```bash
-./logos/bin/logoscore call calc_fanout fanOut 4 2000
+logosctl call calc_fanout fanOut 4 2000
 ```
 
-```json
-{"method":"fanOut","module":"calc_fanout","result":"fired 4","status":"ok"}
+```text
+fired 4
 ```
 
 The call returned at once — `fanOut` never waited for a reply. Give the work time to finish, then ask the worker what it saw:
@@ -368,17 +370,17 @@ sleep 4
 ```
 
 ```bash
-./logos/bin/logoscore call calc_slow peak
+logosctl call calc_slow peak
 ```
 
-```json
-{"method":"peak","module":"calc_slow","result":4,"status":"ok"}
+```text
+4
 ```
 
 **Four calls were in flight at once.** All four replies came back too:
 
 ```bash
-./logos/bin/logoscore call calc_fanout repliesSeen
+logosctl call calc_fanout repliesSeen
 ```
 
 ---
@@ -466,35 +468,37 @@ pub extern "Rust" fn logos_module_install() {
 
 ### 5.3 Rebuild, reinstall, re-measure
 
-```bash
-./logos/bin/logoscore stop
+Stop the daemon, so the second measurement starts from fresh counters, and rebuild the worker's package:
 
+```bash
+logosctl daemon stop
+```
+
+```bash
 (cd slow-worker && git add -A && nix build)
-rm -rf modules/calc_slow
-nix build 'path:./slow-worker#lgx' --out-link worker-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file worker-lgx/*.lgx
+nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx
+```
+
+Start a fresh daemon, reinstall the worker over the one in the session, and load the driver again:
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-./logos/bin/logoscore -D -m ./modules &
+logosctl install ./worker-lgx/*.lgx -y
 ```
 
-```bash
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-```
+The version has not changed, so `logosctl` lists this as a `reinstall`: the rebuilt package replaces the one already in the session.
 
 ```bash
-./logos/bin/logoscore load-module calc_slow
-```
-
-```bash
-./logos/bin/logoscore load-module calc_fanout
+logosctl module load calc_fanout
 ```
 
 ### 5.4 The same fan-out, serialized
 
 ```bash
-./logos/bin/logoscore call calc_fanout fanOut 4 2000
+logosctl call calc_fanout fanOut 4 2000
 ```
 
 Eight seconds of work this time, not two, so wait longer before reading the counter:
@@ -504,23 +508,23 @@ sleep 12
 ```
 
 ```bash
-./logos/bin/logoscore call calc_slow peak
+logosctl call calc_slow peak
 ```
 
-```json
-{"method":"peak","module":"calc_slow","result":1,"status":"ok"}
+```text
+1
 ```
 
 **Peak 1.** The driver still fired all four at once — and all four still completed:
 
 ```bash
-./logos/bin/logoscore call calc_fanout repliesSeen
+logosctl call calc_fanout repliesSeen
 ```
 
 Same driver, same calls, same replies. One metadata key decided whether they overlapped.
 
 ```bash
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
 ---

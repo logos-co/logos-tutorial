@@ -13,7 +13,7 @@ This tutorial builds two modules — one with an open read surface and a guarded
 - How to read the caller with `logos::currentCaller()`, and what the five arms mean
 - Why the identity is ambient rather than a parameter — and why that makes it unforgeable
 - Why `unknown` is the fail-closed answer and is *in band*, not an error
-- That a `logoscore call` arrives as the **host anchor** — so a host-gated surface is open to anyone at the CLI
+- That a `logosctl call` arrives as the **host anchor** — so a host-gated surface is open to anyone at the CLI
 - The two ways a build can silently read `unknown` forever
 
 ## Prerequisites
@@ -28,14 +28,13 @@ This tutorial builds two modules — one with an open read surface and a guarded
 
 `mkdir logos-calc-guarded && cd logos-calc-guarded`
 
-### 1.1 Build logoscore and the package manager
+### 1.1 Get logosctl
+
+The modules run in `logosctl`. If you installed it from its [release](https://github.com/logos-co/logos-logoscore-cli/releases), skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
 
 ```bash
-nix build 'github:logos-co/logos-logoscore-cli' --out-link ./logos
-```
-
-```bash
-nix build 'github:logos-co/logos-package-manager' --out-link ./pm
+nix build 'github:logos-co/logos-logoscore-cli#ctl-bundle-dir' --out-link ./logosctl
+export PATH="$PWD/logosctl/bin:$PATH"
 ```
 
 ---
@@ -316,79 +315,78 @@ nix build
 
 ## Step 4: Ask the Guard Who Is Calling
 
-### 4.1 Install both and start the daemon
+### 4.1 Package both modules
+
+`logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store:
 
 ```bash
-nix build 'path:./guarded#lgx' --out-link g-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx
-```
-
-```bash
-nix build 'path:./agent#lgx' --out-link a-lgx
-./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
+nix build 'path:./guarded#lgx-portable' --out-link g-lgx
+nix build 'path:./agent#lgx-portable' --out-link a-lgx
 ```
 
 ### 4.2 On Windows
 
 Windows has no Nix, so build both packages on Linux and copy them over:
 `nix build 'path:./guarded#packages.x86_64-windows.lgx-portable' --out-link g-lgx`,
-and the same for `agent` into `a-lgx`. With no Nix store to point into,
-everything on Windows is the **portable** build: `./pm` is a portable
-`lgpm` (the release zip, or `logos-package-manager#cli-portable`) and
-`./logos` the logoscore release bundle (`logos-logoscore-cli#cli-bundle-dir`).
-From here on, every command is the same on all three platforms.
+and the same for `agent` into `a-lgx`. `logosctl` itself comes from its
+Windows release. From here on, every command is the same on all three platforms.
+
+### 4.3 Start the daemon and install both
+
+This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
 
 ```bash
-./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx
-./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
+export LOGOSCTL_CONFIG_DIR="$PWD/session"
+```
+
+`--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking.
+
+```bash
+logosctl daemon start --detach
 ```
 
 ```bash
-./logos/bin/logoscore -D -m ./modules &
+logosctl install ./g-lgx/*.lgx ./a-lgx/*.lgx -y
 ```
 
 ```bash
-until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-```
-
-```bash
-./logos/bin/logoscore load-module calc_agent
+logosctl module load calc_agent
 ```
 
 Loading `calc_agent` brings `calc_guarded` up with it — it is a required dependency.
 
-### 4.3 From the command line
+### 4.4 From the command line
 
 ```bash
-./logos/bin/logoscore call calc_guarded whoIsCalling
+logosctl call calc_guarded whoIsCalling
 ```
 
-```json
-{"method":"whoIsCalling","module":"calc_guarded","result":"host","status":"ok"}
+```text
+host
 ```
 
-**`host`** — not `operator`. Your `logoscore call` was relayed by the daemon, and it arrives under the host anchor. Worth knowing before you gate anything on `isHost()`: on this path, that is a gate anyone with access to the CLI passes.
+**`host`** — not `operator`. Your `logosctl call` is relayed by the daemon, and it arrives under the host anchor. Worth knowing before you gate anything on `isHost()`: on this path, that is a gate anyone with access to the CLI passes.
 
-### 4.4 From another module
+### 4.5 From another module
 
 ```bash
-./logos/bin/logoscore call calc_agent askWhoIsCalling
+logosctl call calc_agent askWhoIsCalling
 ```
 
-```json
-{"method":"askWhoIsCalling","module":"calc_agent","result":"module calc_agent","status":"ok"}
+```text
+module calc_agent
 ```
 
 The same method, a different answer. `calc_agent` did not pass a name — the guard read it off the call.
 
-### 4.5 From no call at all
+### 4.6 From no call at all
 
 ```bash
-./logos/bin/logoscore call calc_guarded startupCaller
+logosctl call calc_guarded startupCaller
 ```
 
-```json
-{"method":"startupCaller","module":"calc_guarded","result":"unknown","status":"ok"}
+```text
+unknown
 ```
 
 `onContextReady()` runs at startup, with no inbound dispatch in flight, so there is no caller and the answer is **`unknown`**. That is not an error and not a missing value — it is one of the five arms, and it is the one everything unrecognised also lands on.
@@ -400,11 +398,11 @@ The same method, a different answer. `calc_agent` did not pass a name — the gu
 ### 5.1 The command line is refused
 
 ```bash
-./logos/bin/logoscore call calc_guarded setLimit 99
+logosctl call calc_guarded setLimit 99
 ```
 
-```json
-{"method":"setLimit","module":"calc_guarded","result":"refused: host","status":"ok"}
+```text
+refused: host
 ```
 
 Refused, and the refusal **names what the caller actually was**. A guard that just says "no" leaves you unable to tell a genuine rejection from a build that reads `unknown` for a reason you have not found yet.
@@ -412,21 +410,21 @@ Refused, and the refusal **names what the caller actually was**. A guard that ju
 ### 5.2 The peer module is admitted
 
 ```bash
-./logos/bin/logoscore call calc_agent forwardSetLimit 42
+logosctl call calc_agent forwardSetLimit 42
 ```
 
 ```bash
-./logos/bin/logoscore call calc_guarded limit
+logosctl call calc_guarded limit
 ```
 
-```json
-{"method":"limit","module":"calc_guarded","result":42,"status":"ok"}
+```text
+42
 ```
 
 Same method, same daemon, same second — and the value changed only for the caller the guard admits. `limit()` stayed open to everyone throughout.
 
 ```bash
-./logos/bin/logoscore stop
+logosctl daemon stop
 ```
 
 ---
@@ -435,7 +433,7 @@ Same method, same daemon, same second — and the value changed only for the cal
 
 | Arm | Carries | Seen when |
 |---|---|---|
-| `Host` | **nothing** | the runtime itself — including a relayed `logoscore call` |
+| `Host` | **nothing** | the runtime itself — including a relayed `logosctl call` |
 | `Module` | `name`, optional `instance` | one module calling another |
 | `Derived` | `parent`, `leaf` | a call from a derived identity, e.g. a UI plugin under its module |
 | `Operator` | `name` | a named operator token |

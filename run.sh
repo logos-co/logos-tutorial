@@ -190,9 +190,12 @@ if [ ! -d "${OUTPUT_DIR}" ]; then
 fi
 
 echo "==> Cleaning build artifacts from ${OUTPUT_DIR}/"
-# --also calc-data / .logoscore: tutorials create per-instance persistence dirs
-# (logoscore --persistence-path and the default .logoscore store) that the default
-# clean rules don't cover.
-"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --also calc-data --also .logoscore --verbose
+# --also: what the default clean rules don't cover. logosctl / session: the
+# logosctl out-link and each tutorial's session (installed modules, logs, data);
+# *-lgx: package out-links; watch.pid: a backgrounded watcher's pid;
+# ui-test.actions.json: doctest's UI action journal; calc-data / .logoscore:
+# persistence dirs from the logoscore-era tutorials.
+"${DOCTEST[@]}" clean "${OUTPUT_DIR}" --also calc-data --also .logoscore --also logosctl --also session \
+  --also '*-lgx' --also watch.pid --also ui-test.actions.json --verbose
 
 echo "==> Done. Cleaned tutorial output is in ${OUTPUT_DIR}/"

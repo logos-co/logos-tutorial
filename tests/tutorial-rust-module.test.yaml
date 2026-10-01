@@ -20,7 +20,7 @@ what_you_build: |
   - takes an `Option<String>` parameter, which is a real LIDL type (`?tstr`), not a sentinel
   - emits a typed `summed` event from a companion `CalcRustModuleEvents` trait
 
-  Driven entirely from `logoscore` on the command line — no UI.
+  Driven entirely from `logosctl` on the command line — no UI.
 
 what_you_learn:
   - How to scaffold a Rust module with `nix flake init -t ...#rust`
@@ -257,7 +257,7 @@ sections:
         post_text: |
           Four things are worth naming.
 
-          **The trait is the contract.** Its methods become the module's API and its `///` comments become the contract's descriptions — the same text `lm` and `logoscore module-info` show. `on_context_ready` is defaulted, so it is framework plumbing rather than part of the API.
+          **The trait is the contract.** Its methods become the module's API and its `///` comments become the contract's descriptions — the same text `lm` and `logosctl module show` display. `on_context_ready` is defaulted, so it is framework plumbing rather than part of the API.
 
           **`modules().calc_module` is generated from a published contract, not from a build.** Every call returns `Result<T, LogosError>`, because a call to another module can fail in ways a local function cannot. `calc_module`'s C++ `libVersion()` is `lib_version()` here — method names are converted to Rust's convention on the way in.
 
@@ -296,7 +296,7 @@ sections:
           calc_rust_plugin.dylib  # macOS
           ```
 
-          A Rust module produces the same artifact a C++ one does. Nothing downstream — `lm`, `lgx`, `lgpm`, `logoscore`, basecamp — can tell the difference, which is the point.
+          A Rust module produces the same artifact a C++ one does. Nothing downstream — `lm`, `lgx`, `logosctl`, basecamp — can tell the difference, which is the point.
 
   # ── Step 5: Read the derived contract ───────────────────────────────────────
   - title: "Read the Contract the Builder Derived"
@@ -372,105 +372,126 @@ sections:
           Two details in this listing. `describe` takes a `QVariant` rather than a `QString`, which is how the optional survives the Qt boundary — a `QVariant` can be empty, a `QString` can only be `""`. And `name()` / `version()` / `lidl()` are there without appearing in your trait: the generator injects them, because every module must answer them and no author should have to write them. `lidl()` returns the same canonical document published by `nix build .#lidl` and bundled under `assets/lidl/`.
 
   # ── Step 7: Run it ──────────────────────────────────────────────────────────
-  - title: "Run it with `logoscore`"
+  - title: "Run it with `logosctl`"
     step: true
     text: |
-      Now run `calc_rust` and its `calc_module` dependency together. We use the `logoscore` **daemon** (`-D`) so both modules stay alive between commands, which is what lets an event subscription registered by one command still be listening when a later one triggers it.
+      Now run `calc_rust` and its `calc_module` dependency together. `logosctl` runs them in a **daemon**, so both modules stay alive between commands, which is what lets an event subscription registered by one command still be listening when a later one triggers it.
     steps:
-      - title: "Build logoscore and the package manager"
-        run: "nix build 'github:logos-co/logos-logoscore-cli{release}' --out-link ./logos"
-      - run: "nix build 'github:logos-co/logos-package-manager{release}' --out-link ./pm"
-
-      - title: "Install both modules"
+      - title: "Get logosctl"
         text: |
-          Package each module as a `.lgx` and install it into a `modules/` directory `logoscore` can scan. `calc_rust` comes from this project, `calc_module` from your Part 1 checkout:
-        run: "nix build '.#lgx' --out-link result-rust-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-rust-lgx/*.lgx"
+          Both modules run in `logosctl`. If it is already on your `PATH`, from its [release](https://github.com/logos-co/logos-logoscore-cli/releases) or from Part 1, skip this step. Otherwise build the same portable bundle with Nix and put it on your `PATH`:
+        run: "nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl"
         code_block: |
-          nix build '.#lgx' --out-link result-rust-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-rust-lgx/*.lgx
-      - run: "nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx"
-        code_block: |
-          nix build 'path:../logos-calc-module#lgx' --out-link result-calc-lgx
-          ./pm/bin/lgpm --modules-dir ./modules install --file result-calc-lgx/*.lgx
+          nix build 'github:logos-co/logos-logoscore-cli{release}#ctl-bundle-dir' --out-link ./logosctl
+          export PATH="$PWD/logosctl/bin:$PATH"
+        check_file: "logosctl/bin/logosctl{exe}"
 
-      - title: "Start the daemon and load both modules"
-        run: "./logos/bin/logoscore -D -m ./modules &"
+      - title: "Package both modules"
+        text: |
+          Package each module as a `.lgx`. `logosctl` installs **portable** packages, which carry their own libraries rather than pointing into the Nix store. `calc_rust` comes from this project, `calc_module` from your Part 1 checkout:
+        run: "nix build '.#lgx-portable' --out-link result-rust-lgx && nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx"
         code_block: |
-          ./logos/bin/logoscore -D -m ./modules &
-      - run: "until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done"
-        code_block: |
-          # Wait until the daemon is accepting commands
-          until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
-      - run: "./logos/bin/logoscore load-module calc_module"
-      - run: "./logos/bin/logoscore load-module calc_rust"
+          nix build '.#lgx-portable' --out-link result-rust-lgx
+          nix build 'path:../logos-calc-module#lgx-portable' --out-link result-calc-lgx
+
+      - title: "Start the daemon and install both"
+        text: |
+          This tutorial keeps its packages in a session of its own, so nothing installed for another tutorial mixes in. Point `logosctl` at it in the terminal you use from here on:
+
+          ```bash
+          export LOGOSCTL_CONFIG_DIR="$PWD/session"
+          ```
+
+          `--detach` returns once the daemon accepts commands. Packages install into the daemon's session, so it has to be running first; `-y` applies the install without asking.
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon start --detach"
+        code_block: "logosctl daemon start --detach"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session install ./result-calc-lgx/*.lgx ./result-rust-lgx/*.lgx -y"
+        code_block: "logosctl install ./result-calc-lgx/*.lgx ./result-rust-lgx/*.lgx -y"
         expect_contains:
-          - '"status":"ok"'
+          - "calc_module"
+          - "calc_rust"
+      - run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session module load calc_rust"
+        code_block: "logosctl module load calc_rust"
+        expect_contains:
+          - "Loaded module: calc_rust"
+        post_text: |
+          Loading `calc_rust` brings `calc_module` up with it — it is a required dependency.
 
       - title: "Call across the language boundary"
         text: |
           `sum_all` folds the array through `calc_module.add` — four Rust-to-C++ calls for four terms:
-        run: "./logos/bin/logoscore call calc_rust sum_all '[3,5,10,20]'"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_rust sum_all '[3,5,10,20]'"
+        code_block: "logosctl call calc_rust sum_all '[3,5,10,20]'"
         expect_contains:
-          - '"result":38'
+          - "38"
         post_text: |
-          ```json
-          {"method":"sum_all","module":"calc_rust","result":38,"status":"ok"}
+          ```text
+          38
           ```
       - text: |
           `backend_version` reaches further still — through `calc_module` into the C library it wraps, so the string crosses two language boundaries on the way back:
-        run: "./logos/bin/logoscore call calc_rust backend_version"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_rust backend_version"
+        code_block: "logosctl call calc_rust backend_version"
         expect_contains:
-          - '"result":"1.0.0"'
+          - "1.0.0"
         post_text: |
-          ```json
-          {"method":"backend_version","module":"calc_rust","result":"1.0.0","status":"ok"}
+          ```text
+          1.0.0
           ```
 
       - title: "Pass — and omit — the optional"
         text: |
           `describe` takes `Option<String>`. Omit it and the module sees `None`:
-        run: "./logos/bin/logoscore call calc_rust describe"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_rust describe"
+        code_block: "logosctl call calc_rust describe"
         expect_contains:
           - "last sum: 38 over 4 terms"
         post_text: |
-          ```json
-          {"method":"describe","module":"calc_rust","result":"last sum: 38 over 4 terms","status":"ok"}
+          ```text
+          last sum: 38 over 4 terms
           ```
       - text: |
           Supply it and the module sees `Some("totals")`:
-        run: "./logos/bin/logoscore call calc_rust describe totals"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_rust describe totals"
+        code_block: "logosctl call calc_rust describe totals"
         expect_contains:
           - "totals: 38 over 4 terms"
         post_text: |
-          ```json
-          {"method":"describe","module":"calc_rust","result":"totals: 38 over 4 terms","status":"ok"}
+          ```text
+          totals: 38 over 4 terms
           ```
 
           Two calls, two different values, one signature. Nothing here is a sentinel.
 
       - title: "Watch the typed event"
         text: |
-          `sum_all` calls `emit_summed(...)`, which routes the typed payload to every subscriber. `logoscore watch` is one:
-        run: "(./logos/bin/logoscore watch calc_rust --event summed > watch.log 2>&1 &) && sleep 3 && ./logos/bin/logoscore call calc_rust sum_all '[7,8,9]' && sleep 3 && cat watch.log"
+          `sum_all` calls `emit_summed(...)`, which routes the typed payload to every subscriber. `logosctl watch` is one:
+        run: "(./logosctl/bin/logosctl{exe} --human --config-dir ./session watch calc_rust --event summed > watch.log 2>&1 & echo $! > watch.pid) && sleep 3 && ./logosctl/bin/logosctl{exe} --human --config-dir ./session call calc_rust sum_all '[7,8,9]' && sleep 3 && kill $(cat watch.pid) && cat watch.log"
         code_block: |
           # In one terminal
-          ./logos/bin/logoscore watch calc_rust --event summed
+          logosctl watch calc_rust --event summed
 
           # In another
-          ./logos/bin/logoscore call calc_rust sum_all '[7,8,9]'
+          logosctl call calc_rust sum_all '[7,8,9]'
         expect_contains:
-          - '"event":"summed"'
+          - "calc_rust :: summed"
+          - "arg0: 24"
+          - "arg1: 3"
         post_text: |
           The watcher prints:
 
-          ```json
-          {"data":{"arg0":24,"arg1":3},"event":"summed","module":"calc_rust","timestamp":"..."}
+          ```text
+          Watching events from 'calc_rust'... (Ctrl+C to stop)
+          [18:00:15] calc_rust :: summed
+            arg0: 24
+            arg1: 3
           ```
 
           `arg0` is the total and `arg1` the number of terms, in the order the `CalcRustModuleEvents` trait declares them.
 
       - title: "Stop the daemon"
-        run: "./logos/bin/logoscore stop"
+        run: "./logosctl/bin/logosctl{exe} --human --config-dir ./session daemon stop"
+        code_block: "logosctl daemon stop"
 
   # ── Recap ───────────────────────────────────────────────────────────────────
   - title: "Recap"
