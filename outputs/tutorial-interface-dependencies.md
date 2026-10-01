@@ -398,13 +398,16 @@ nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 Plugin Metadata:
 ================
 Name:         calc_via_interface
+Display name: (unset — falls back to name)
 Version:      1.0.0
 Description:  Binds a calculator interface to a module chosen at runtime
+Author:
 Type:         core
-Dependencies:
+Protocol:     0.9.0
+Dependencies: (none)
 ```
 
-`Dependencies:` is empty — the module is coupled to the `calculator` *contract*, not to any module.
+`Dependencies: (none)` — the module is coupled to the `calculator` *contract*, not to any module.
 
 ### 6.3 List methods
 
@@ -440,10 +443,10 @@ nix build '.#lgx-portable' --out-link result-iface-lgx
 
 ### 7.3 Package calc_module (the runtime provider)
 
-Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)), then package it:
+Make sure `calc_module`'s shared library is built (from [Part 1](tutorial-wrapping-c-library.md#24-build-the-shared-library)), then package it:
 
 ```bash
-# Build libcalc if needed (Part 1, Step 1.5):
+# Build libcalc if needed (Part 1, Step 2.4):
 cd ../logos-calc-module/lib
 gcc -shared -fPIC -o libcalc.so libcalc.c     # Linux
 # gcc -shared -fPIC -o libcalc.dylib libcalc.c  # macOS

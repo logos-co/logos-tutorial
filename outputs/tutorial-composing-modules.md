@@ -399,14 +399,14 @@ git init && git add -A
 
 ### 4.2 Make sure `calc_module` is built
 
-The dependency must be built with its shared library present in `lib/` (from [Part 1](tutorial-wrapping-c-library.md#15-build-the-shared-library)). Verify it:
+The dependency must be built with its shared library present in `lib/` (from [Part 1](tutorial-wrapping-c-library.md#24-build-the-shared-library)). Verify it:
 
 ```bash
 ls ../logos-calc-module/lib/libcalc.so    # Linux
 ls ../logos-calc-module/lib/libcalc.dylib  # macOS
 ```
 
-If it is missing, build it (as in Part 1, Step 1.5):
+If it is missing, build it (as in Part 1, Step 2.4):
 
 ```bash
 cd ../logos-calc-module/lib
@@ -469,10 +469,12 @@ nix build 'github:logos-co/logos-module#lm' --out-link ./lm
 Plugin Metadata:
 ================
 Name:         calc_aggregator
+Display name: (unset — falls back to name)
 Version:      1.0.0
 Description:  Composes calc_module and showcases LogosModuleContext
 Author:
 Type:         core
+Protocol:     0.9.0
 Dependencies: calc_module
 ```
 

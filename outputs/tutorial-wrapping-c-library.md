@@ -6,7 +6,7 @@ This tutorial walks you through wrapping a C shared library (`.so` on Linux, `.d
 
 **What you'll learn:**
 
-- {'How a Logos module wraps a C library using the pure-C++ (`interface': 'universal`) pattern'}
+- How a Logos module wraps a C library using the pure-C++ (`interface: universal`) pattern
 - The role of each file in the module project
 - Which C++ types the code generator maps onto the wire (`std::string`, `int64_t`, `bool`, …)
 - How to emit events from a plain C++ class with `logos_events:`
@@ -604,10 +604,12 @@ Output:
 Plugin Metadata:
 ================
 Name:         calc_module
+Display name: (unset — falls back to name)
 Version:      1.0.0
 Description:  Calculator module wrapping libcalc C library
 Author:
 Type:         core
+Protocol:     0.9.0
 Dependencies: (none)
 ```
 
@@ -678,6 +680,11 @@ tstr version()
   Signature: version()
   Invokable: yes
   Description: The module's version, as declared in its metadata.
+
+tstr lidl()
+  Signature: lidl()
+  Invokable: yes
+  Description: The module's canonical LIDL interface document.
 ```
 
 Three things to notice:

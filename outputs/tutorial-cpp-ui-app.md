@@ -722,7 +722,7 @@ The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited b
 - **`path:`** (used here) — a local directory on disk. Best for developing `calc_module` and its UI side by side, no network.
 - **`github:`** — fetches `calc_module` from a remote repo instead (for CI, or once it's published to its own repo), e.g. `calc_module.url = "github:your-org/your-calc-module";`.
 
-> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library).
+> **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If it's missing, the nix build will fail with linker errors. See [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library).
 
 `mkLogosQmlModule` handles everything: compiles the C++ backend (because `main` is set), bundles the QML view, generates LGX packages, and wires up `nix run`.
 
@@ -730,7 +730,7 @@ The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited b
 
 ## Step 9: Build and Run
 
-First, make sure your local `calc_module` is built and its shared library is present in `lib/` (see [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+First, make sure your local `calc_module` is built and its shared library is present in `lib/` (see [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library)):
 
 ### 9.1 Ensure `calc_module` is built
 
@@ -739,7 +739,7 @@ ls ../logos-calc-module/lib/libcalc.so    # Linux
 ls ../logos-calc-module/lib/libcalc.dylib  # macOS
 ```
 
-If the file is missing, build it first (as covered in [Part 1, Step 1.5](tutorial-wrapping-c-library.md#15-build-the-shared-library)):
+If the file is missing, build it first (as covered in [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library)):
 
 ```bash
 cd ../logos-calc-module/lib
