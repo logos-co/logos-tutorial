@@ -328,6 +328,21 @@ nix build 'path:./agent#lgx' --out-link a-lgx
 ./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
 ```
 
+### 4.2 On Windows
+
+Windows has no Nix, so build both packages on Linux and copy them over:
+`nix build 'path:./guarded#packages.x86_64-windows.lgx-portable' --out-link g-lgx`,
+and the same for `agent` into `a-lgx`. With no Nix store to point into,
+everything on Windows is the **portable** build: `./pm` is a portable
+`lgpm` (the release zip, or `logos-package-manager#cli-portable`) and
+`./logos` the logoscore release bundle (`logos-logoscore-cli#cli-bundle-dir`).
+From here on, every command is the same on all three platforms.
+
+```bash
+./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx
+./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
+```
+
 ```bash
 ./logos/bin/logoscore -D -m ./modules &
 ```
@@ -342,7 +357,7 @@ until ./logos/bin/logoscore status >/dev/null 2>&1; do sleep 0.3; done
 
 Loading `calc_agent` brings `calc_guarded` up with it — it is a required dependency.
 
-### 4.2 From the command line
+### 4.3 From the command line
 
 ```bash
 ./logos/bin/logoscore call calc_guarded whoIsCalling
@@ -354,7 +369,7 @@ Loading `calc_agent` brings `calc_guarded` up with it — it is a required depen
 
 **`host`** — not `operator`. Your `logoscore call` was relayed by the daemon, and it arrives under the host anchor. Worth knowing before you gate anything on `isHost()`: on this path, that is a gate anyone with access to the CLI passes.
 
-### 4.3 From another module
+### 4.4 From another module
 
 ```bash
 ./logos/bin/logoscore call calc_agent askWhoIsCalling
@@ -366,7 +381,7 @@ Loading `calc_agent` brings `calc_guarded` up with it — it is a required depen
 
 The same method, a different answer. `calc_agent` did not pass a name — the guard read it off the call.
 
-### 4.4 From no call at all
+### 4.5 From no call at all
 
 ```bash
 ./logos/bin/logoscore call calc_guarded startupCaller

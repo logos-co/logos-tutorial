@@ -27,6 +27,7 @@
   "platforms": ["linux-x86_64", "macos-arm64"],
 
   "windows": [
-    { "spec": "tutorial-lgx-packages", "targets": ["lgx"] }
+    { "spec": "tutorial-caller-identity", "targets": ["logos", "pm", "g-lgx", "a-lgx"] },
+    { "spec": "tutorial-lgx-packages",    "targets": ["lgx"] }
   ]
 }

@@ -29,6 +29,7 @@ sections:
   # ── Step 1: tools ───────────────────────────────────────────────────────────
   - title: "Build the Tools"
     step: true
+    platform: [linux, macos]
     text: |
       `mkdir logos-calc-guarded && cd logos-calc-guarded`
     steps:
@@ -39,6 +40,7 @@ sections:
   # ── Step 2: the guarded module ──────────────────────────────────────────────
   - title: "The Guarded Module (`calc_guarded`)"
     step: true
+    platform: [linux, macos]
     text: |
       `mkdir guarded && cd guarded`
     steps:
@@ -189,6 +191,7 @@ sections:
   # ── Step 3: the agent ───────────────────────────────────────────────────────
   - title: "The Peer Module (`calc_agent`)"
     step: true
+    platform: [linux, macos]
     text: |
       A module that calls the guarded one, so we can see what the guard sees when the caller is a peer rather than a person at a terminal.
 
@@ -313,13 +316,29 @@ sections:
     step: true
     steps:
       - title: "Install both and start the daemon"
+        platform: [linux, macos]
         run: "sh -c 'nix build path:./guarded#lgx --out-link g-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx'"
         code_block: |
           nix build 'path:./guarded#lgx' --out-link g-lgx
           ./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx
       - run: "sh -c 'nix build path:./agent#lgx --out-link a-lgx && ./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx'"
+        platform: [linux, macos]
         code_block: |
           nix build 'path:./agent#lgx' --out-link a-lgx
+          ./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
+      - title: "On Windows"
+        platform: windows
+        text: |
+          Windows has no Nix, so build both packages on Linux and copy them over:
+          `nix build 'path:./guarded#packages.x86_64-windows.lgx-portable' --out-link g-lgx`,
+          and the same for `agent` into `a-lgx`. With no Nix store to point into,
+          everything on Windows is the **portable** build: `./pm` is a portable
+          `lgpm` (the release zip, or `logos-package-manager#cli-portable`) and
+          `./logos` the logoscore release bundle (`logos-logoscore-cli#cli-bundle-dir`).
+          From here on, every command is the same on all three platforms.
+        run: "./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx && ./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx"
+        code_block: |
+          ./pm/bin/lgpm --modules-dir ./modules install --file g-lgx/*.lgx
           ./pm/bin/lgpm --modules-dir ./modules install --file a-lgx/*.lgx
       - run: "./logos/bin/logoscore -D -m ./modules &"
         code_block: |

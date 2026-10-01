@@ -179,7 +179,10 @@ Nix does not run on Windows, so a tutorial's Windows leg is a cross-platform run
 - `flake.nix` exposes `packages.x86_64-windows.<name>` for each tool a spec builds with `nix build … -o <name>`. The harness stages it as `<name>/`, so the spec's `./<name>/bin/…` paths hold on both legs.
 - Every flake input is a repo in `tutorial-set.json`, overridden with its pin (`tutorial-set.py override-inputs`), so `flake.lock` never decides a version.
 
-Today the LGX tutorial runs on Windows end to end against a cross-built `lgx.exe`.
+Two tutorials have a Windows leg:
+
+- **LGX packages** runs end to end against a cross-built `lgx.exe`.
+- **Caller identity** installs `calc_guarded` and `calc_agent` with a portable `lgpm`, then drives them through the logoscore release bundle: daemon, load, every call. The modules are built for Windows from their committed `outputs/` source trees, so run `./run.sh` after changing a spec's module code, or that leg tests the old code.
 
 To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
 
