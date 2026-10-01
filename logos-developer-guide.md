@@ -1447,10 +1447,12 @@ ones are disabled, and you can uncheck any available package. Optional rows show
 the resolved version and a version selector, like required-package rows; the
 selector offers versions that satisfy the dependency's constraints and have
 available required dependencies. Selected packages bring their own required
-dependencies. `logosctl package install` and `package
-upgrade` offer **all**, **only mandatory**, or **n**, with **all** as the default. The all choice recursively includes required and
-optional dependencies of selected optional packages; mandatory-only excludes
-those branches unless a required package also needs them.
+dependencies. When the plan includes optional packages, `logosctl package
+install` and `package upgrade` offer **all**, **only mandatory**, or **n**, with
+**all** as the default; otherwise they ask `[y/N]`. The all choice recursively
+includes required and optional dependencies of selected optional packages;
+mandatory-only prints the reduced plan and excludes those branches unless a
+required package also needs them.
 
 Basecamp resolves the full selected dependency graph before enabling Install.
 Checking an optional package also adds its mandatory dependencies to Required
@@ -1461,9 +1463,17 @@ its exclusive dependencies while preserving dependencies shared by other selecte
 packages. Installation uses the versions and artifacts shown in the completed
 preview.
 
-Use `--no-optional` for a mandatory-only scripted install. Optional packages
-already installed at a compatible version are kept, and unavailable optionals
-never prevent the mandatory packages from being installed.
+Installed optional packages are listed too, at their installed release. In
+Basecamp, picking another version upgrades or downgrades one; for an installed
+app, optional packages it does not have start unchecked. `logosctl` lists every
+optional package with its status (the change it gets, installed, not selected,
+or unavailable) and keeps installed ones as they are; it has no per-package
+selection, so install a not-selected package by name.
+
+Use `--no-optional` for a mandatory-only scripted install. Unavailable optionals
+never prevent the mandatory packages from being installed. The requested package
+installs before the optional ones; an optional package that fails to download or
+install is reported as failed or skipped while the rest of the install continues.
 
 All three dependency kinds also contribute a canonical file under
 `assets/lidl/<name>.lidl`. Authored `.lidl` and header-derived definitions go
