@@ -560,7 +560,7 @@ The bound `no_such_module` isn't loaded, so the inner `add` call fails — exact
 
 A call without the out-parameter would get the type's default value plus a warning in the module log.
 
-On macOS that `-1` does not reach you yet. There, a call to a module that is not loaded waits up to 20 seconds for it to appear (the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?`). `logosctl` also waits at most 20 seconds for its reply and started first, so after about 20 seconds it reports the outer call as failed, with exit code 4:
+Expect the call to take about 20 seconds, and the `-1` may not reach you. A call to a module that is not loaded waits up to 20 seconds for it to appear (the daemon log warns: `request for "no_such_module" will block up to 20000 ms and then fail. Is the module loaded?`), and the outer call has its own 20-second limits, which started first. When one of those runs out before the `-1` arrives, `logosctl` reports the outer call as failed, with exit code 4:
 
 ```text
 Error: callModuleMethod('calc_via_interface','sumVia') RPC call failed.
@@ -619,7 +619,7 @@ That's the full picture. An interface is a contract you can keep local or share 
 | Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                  |
 | Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                               |
 | Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                            |
-| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `-1` (macOS: RPC timeout) |
+| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `-1` or an RPC timeout, after ~20 s |
 | Share across repos               | `interface_dependencies[].input` + flake input           | —                                                   |
 
 The interface coupled `calc_via_interface` to a *contract*, never to `calc_module`. Any module exposing that contract can be bound in its place — at runtime, by name.
