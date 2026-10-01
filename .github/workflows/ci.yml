@@ -39,6 +39,9 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       doctest-args: ${{ steps.plan.outputs.doctest-args }}
+      windows-matrix: ${{ steps.plan.outputs.windows-matrix }}
+      windows-any: ${{ steps.plan.outputs.windows-any }}
+      override-inputs: ${{ steps.plan.outputs.override-inputs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,8 +50,14 @@ jobs:
         id: plan
         run: |
           python3 scripts/tutorial-set.py check
-          echo "matrix=$(python3 scripts/tutorial-set.py matrix)" >> "$GITHUB_OUTPUT"
-          echo "doctest-args=$(python3 scripts/tutorial-set.py doctest-args)" >> "$GITHUB_OUTPUT"
+          windows="$(python3 scripts/tutorial-set.py windows-matrix)"
+          {
+            echo "matrix=$(python3 scripts/tutorial-set.py matrix)"
+            echo "doctest-args=$(python3 scripts/tutorial-set.py doctest-args)"
+            echo "windows-matrix=$windows"
+            echo "windows-any=$([ "$windows" = '{"include": []}' ] && echo false || echo true)"
+            echo "override-inputs=$(python3 scripts/tutorial-set.py override-inputs)"
+          } >> "$GITHUB_OUTPUT"
           { echo "### Repo pins"; echo; python3 scripts/tutorial-set.py pins; } >> "$GITHUB_STEP_SUMMARY"
 
   # One cell per leaf spec per OS. Leaves only — Parts 1 and 2 are pulled in by
@@ -161,9 +170,29 @@ jobs:
           done
           exit "$drift"
 
+  # Windows has no Nix: logos-windows-ci cross-builds the flake.nix targets a
+  # spec names in tutorial-set.json, stages each under its own name (./lgx,
+  # ...) and runs the spec's Windows half on windows-latest.
+  tutorial-windows:
+    name: ${{ matrix.id }} (windows-latest)
+    needs: plan
+    if: needs.plan.outputs.windows-any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.windows-matrix) }}
+    uses: logos-co/logos-windows-ci/.github/workflows/windows-ci.yml@v1
+    secrets: inherit
+    with:
+      # One call per spec in this run: without it they cancel each other.
+      instance: ${{ matrix.id }}
+      targets: ${{ matrix.targets }}
+      extra-nix-args: ${{ needs.plan.outputs.override-inputs }}
+      doctest-spec: tests/${{ matrix.spec }}.test.yaml
+      doctest-artifact: tutorial-report-${{ matrix.id }}
+
   publish-report:
     name: Publish report to GitHub Pages
-    needs: tutorial-tests
+    needs: [tutorial-tests, tutorial-windows]
     # Run even when tests fail — a failing run is exactly when you want to open
     # the report. Skip on forks, where GITHUB_TOKEN can't push or comment.
     if: ${{ always() && github.event.pull_request.head.repo.fork != true }}
@@ -205,7 +234,7 @@ jobs:
           for dir in artifacts/tutorial-report-*/; do
             [ -f "$dir/index.html" ] || continue
             n="$(basename "$dir")"; n="${n#tutorial-report-}"
-            for os in ubuntu-latest ubuntu-24.04-arm macos-latest; do
+            for os in ubuntu-latest ubuntu-24.04-arm macos-latest windows-latest; do
               case "$n" in
                 *-"$os")
                   id="${n%-$os}"
@@ -230,7 +259,7 @@ jobs:
               [ "$id" = "index.html" ] && continue
               printf '<li><strong>%s</strong> — ' "$id"
               sep=""
-              for os in ubuntu-latest ubuntu-24.04-arm macos-latest; do
+              for os in ubuntu-latest ubuntu-24.04-arm macos-latest windows-latest; do
                 if [ -d "site/$BASE/$id/$os" ]; then
                   printf '%s<a href="./%s/%s/">%s</a>' "$sep" "$id" "$os" "$os"
                   sep=" · "
