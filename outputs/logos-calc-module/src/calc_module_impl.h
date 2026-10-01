@@ -16,8 +16,8 @@ public:
     ~CalcModuleImpl() = default;
 
     // ── Public API — every method here is callable over IPC ──────────
-    // The generator maps C++ types onto the wire automatically:
-    //   int64_t  ↔ int      std::string ↔ QString      bool ↔ bool
+    // The generator maps C++ types onto the contract automatically:
+    //   int64_t  ↔ int      std::string ↔ tstr      bool ↔ bool
     //
     // A doc comment directly above a method becomes that method's
     // `description` in the module's method introspection — surfaced

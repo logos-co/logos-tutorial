@@ -201,7 +201,7 @@ This generates a ready-to-build project with all the boilerplate handled for you
 
 ### 1.2 Project Structure
 
-> We will use the recommended **pure-C++ pattern** (`"interface": "universal"`) for a core module. The scaffolding templates currently emit the older Qt-plugin layout; you replace their `src/` files with the two `*_impl` files shown here (see [Section 1.4](#14-understanding-the-module-code)).
+> We will use the recommended **pure-C++ pattern** (`"interface": "universal"`) for a core module. The scaffolding templates (`default`, `with-external-lib`) already emit this layout, with an example `*_impl` class you replace with the two files shown here (see [Section 1.4](#14-understanding-the-module-code)).
 
 A pure-C++ core module looks like this:
 
@@ -267,7 +267,7 @@ The full set of available fields:
 | `description`                    | No                                     | `"A Logos module"` | Human-readable description                                                                                                                                                                                                                                     |
 | `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the standalone app plugin directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
-| `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder runs `logos-cpp-generator --from-header` to synthesize the Qt plugin. `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). Omit for the older hand-written Qt-plugin pattern.                            |
+| `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder derives a LIDL contract from it (`logos-cpp-generator --header-to-lidl`) and generates the Qt plugin from that. `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). A `core` module must set one: since logos-module-builder 0.3.0 a core plugin without `interface` is refused at evaluation. Only `ui_qml` view plugins may omit it.                            |
 | `codegen`                        | No (required for `cdylib`)             | `{}`               | Where the builder finds your code and your contract. `codegen.rust = { crate, trait?, source?, staticlib? }` and `codegen.nim = { crate, main?, staticlib?, link? }` select a language core; `codegen.lidl` names a committed contract; `codegen.impl_header` / `impl_class` override the `universal` defaults. See [§1.7](#17-authoring-in-rust-and-nim).                            |
 | `concurrency`                    | No                                     | `"single"`         | Dispatch mode. `"single"` (default): calls to this module are dispatched one at a time (event-loop semantics) — you need no thread-safety. `"multi"`: handlers run **concurrently** on a worker pool, so one blocking handler (a slow download, a slow RPC) no longer stalls other callers — but **you** own thread-safety. See [§1.6 Concurrent dispatch](#16-concurrent-dispatch).                            |
 | `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
@@ -291,7 +291,7 @@ The full set of available fields:
 
 ### 1.4 Understanding the Module Code
 
-The recommended way to write a core module is the **pure-C++ pattern** (`"interface": "universal"` in `metadata.json`). You write a single plain C++ class — `src/<name>_impl.h` and `src/<name>_impl.cpp` — with **no Qt, no `Q_OBJECT`, no `Q_PLUGIN_METADATA`, no interface header**. At build time `logos-cpp-generator --from-header` parses your header and generates the Qt plugin wrapper, the interface, and the inter-module glue into `generated_code/`. You never see or edit that generated code.
+The recommended way to write a core module is the **pure-C++ pattern** (`"interface": "universal"` in `metadata.json`). You write a single plain C++ class — `src/<name>_impl.h` and `src/<name>_impl.cpp` — with **no Qt, no `Q_OBJECT`, no `Q_PLUGIN_METADATA`, no interface header**. At build time the builder parses your header into a LIDL contract (`logos-cpp-generator --header-to-lidl`) and generates the Qt plugin wrapper, the interface, and the inter-module glue from it into `generated_code/`. You never see or edit that generated code.
 
 A minimal impl class looks like this:
 
@@ -871,7 +871,7 @@ This produces a `my_module-<version>.lgx` file in the current directory.
 
 > **Important:** The variant type matters when installing into `logos-basecamp`. A dev build of basecamp expects dev variants, and a portable build expects portable variants. Use the `dual` bundler to produce packages that work with both.
 
-> **Windows is cross-built only.** `x86_64-windows` is a pseudo-system: there is no Nix daemon for Windows, so the package is produced on a Linux (or macOS) machine targeting `x86_64-w64-mingw32` and copied across. Note the variant is spelled `windows-x86_64`, not `windows-amd64` — unlike Linux, it has no alias, so a package labelled `windows-amd64` will not install.
+> **Windows is cross-built only.** `x86_64-windows` is a pseudo-system: there is no Nix daemon for Windows, so the package is produced on a Linux (or macOS) machine targeting `x86_64-w64-mingw32` and copied across. Builders spell the variant `windows-x86_64`. Installers since package-manager 0.3.0 also accept `windows-amd64` (they alias x86_64/amd64 and aarch64/arm64 on every OS), but older ones accept only `windows-x86_64`, so keep that spelling.
 
 ---
 
@@ -1018,8 +1018,8 @@ nix build 'github:logos-co/logos-package-downloader#cli' --out-link ./downloader
 # Download a package
 ./downloader/bin/lgpd download my_module -o ./packages/
 
-# Download from a specific release
-./downloader/bin/lgpd --release v2.0.0 download my_module -o ./packages/
+# Download a specific package version
+./downloader/bin/lgpd --version 1.2.0 download my_module -o ./packages/
 
 # Install the downloaded package locally
 ./package-manager/bin/lgpm --modules-dir ./modules install --file ./packages/my_module.lgx
@@ -1968,7 +1968,7 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
-- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs in a separate `ui-host` process. The remote interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource`, and the QML view reaches it through a typed replica (`logos.module()` + `QtRemoteObjects.watch()`).
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs in a separate `ui-host` process. The remote interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource`, and the QML view reaches it through a typed replica (`logos.module()` + `logos.watch()`).
 - **[Composing Modules](tutorial-composing-modules.md)** — build `calc_aggregator`, a core module that depends on `calc_module` and exercises every part of `LogosModuleContext`: the injected properties, per-instance persistence, typed sync and async dependency calls, and typed event subscription.
 - **[Dependency Interfaces](tutorial-interface-dependencies.md)** — build `calc_via_interface`, which declares a *contract* rather than a concrete dependency and binds it to a provider chosen at runtime. Its `dependencies` list stays empty. See [Dependency Interfaces](#dependency-interfaces).
 - **[Caller Identity](tutorial-caller-identity.md)** — build a module whose write surface admits one named peer and refuses everything else, reading `logos::currentCaller()`. Covers the five arms, why `unknown` is fail-closed, and the two builds that read it forever.
@@ -2217,11 +2217,10 @@ logoscore stop                                # Stop daemon
 ```bash
 ./downloader/bin/lgpd search <query>                       # Search packages by name/description
 ./downloader/bin/lgpd list [--category <cat>]              # List available packages
-./downloader/bin/lgpd categories                           # List available categories
-./downloader/bin/lgpd releases                             # List recent GitHub releases (up to 30)
-./downloader/bin/lgpd info <pkg>                           # Show package details from catalog
+./downloader/bin/lgpd info <pkg>                           # Show package details (all versions)
 ./downloader/bin/lgpd download <pkg> [-o <dir>]            # Download .lgx package
-./downloader/bin/lgpd --release <tag> download <pkg>       # Download from specific release
+./downloader/bin/lgpd --version <ver> download <pkg>       # Download a specific package version
+./downloader/bin/lgpd repo list                            # Show configured package repositories
 ```
 
 ### `logos-cpp-generator` -- SDK Code Generator
@@ -2302,10 +2301,9 @@ Check that:
 
 ### lgpm install fails
 
-- Check your internet connection (lgpm fetches from GitHub Releases)
-- Try specifying a release: `./package-manager/bin/lgpm --release v1.0.0 install my_module`
-- For local files: `./package-manager/bin/lgpm install --file ./my_module.lgx`
-- Check the target directory is writable: `./package-manager/bin/lgpm --modules-dir ./modules install my_module`
+- lgpm installs local files only; it does not download. Fetch the package first with `./downloader/bin/lgpd download my_module -o ./packages/`, then `./package-manager/bin/lgpm --modules-dir ./modules install --file ./packages/my_module.lgx`
+- Check the package has a variant for this machine and this lgpm: a dev lgpm installs `-dev` variants (`nix build .#lgx`), a portable one the plain variants (`.#lgx-portable`). `lgx manifest <file>` lists what a package carries
+- Check the target directory is writable
 
 ### Checking if a module loaded successfully
 
