@@ -15,7 +15,13 @@
 # set DOCTEST, e.g.:  DOCTEST="nix run path:../logos-doctest --" ./run.sh
 #
 # Usage:
-#   ./run.sh [--release TAG] [extra doctest args...]
+#   ./run.sh [--pins-override FILE] [--release TAG] [extra doctest args...]
+#
+# Each repo the specs build against is pinned in tutorial-set.json; a non-empty
+# `ref` there becomes `--release-for REPO=REF` on both `run` and `generate`.
+# --pins-override FILE replaces individual pins with a {repo: ref} JSON object —
+# the same file logos-release-set hands CI, so a release-set run reproduces
+# locally.
 #
 # --release TAG pins every {release} placeholder in the specs' GitHub URLs to
 # that git tag (passed to both `run` and `generate` so the executed commands and
@@ -31,8 +37,14 @@ cd "$(dirname "$0")"
 
 # Collect pass-through args for run/generate (--release, --release-for, etc.).
 DOCTEST_ARGS=()
+PINS_OVERRIDE=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --pins-override)
+      [ "$#" -ge 2 ] || { echo "error: --pins-override requires a FILE argument" >&2; exit 2; }
+      PINS_OVERRIDE=("--override" "$2")
+      shift 2
+      ;;
     --release)
       [ "$#" -ge 2 ] || { echo "error: --release requires a TAG argument" >&2; exit 2; }
       DOCTEST_ARGS+=("--release" "$2")
@@ -49,6 +61,13 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+# Pins go first so an explicit --release-for on the command line still wins.
+pin_args="$(python3 scripts/tutorial-set.py doctest-args ${PINS_OVERRIDE[@]+"${PINS_OVERRIDE[@]}"})"
+read -r -a PIN_ARGS <<< "$pin_args"
+DOCTEST_ARGS=(${PIN_ARGS[@]+"${PIN_ARGS[@]}"} ${DOCTEST_ARGS[@]+"${DOCTEST_ARGS[@]}"})
+echo "==> Pins:"
+python3 scripts/tutorial-set.py pins ${PINS_OVERRIDE[@]+"${PINS_OVERRIDE[@]}"}
 
 # The doctest CLI. Override by exporting DOCTEST (space-separated command).
 read -r -a DOCTEST <<< "${DOCTEST:-nix run github:logos-co/logos-doctest --}"

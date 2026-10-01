@@ -109,7 +109,7 @@ nix run github:logos-co/logos-doctest -- run tests/tutorial-cpp-ui-app.test.yaml
 
 Press `q` to quit at any time. `--tui` needs an interactive terminal and the [`rich`](https://github.com/Textualize/rich) package — both are bundled in the doctest flake, so no extra install is needed when using `nix`.
 
-The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`. Set it to `""` or omit it for latest.
+The `--release` flag (or the `release` field in the YAML) pins all `{release}` placeholders in GitHub URLs to a git tag, so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`. Set it to `""` or omit it for latest. `--release-for REPO=REF` pins one repo; `run.sh` and CI pass one per entry in [`tutorial-set.json`](#pinning-the-repos-the-tutorials-build-against).
 
 ## Example Modules
 
@@ -146,21 +146,30 @@ It also runs Calls and Types into `outputs/logos-api-examples/` and the LGX
 walkthrough in a temporary directory. The latter creates a disposable signing
 key, removes it at the end, and leaves no private key in `outputs/`.
 
-### Pinning to a release tag
+### Pinning the repos the tutorials build against
 
-By default `run.sh` resolves every `{release}` placeholder to the latest commit on each repo. Pass `--release TAG` to pin them all to a git tag, so the executed commands and the generated Markdown both reference that tag:
+`tutorial-set.json` names every repo the specs reference as `github:logos-co/<repo>{release}`, with the `ref` (git tag or commit) each one is pinned to. An empty `ref` tracks the repo's default branch. `run.sh` and CI turn each non-empty `ref` into `--release-for <repo>=<ref>` on both `doctest run` and `doctest generate`, so the executed commands and the generated Markdown agree. The same file lists the specs CI runs and the platforms it runs them on.
 
 ```bash
-./run.sh --release TAG
+python3 scripts/tutorial-set.py check   # every {release} repo is listed, every listed repo is used
+python3 scripts/tutorial-set.py pins    # what a run will build against
 ```
 
-Any further arguments are forwarded verbatim to the underlying `doctest run`/`generate` calls, so you can override a single repo's ref with `--release-for`:
+A listed repo referenced *without* `{release}` fails the check — it would build the default branch whatever its pin says.
+
+[logos-release-set](https://github.com/logos-co/logos-release-set) runs these specs as part of validating a release set, replacing each pin with the version the release set pins. Reproduce such a run with the `{repo: ref}` override it records:
+
+```bash
+./run.sh --pins-override tutorial-pins.json
+```
+
+`--release TAG` still pins every repo whose `ref` is empty to one tag, and any further arguments are forwarded verbatim to `doctest run`/`generate`, so a single repo can be overridden on the command line:
 
 ```bash
 ./run.sh --release TAG --release-for logos-basecamp=main
 ```
 
-The `TAG` must exist on each referenced repo, or the `nix build`/`nix flake init` steps will fail to resolve it. Pinning expands each `{release}` placeholder so `github:logos-co/repo{release}#output` becomes `github:logos-co/repo/TAG#output`; omitting `--release` leaves them at latest.
+A ref must exist on its repo, or the `nix build`/`nix flake init` steps fail to resolve it. Pinning expands `github:logos-co/repo{release}#output` to `github:logos-co/repo/REF#output`.
 
 To run against a local `logos-doctest` checkout instead of the published flake, export `DOCTEST`:
 

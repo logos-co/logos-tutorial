@@ -286,7 +286,7 @@ sections:
               description = "calc_fanout - drives a concurrent worker from a single-threaded module";
 
               inputs = {
-                logos-module-builder.url = "github:logos-co/logos-module-builder";
+                logos-module-builder.url = "github:logos-co/logos-module-builder{release}";
                 calc_slow.url = "path:/path/to/slow-worker";
               };
 

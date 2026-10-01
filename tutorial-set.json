@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "logos-tutorial",
+  "description": "The repos the tutorial specs build against, the specs CI runs, and the platforms it runs them on.",
+
+  "repos": [
+    { "name": "logos-basecamp",               "repo": "logos-co/logos-basecamp",               "ref": "" },
+    { "name": "logos-logoscore-cli",          "repo": "logos-co/logos-logoscore-cli",          "ref": "" },
+    { "name": "logos-module",                 "repo": "logos-co/logos-module",                 "ref": "" },
+    { "name": "logos-module-builder",         "repo": "logos-co/logos-module-builder",         "ref": "" },
+    { "name": "logos-modules-state-module",   "repo": "logos-co/logos-modules-state-module",   "ref": "" },
+    { "name": "logos-package",                "repo": "logos-co/logos-package",                "ref": "" },
+    { "name": "logos-package-manager",        "repo": "logos-co/logos-package-manager",        "ref": "" },
+    { "name": "logos-qt-mcp",                 "repo": "logos-co/logos-qt-mcp",                 "ref": "" },
+    { "name": "logos-rust-sdk",               "repo": "logos-co/logos-rust-sdk",               "ref": "" }
+  ],
+
+  "specs": [
+    "tutorial-caller-identity",
+    "tutorial-composing-modules",
+    "tutorial-concurrent-dispatch",
+    "tutorial-cpp-ui-app",
+    "tutorial-interface-dependencies",
+    "tutorial-lgx-packages",
+    "tutorial-method-calls-and-types",
+    "tutorial-modules-state",
+    "tutorial-rust-module"
+  ],
+
+  "platforms": ["linux-x86_64", "macos-arm64"]
+}
