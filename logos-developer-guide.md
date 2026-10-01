@@ -1441,6 +1441,18 @@ and `interface_dependencies` as **names only** — `file` and `impl_class` are
 paths into your own source tree and mean nothing in a shipped package, the same
 reason `provides` carries intent names alone.
 
+Basecamp lists these under **Optional Packages** when installing a module or
+an app that depends on it. Available packages are checked by default; unavailable
+ones are disabled, and you can uncheck any available package. Optional rows show
+the resolved version and a version selector, like required-package rows; the
+selector offers versions that satisfy the dependency's constraints and have
+available required dependencies. Selected packages bring their own required
+dependencies. `logosctl package install` and `package
+upgrade` offer **all**, **only mandatory**, or **n**, with **all** as the default.
+Use `--no-optional` for a mandatory-only scripted install. Optional packages
+already installed at a compatible version are kept, and unavailable optionals
+never prevent the mandatory packages from being installed.
+
 All three dependency kinds also contribute a canonical file under
 `assets/lidl/<name>.lidl`. Authored `.lidl` and header-derived definitions go
 through the same parse, validate, and serialize pass before publication, so a
