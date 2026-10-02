@@ -563,13 +563,25 @@ The bound `no_such_module` isn't loaded, so the inner `add` call fails — exact
 
 The answer takes about a second. Nothing is listening for `no_such_module`, so the call gives it a second to start and then fails, as the daemon log notes: `request for "no_such_module" fails unless the module starts within 1000 ms. Is the module loaded?`
 
+A module that **is** loaded but lacks those methods fails the same way. `modules_state` ships with `logosctl` and is already running, but it has no `add`:
+
+```bash
+logosctl call calc_via_interface sumVia modules_state 3 5
+```
+
+```text
+-1
+```
+
+This time the answer is immediate: `modules_state` is there, and it refuses a method it does not have (`err.code == "unknown_method"`), which `sumVia` maps to `-1` like any other failure.
+
 The daemon is still serving. Swapping providers is just changing the string:
 
 ```bash
 logosctl call calc_via_interface sumVia calc_module 3 5
 ```
 
-`sumVia calc_module 3 5` returns `8`; `sumVia no_such_module 3 5` returns `-1`. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
+`sumVia calc_module 3 5` returns `8`; `no_such_module` and `modules_state` return `-1`. **Any** module that really exposes `add`/`multiply`/`fibonacci`/`libVersion`/`versionReady` satisfies `calculator` and slots in unchanged.
 
 ```bash
 logosctl daemon stop
@@ -608,16 +620,16 @@ That's the full picture. An interface is a contract you can keep local or share 
 
 ## Recap
 
-| Concept                          | In the code                                              | Seen via `logosctl`                                 |
-| -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
-| Interface declaration            | `interfaces/calculator.h` (methods + `logos_events:`)    | —                                                   |
-| Declared, not depended-on        | `interface_dependencies` set, `dependencies: []`         | `lm metadata` shows empty `Dependencies:`           |
-| Bind at runtime                  | `modules().bind_calculator(provider)`                    | provider is a `call` argument                       |
-| Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                  |
-| Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                               |
-| Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                            |
-| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module` → `-1`        |
-| Share across repos               | `interface_dependencies[].input` + flake input           | —                                                   |
+| Concept                          | In the code                                              | Seen via `logosctl`                                           |
+| -------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
+| Interface declaration            | `interfaces/calculator.h` (methods + `logos_events:`)    | —                                                             |
+| Declared, not depended-on        | `interface_dependencies` set, `dependencies: []`         | `lm metadata` shows empty `Dependencies:`                     |
+| Bind at runtime                  | `modules().bind_calculator(provider)`                    | provider is a `call` argument                                 |
+| Typed **sync** call              | `sumVia` / `productVia` / `versionVia`                   | `8`, `15`, `1.0.0`                                            |
+| Typed **async** call             | `startFibVia` → `fibonacciAsync(..., cb)`                | `queued`, then `6765`                                         |
+| Typed **event** subscription     | `watchVersion` → `onVersionReady(cb)`                    | captured payload `1.0.0`                                      |
+| No-validation / superset rule    | bind to any module name                                  | `calc_module` → `8`; `no_such_module`, `modules_state` → `-1` |
+| Share across repos               | `interface_dependencies[].input` + flake input           | —                                                             |
 
 The interface coupled `calc_via_interface` to a *contract*, never to `calc_module`. Any module exposing that contract can be bound in its place — at runtime, by name.
 
