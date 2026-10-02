@@ -478,32 +478,32 @@ Two calls, two different values, one signature. Nothing here is a sentinel.
 
 ### 7.6 Watch the typed event
 
-`sum_all` calls `emit_summed(...)`, which routes the typed payload to every subscriber. `logosctl watch` is one:
+`sum_all` calls `emit_summed(...)`, which routes the typed payload to every subscriber. `logosctl watch` is one. Start it in the background, then make the call:
 
 ```bash
-# In one terminal
-logosctl watch calc_rust --event summed
-
-# In another
+logosctl watch calc_rust --event summed > watch.log &
 logosctl call calc_rust sum_all '[7,8,9]'
 ```
 
-The watcher prints:
+### 7.7 Stop the daemon
+
+Stopping the daemon also ends the watcher: it reports that the daemon went away and exits with code 2. Its log holds the event:
+
+```bash
+logosctl daemon stop
+cat watch.log
+```
 
 ```text
 Watching events from 'calc_rust'... (Ctrl+C to stop)
 [18:00:15] calc_rust :: summed
   arg0: 24
   arg1: 3
+
+Error: The daemon went away (provider_unavailable); stopped watching 'calc_rust'.
 ```
 
 `arg0` is the total and `arg1` the number of terms, in the order the `CalcRustModuleEvents` trait declares them.
-
-### 7.7 Stop the daemon
-
-```bash
-logosctl daemon stop
-```
 
 ---
 
