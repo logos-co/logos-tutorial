@@ -468,28 +468,31 @@ pub extern "Rust" fn logos_module_install() {
 
 ### 5.3 Rebuild, reinstall, re-measure
 
-Stop the daemon, so the second measurement starts from fresh counters, and rebuild the worker's package:
-
-```bash
-logosctl daemon stop
-```
+Rebuild the worker's package. The daemon keeps running:
 
 ```bash
 (cd slow-worker && git add -A && nix build)
 nix build 'path:./slow-worker#lgx-portable' --out-link worker-lgx
 ```
 
-Start a fresh daemon, reinstall the worker over the one in the session, and load the driver again:
-
-```bash
-logosctl daemon start --detach
-```
+Install it into the running daemon, over the copy already in the session:
 
 ```bash
 logosctl install ./worker-lgx/*.lgx -y
 ```
 
-The version has not changed, so `logosctl` lists this as a `reinstall`: the rebuilt package replaces the one already in the session.
+```text
+The following changes will be made (install):
+  reinstall  calc_slow 1.0.0 -> 1.0.0
+These running modules will be stopped and restarted: calc_slow
+These running modules depend on them and will be stopped, not restarted: calc_fanout
+Installed: calc_slow
+Restarted: calc_slow
+Stopped, not restarted: calc_fanout
+Load it again with: logosctl module load calc_fanout
+```
+
+The version has not changed, so `logosctl` lists this as a `reinstall`: the rebuilt package replaces the one already in the session. `calc_slow` was running, so it is stopped and restarted around the swap, which also gives the second measurement fresh counters. `calc_fanout` requires it, so it is stopped too, and it stays stopped until you load it again:
 
 ```bash
 logosctl module load calc_fanout
