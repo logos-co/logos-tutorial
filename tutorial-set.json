@@ -24,7 +24,7 @@
     "tutorial-rust-module"
   ],
 
-  "platforms": ["linux-x86_64", "macos-arm64"],
+  "platforms": ["linux-x86_64", "linux-arm64", "macos-arm64"],
 
   "windows": [
     { "spec": "tutorial-caller-identity", "targets": ["logosctl", "g-lgx", "a-lgx"] },
