@@ -33,7 +33,7 @@ Step-by-step tutorials that build on each other. Each creates a working module y
 
 - **Optional Dependencies:** [Optional Dependencies and the Module Registry](outputs/tutorial-modules-state.md) — build `calc_observer`, whose `dependencies` list is empty and which names `calc_module` and `modules_state` under `optional_dependencies` instead. Runs three times — dependency never installed, installed and running, and pulled out from under a live module — to show what the middle dependency kind actually buys. Needs only Part 1.
 
-- **Caller Identity:** [Caller Identity](outputs/tutorial-caller-identity.md) — build `calc_guarded`, whose write surface admits exactly one peer module, and `calc_agent`, which is that peer. Reads `logos::currentCaller()` from all three positions a call can come from — `host`, `module calc_agent`, and `unknown` — and watches one of them get through. Fully standalone.
+- **Caller Identity:** [Caller Identity](outputs/tutorial-caller-identity.md) — build `calc_guarded`, whose write surface admits exactly one peer module, and `calc_agent`, which is that peer. Reads `logos::currentCaller()` from all three positions a call can come from — `operator auto`, `module calc_agent`, and `unknown` — and watches one of them get through. Fully standalone.
 
 - **Packages:** [Producing, Merging and Signing LGX Packages](outputs/tutorial-lgx-packages.md) — use `lgx` to create, populate, merge, inspect, extract, verify and sign packages, then manage a publisher's trusted key. Explains dev and portable module outputs. Fully standalone.
 
