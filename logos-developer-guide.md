@@ -273,7 +273,7 @@ The full set of available fields:
 | `max_workers`                    | No                                     | `null`             | Worker-pool cap for a `"multi"` module. `null` lets the runtime size the pool to available parallelism. Ignored for `"single"`.                            |
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module. Its canonical LIDL contract is bundled in `assets/lidl/`.                                                                                  |
-| `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but never auto-loaded and never a load failure when absent. Its runtime package is not auto-bundled; its canonical LIDL contract is. See [Optional dependencies](#optional-dependencies). |
+| `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but loaded only when installed, and never a load failure when absent. Its runtime package is not auto-bundled; its canonical LIDL contract is. See [Optional dependencies](#optional-dependencies). |
 | `provides`                       | No (`ui_qml` only)                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
 | `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }`; its canonical contract is bundled in `assets/lidl/`. See [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
@@ -1342,7 +1342,7 @@ the module** and **who guarantees it is running** — not in how you call it:
 | Field | Module chosen | Loader behaviour | Reached as |
 | --- | --- | --- | --- |
 | `dependencies` | at build time | auto-loaded; a failure to load one fails this module | `modules().<name>` |
-| `optional_dependencies` | at build time | never loaded, never required | `modules().<name>` |
+| `optional_dependencies` | at build time | loaded with this module when installed; never required | `modules().<name>` |
 | `interface_dependencies` | at **runtime**, by you | never loaded | `modules().bind_<iface>(name)` |
 
 `optional_dependencies` is the middle one: the module name is concrete, so you
@@ -1357,7 +1357,8 @@ module run with its dependency missing, present, and pulled out from under it.
 
 Three things follow, all of them about lifetime:
 
-- the loader **never brings one up**, and never fails a load because one is missing;
+- the loader **brings one up only if it is installed**, ahead of your module, and
+  never fails a load because one is missing or fails to load;
 - unloading one **does not** take its dependents down;
 - its **runtime package is not bundled** — your consumers do not inherit its
   runtime closure. Its small canonical LIDL contract is still included in
@@ -1368,9 +1369,10 @@ module as a required dependency drags its whole closure into every consumer of
 *your* module, its tests and its packages, including users who will never install
 it.
 
-**Something else owns the lifetime.** Loading your module does not load these, so
-whatever brings them up — the app, `logosctl module load`, a package manager — has to.
-Write the module so it works when they are absent.
+**Something else installs them.** Basecamp and `logosctl module load` bring up
+the installed ones with your module and skip the rest (`--no-optional` opts out).
+Nothing installs one because you named it: an installer only offers it. Write the
+module so it works when they are absent.
 
 **Bound the call.** A call to a module that is not running costs the full
 protocol deadline before it fails, so say what you are willing to wait:
