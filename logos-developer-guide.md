@@ -127,7 +127,7 @@ The **Logos platform** is a modular application framework built in C++ on top of
 | **logos-package**            | [logos-co/logos-package](https://github.com/logos-co/logos-package)                       | LGX package format library + `lgx` CLI                    |
 | **logos-package-manager**    | [logos-co/logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package manager library + `lgpm` CLI                |
 | **logos-package-downloader** | [logos-co/logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog browser + `lgpd` CLI                       |
-| **logos-standalone-app**     | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Minimal shell for running/testing UI modules in isolation |
+| **logos-standalone-app**     | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Deprecated; superseded by Basecamp's standalone mode      |
 | **logos-basecamp**           | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop application shell                                 |
 
 ## Prerequisites
@@ -195,7 +195,7 @@ nix flake init -t github:logos-co/logos-module-builder#rust-with-external-lib
 | `rust`                   | Minimal core module written in Rust                   |
 | `rust-with-external-lib` | Rust core module linking an external C library        |
 
-The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation without the full logos-basecamp shell. The standalone app runner is bundled with `logos-module-builder` — no extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
+The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin on its own, in Basecamp's standalone mode (`nix run github:logos-co/logos-basecamp#dev`). No extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
@@ -265,7 +265,7 @@ The full set of available fields:
 | `type`                           | No                                     | `core`             | Module type (`core`, `ui`, `ui_qml`)                                                                                                                                                                                                                           |
 | `category`                       | No                                     | `general`          | Category (general, network, chat, wallet, integration)                                                                                                                                                                                                         |
 | `description`                    | No                                     | `"A Logos module"` | Human-readable description                                                                                                                                                                                                                                     |
-| `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the standalone app plugin directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
+| `icon`                           | No                                     | `null`             | Relative path to the module icon. **PNG, exactly 256x256.** Required for `ui_qml` modules (manifest 0.4.0+), optional for `core`. Bundled once at `assets/icon.png` inside the `.lgx` so hosts can show it before install; also copied into the plugin output directory. Convention: `src/icons/<module_name>.png`.                                                                                                                                    |
 | `main`                           | Yes (`core`/`ui`), optional (`ui_qml`) | --                 | Plugin entry point. For `core`/`ui` modules: plugin name without extension (the generated `<name>_plugin`). For `ui_qml`: optional backend plugin name (omit if QML-only).                                                                                     |
 | `interface`                      | No                                     | --                 | Authoring model. `"universal"` is the pure-C++ pattern: you write a plain `src/<name>_impl.h`/`.cpp` and the builder derives a LIDL contract from it (`logos-cpp-generator --header-to-lidl`) and generates the Qt plugin from that. `"cdylib"` is the path for modules whose core is **Rust or Nim** — see [§1.7](#17-authoring-in-rust-and-nim). A `core` module must set one: since logos-module-builder 0.3.0 a core plugin without `interface` is refused at evaluation. Only `ui_qml` view plugins may omit it.                            |
 | `codegen`                        | No (required for `cdylib`)             | `{}`               | Where the builder finds your code and your contract. `codegen.rust = { crate, trait?, source?, staticlib? }` and `codegen.nim = { crate, main?, staticlib?, link? }` select a language core; `codegen.lidl` names a committed contract; `codegen.impl_header` / `impl_class` override the `universal` defaults. See [§1.7](#17-authoring-in-rust-and-nim).                            |
@@ -660,15 +660,15 @@ For `ui_qml` modules (both QML-only and C++ backend), `logos-module-builder` pro
 
 The test infrastructure has three layers:
 
-1. **QML Inspector** — a TCP server compiled into `logos-standalone-app` that exposes the QML object tree
+1. **QML Inspector** — a TCP server compiled into Basecamp's development build (`logos-basecamp#dev`) that exposes the QML object tree
 2. **MCP Server** — a Node.js bridge that translates test commands into inspector calls
 3. **Test Framework** — a JavaScript API for writing UI assertions (`expectTexts`, `click`, `waitFor`, etc.)
 
-When you run `nix build .#integration-test`, the builder:
+When you run `nix run .#ui-tests`, the builder hands your module to Basecamp's `dev --test`, which:
 
-- Launches `logos-standalone-app` with your plugin in headless mode (`QT_QPA_PLATFORM=offscreen`)
+- Opens your module in Basecamp's standalone mode, headless (`QT_QPA_PLATFORM=offscreen`), with a fresh user directory per test file
 - Connects to the QML inspector
-- Runs all `.mjs` test files in your `tests/` directory
+- Runs all `.mjs` test files in your `tests/` directory, stopping at the first failure
 
 ### 3.2 Writing Tests
 
@@ -677,7 +677,7 @@ Create `.mjs` files in `tests/`. Each file imports the test framework and define
 ```javascript
 import { resolve } from "node:path";
 
-// CI sets LOGOS_QT_MCP automatically; for interactive use: nix build .#test-framework -o result-mcp
+// `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use: nix build github:logos-co/logos-qt-mcp -o result-mcp
 const root =
   process.env.LOGOS_QT_MCP ||
   new URL("../result-mcp", import.meta.url).pathname;
@@ -714,11 +714,11 @@ Key test APIs:
 ### 3.3 Running Tests
 
 ```bash
-# Hermetic CI test (builds everything, no display needed)
-nix build .#integration-test -L
+# Headless run of every tests/*.mjs (no display needed)
+nix run .#ui-tests
 
 # Interactive: build the test framework locally (one-time)
-nix build .#test-framework -o result-mcp
+nix build github:logos-co/logos-qt-mcp -o result-mcp
 
 # Start the app (inspector listens on localhost:3768)
 nix run .
@@ -729,7 +729,7 @@ node tests/ui-tests.mjs
 
 Multiple test files in `tests/` are discovered and run automatically. You can organize tests by concern (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`).
 
-> **Note:** The integration test infrastructure requires `logos-standalone-app` with QML inspector support. This is provided automatically by `logos-module-builder` — no extra flake inputs needed.
+> **Note:** `ui-tests` is an app rather than a `nix flake check`: the Nix sandbox cannot fetch Basecamp. The launcher runs `nix run github:logos-co/logos-basecamp#dev`; set `LOGOS_BASECAMP` to another flake ref, or `LOGOS_BASECAMP_DEV` to a prebuilt `logos-basecamp-dev`, to change that. No extra flake inputs are needed.
 
 ---
 
@@ -2128,7 +2128,7 @@ and is torn down anyway.
 | [logos-package](https://github.com/logos-co/logos-package)                       | Package format             | `lgx` (CLI), `liblgx` (library)                                                   |
 | [logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package management   | `lgpm` (CLI)                                                                      |
 | [logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog + downloads | `lgpd` (CLI)                                                                      |
-| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Minimal UI module runner   | `logos-standalone-app` (loads a single UI plugin for testing)                     |
+| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Deprecated UI runner       | superseded by Basecamp's standalone mode (`logos-basecamp#dev`)                   |
 | [logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop app shell          | `LogosApp` (GUI), MDI workspace, plugin loader                                    |
 
 ## Reference: CLI Tools Summary
@@ -2232,9 +2232,9 @@ What a module's flake gives you, beyond `nix build`.
 | `.#lgx` / `.#lgx-portable` | the `.lgx` package, dev and portable variants; sign the final writable archive separately |
 | `.#install` / `.#install-portable` | build, bundle and install via `lgpm` in one step |
 | `.#unit-tests` | added automatically when `tests/CMakeLists.txt` exists; also a `check` |
-| `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — relaunch and QML edits are picked up with no rebuild |
-| `.#integration-test` (`ui_qml`) | headless UI tests via logos-qt-mcp; also a `check` |
-| `nix run .` (`ui_qml`) | the standalone app, with the plugin and its dependency modules |
+| `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — the module in Basecamp's standalone mode; relaunch and QML edits are picked up with no rebuild |
+| `nix run .#ui-tests` (`ui_qml`) | headless UI tests via logos-qt-mcp, in Basecamp's standalone mode; an app, not a `check` |
+| `nix run .` (`ui_qml`) | Basecamp in standalone mode, with the plugin and its dependency modules |
 
 Every one of these also exists per system, including the cross target:
 `nix build .#packages.x86_64-windows.lgx-portable`. That target is a
@@ -2299,11 +2299,11 @@ If the install fails with `Package does not contain variant for platform`, the p
 
 ### UI module `nix run` fails to load dependencies
 
-When running a UI module with `nix run`, the standalone app automatically bundles all module dependencies declared in `metadata.json`. If dependencies fail to load, check the following requirements:
+When running a UI module with `nix run`, Basecamp's standalone mode installs all module dependencies declared in `metadata.json`. If dependencies fail to load, check the following requirements:
 
 **Requirements for auto-bundled dependencies:**
 
-1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with the standalone app.
+1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with Basecamp's standalone mode.
 
 2. **Dependencies must be listed in `metadata.json`** under the `"dependencies"` array:
 
@@ -2327,12 +2327,12 @@ When running a UI module with `nix run`, the standalone app automatically bundle
 
 4. **Module names must be consistent** — the `"name"` field in each dependency's `metadata.json` must match its flake input name. The build system uses this name to locate the plugin binary (`{name}_plugin.so` / `{name}_plugin.dylib`).
 
-**What changed (no more `logos-standalone-app` input):**
+**What changed (Basecamp's standalone mode replaces `logos-standalone-app`):**
 
-- `logos-standalone-app` is now bundled inside `logos-module-builder` — UI module flakes no longer need it as a separate input.
-- No `logosStandalone` parameter is needed in `mkLogosQmlModule`, `mkLogosModule`, or `mkLogosQmlModule` calls.
-- Dependencies (including transitive ones) are automatically resolved from the flake input tree, bundled as LGX packages at build time, and extracted into the modules directory at runtime.
-- The standalone app uses `logos_core_load_plugin_with_dependencies()` which resolves the full transitive dependency graph via metadata.json files.
+- `nix run .`, `.#ui-dev` and `nix run .#ui-tests` hand the module to Basecamp's `dev` command (`nix run github:logos-co/logos-basecamp#dev`). `logos-standalone-app` is deprecated and `logos-module-builder` no longer uses it.
+- UI module flakes need no Basecamp or standalone-app input. `logosStandalone` is accepted and ignored with a warning.
+- Dependencies (including transitive ones) are resolved from the flake input tree and passed to Basecamp as the LGX packages this flake builds, so `follows` and `--override-input` hold. Basecamp installs them and checks their versions.
+- `.#integration-test` and `.#test-framework` are gone: run UI tests with `nix run .#ui-tests`, and build the framework with `nix build github:logos-co/logos-qt-mcp -o result-mcp`.
 
 **Example C++ UI module `flake.nix` (view module — C++ backend + QML view):**
 
