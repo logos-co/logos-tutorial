@@ -127,8 +127,7 @@ The **Logos platform** is a modular application framework built in C++ on top of
 | **logos-package**            | [logos-co/logos-package](https://github.com/logos-co/logos-package)                       | LGX package format library + `lgx` CLI                    |
 | **logos-package-manager**    | [logos-co/logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package manager library + `lgpm` CLI                |
 | **logos-package-downloader** | [logos-co/logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog browser + `lgpd` CLI                       |
-| **logos-standalone-app**     | [logos-co/logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Deprecated; superseded by Basecamp's standalone mode      |
-| **logos-basecamp**           | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop application shell                                 |
+| **logos-basecamp**           | [logos-co/logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop application shell; its standalone mode runs/tests UI modules in isolation |
 
 ## Prerequisites
 
@@ -195,7 +194,7 @@ nix flake init -t github:logos-co/logos-module-builder#rust-with-external-lib
 | `rust`                   | Minimal core module written in Rust                   |
 | `rust-with-external-lib` | Rust core module linking an external C library        |
 
-The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin on its own, in Basecamp's standalone mode (`nix run github:logos-co/logos-basecamp#dev`). No extra flake input is needed. All module dependencies declared in `metadata.json` are auto-bundled from their LGX packages.
+The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation, in Basecamp's standalone mode: only your module is opened, in the real runtime (sandbox, ui-host, intents). No Basecamp flake input is needed — the launcher fetches Basecamp when you run it. All module dependencies declared in `metadata.json` are built by your flake and installed for it.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
@@ -654,21 +653,23 @@ This opens a window showing the module's metadata, methods, and allows interacti
 
 ## Part 3: Testing UI Modules
 
-For `ui_qml` modules (both QML-only and C++ backend), `logos-module-builder` provides automatic integration testing using the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) QML inspector.
+For `ui_qml` modules (both QML-only and C++ backend), `logos-module-builder` provides automatic UI testing, run in Basecamp's standalone mode through the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) QML inspector.
 
 ### 3.1 How It Works
 
 The test infrastructure has three layers:
 
-1. **QML Inspector** — a TCP server compiled into Basecamp's development build (`logos-basecamp#dev`) that exposes the QML object tree
+1. **QML Inspector** — a TCP server compiled into Basecamp's standalone build that exposes the QML object tree
 2. **MCP Server** — a Node.js bridge that translates test commands into inspector calls
 3. **Test Framework** — a JavaScript API for writing UI assertions (`expectTexts`, `click`, `waitFor`, etc.)
 
-When you run `nix run .#ui-tests`, the builder hands your module to Basecamp's `dev --test`, which:
+When you run `nix run .#ui-tests`, for each `.mjs` file in your `tests/` directory:
 
-- Opens your module in Basecamp's standalone mode, headless (`QT_QPA_PLATFORM=offscreen`), with a fresh user directory per test file
-- Connects to the QML inspector
-- Runs all `.mjs` test files in your `tests/` directory, stopping at the first failure
+- Basecamp starts in standalone mode, headless (`QT_QPA_PLATFORM=offscreen`), with your module and its dependencies and a fresh user directory
+- The test file connects to the QML inspector and runs its tests
+- The command exits non-zero on the first failing file
+
+It is an app, not a `nix flake check`: the Nix sandbox cannot fetch Basecamp. In CI, run `nix run .#ui-tests`; set `LOGOS_BASECAMP=github:logos-co/logos-basecamp/<tag>` to test against a fixed Basecamp rather than its latest master.
 
 ### 3.2 Writing Tests
 
@@ -677,7 +678,7 @@ Create `.mjs` files in `tests/`. Each file imports the test framework and define
 ```javascript
 import { resolve } from "node:path";
 
-// `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use: nix build github:logos-co/logos-qt-mcp -o result-mcp
+// `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use: nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
 const root =
   process.env.LOGOS_QT_MCP ||
   new URL("../result-mcp", import.meta.url).pathname;
@@ -705,7 +706,7 @@ run();
 Key test APIs:
 
 - `app.expectTexts(["text1", "text2"])` — assert text is visible in the UI
-- `app.click("Button Text")` — find an element by text and click it
+- `app.click("Button Text")` — click the first element in the window whose text contains this (`{ exact: true }` for an exact match). The window is Basecamp's, so its own UI can match too — for anything Basecamp also shows (`Settings`, `Reload`, …), give your item an `objectName` and click it by that (`findByProperty("objectName", …)`, then the inspector's `click`)
 - `app.waitFor(fn, opts)` — retry an assertion until it passes or times out
 - `app.screenshot()` — capture the current UI state (returns a base64 PNG; write it to a file to embed it in docs)
 
@@ -714,11 +715,11 @@ Key test APIs:
 ### 3.3 Running Tests
 
 ```bash
-# Headless run of every tests/*.mjs (no display needed)
+# Every tests/*.mjs, headless (builds everything, no display needed) — also what CI runs
 nix run .#ui-tests
 
 # Interactive: build the test framework locally (one-time)
-nix build github:logos-co/logos-qt-mcp -o result-mcp
+nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
 
 # Start the app (inspector listens on localhost:3768)
 nix run .
@@ -729,7 +730,7 @@ node tests/ui-tests.mjs
 
 Multiple test files in `tests/` are discovered and run automatically. You can organize tests by concern (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`).
 
-> **Note:** `ui-tests` is an app rather than a `nix flake check`: the Nix sandbox cannot fetch Basecamp. The launcher runs `nix run github:logos-co/logos-basecamp#dev`; set `LOGOS_BASECAMP` to another flake ref, or `LOGOS_BASECAMP_DEV` to a prebuilt `logos-basecamp-dev`, to change that. No extra flake inputs are needed.
+> **Note:** `nix run .`, `.#ui-dev` and `.#ui-tests` run Basecamp's `dev` command from `github:logos-co/logos-basecamp`, fetched on first use. `LOGOS_BASECAMP=path:../logos-basecamp` uses a local checkout; `LOGOS_BASECAMP_DEV` names a prebuilt `logos-basecamp-dev` and skips the fetch.
 
 ---
 
@@ -1963,7 +1964,7 @@ When your module is installed via `lgpm`, its dependencies are automatically res
 
 #### How dependencies are consumed — the LIDL contract
 
-Each module publishes a small, language-neutral **LIDL interface contract** as a cheap flake output (`packages.<system>.lidl`), generated from its source with no plugin compile. When you depend on a module, the builder generates the typed `modules().<dep>` wrapper **from that published LIDL** — so building (or packaging) your module **does not build the dependency module**. The only step that still builds and bundles dependency plugins is the standalone-app run (`nix run` / `#run`), which has to, because it loads them.
+Each module publishes a small, language-neutral **LIDL interface contract** as a cheap flake output (`packages.<system>.lidl`), generated from its source with no plugin compile. When you depend on a module, the builder generates the typed `modules().<dep>` wrapper **from that published LIDL** — so building (or packaging) your module **does not build the dependency module**. The only steps that still build dependency plugins are `nix run` / `.#ui-dev` / `.#ui-tests`, which have to, because they load them.
 
 This is the same `logos-cpp-generator` from [§8.2](#82-the-c-sdk-code-generator), just driven by the dependency's LIDL contract — the same kind of `.lidl`/`.h` contract `interface_dependencies` uses — instead of inspecting a compiled plugin. Inspecting a compiled plugin (as §8.2 describes) is the manual/standalone path; for declared module dependencies the builder uses the contract path, which is why no dependency plugin is built.
 
@@ -2128,8 +2129,7 @@ and is torn down anyway.
 | [logos-package](https://github.com/logos-co/logos-package)                       | Package format             | `lgx` (CLI), `liblgx` (library)                                                   |
 | [logos-package-manager](https://github.com/logos-co/logos-package-manager)       | Local package management   | `lgpm` (CLI)                                                                      |
 | [logos-package-downloader](https://github.com/logos-co/logos-package-downloader) | Online catalog + downloads | `lgpd` (CLI)                                                                      |
-| [logos-standalone-app](https://github.com/logos-co/logos-standalone-app)         | Deprecated UI runner       | superseded by Basecamp's standalone mode (`logos-basecamp#dev`)                   |
-| [logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop app shell          | `LogosApp` (GUI), MDI workspace, plugin loader                                    |
+| [logos-basecamp](https://github.com/logos-co/logos-basecamp)                     | Desktop app shell          | `LogosApp` (GUI), MDI workspace, plugin loader; standalone mode (`#dev`) runs and tests one UI module |
 
 ## Reference: CLI Tools Summary
 
@@ -2232,9 +2232,9 @@ What a module's flake gives you, beyond `nix build`.
 | `.#lgx` / `.#lgx-portable` | the `.lgx` package, dev and portable variants; sign the final writable archive separately |
 | `.#install` / `.#install-portable` | build, bundle and install via `lgpm` in one step |
 | `.#unit-tests` | added automatically when `tests/CMakeLists.txt` exists; also a `check` |
-| `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — the module in Basecamp's standalone mode; relaunch and QML edits are picked up with no rebuild |
-| `nix run .#ui-tests` (`ui_qml`) | headless UI tests via logos-qt-mcp, in Basecamp's standalone mode; an app, not a `check` |
-| `nix run .` (`ui_qml`) | Basecamp in standalone mode, with the plugin and its dependency modules |
+| `.#ui-dev` (`ui_qml`) | `./result/bin/run-logos-standalone-ui` — relaunch and QML edits are picked up with no rebuild |
+| `nix run .#ui-tests` (`ui_qml`) | headless UI tests (`tests/*.mjs`) via logos-qt-mcp, in Basecamp; an app, not a `check` |
+| `nix run .` (`ui_qml`) | the module in Basecamp's standalone mode, with its dependency modules; add other apps with `--app <name>=<flake ref>` |
 
 Every one of these also exists per system, including the cross target:
 `nix build .#packages.x86_64-windows.lgx-portable`. That target is a
@@ -2299,11 +2299,11 @@ If the install fails with `Package does not contain variant for platform`, the p
 
 ### UI module `nix run` fails to load dependencies
 
-When running a UI module with `nix run`, Basecamp's standalone mode installs all module dependencies declared in `metadata.json`. If dependencies fail to load, check the following requirements:
+When running a UI module with `nix run`, every module dependency declared in `metadata.json` (and theirs) is built by your flake and installed for it in Basecamp. If dependencies fail to load, check the following requirements:
 
 **Requirements for auto-bundled dependencies:**
 
-1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up with Basecamp's standalone mode.
+1. **Module type must be `"ui"` or use `mkLogosQmlModule`** — only UI modules get `apps.default` wired up to Basecamp.
 
 2. **Dependencies must be listed in `metadata.json`** under the `"dependencies"` array:
 
@@ -2327,12 +2327,13 @@ When running a UI module with `nix run`, Basecamp's standalone mode installs all
 
 4. **Module names must be consistent** — the `"name"` field in each dependency's `metadata.json` must match its flake input name. The build system uses this name to locate the plugin binary (`{name}_plugin.so` / `{name}_plugin.dylib`).
 
-**What changed (Basecamp's standalone mode replaces `logos-standalone-app`):**
+**What changed (`logos-standalone-app` is retired):**
 
-- `nix run .`, `.#ui-dev` and `nix run .#ui-tests` hand the module to Basecamp's `dev` command (`nix run github:logos-co/logos-basecamp#dev`). `logos-standalone-app` is deprecated and `logos-module-builder` no longer uses it.
-- UI module flakes need no Basecamp or standalone-app input. `logosStandalone` is accepted and ignored with a warning.
-- Dependencies (including transitive ones) are resolved from the flake input tree and passed to Basecamp as the LGX packages this flake builds, so `follows` and `--override-input` hold. Basecamp installs them and checks their versions.
-- `.#integration-test` and `.#test-framework` are gone: run UI tests with `nix run .#ui-tests`, and build the framework with `nix build github:logos-co/logos-qt-mcp -o result-mcp`.
+- `nix run .` runs your module in Basecamp's standalone mode. Neither `logos-standalone-app` nor Basecamp is a flake input of your module; the launcher fetches Basecamp's `dev` command at run time.
+- `logosStandalone` is ignored (with a warning) if a flake still passes it.
+- Dependencies (including transitive ones) are resolved from your flake input tree and built as LGX packages by your flake — its `follows` and `--override-input` apply — then installed by Basecamp at launch.
+- In standalone mode a dependency outside its declared version range (usual for one built from source) loads with a warning; a missing one still blocks the app.
+- `.#integration-test` and `.#test-framework` are gone: run UI tests with `nix run .#ui-tests`, and build the framework with `nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp`.
 
 **Example C++ UI module `flake.nix` (view module — C++ backend + QML view):**
 

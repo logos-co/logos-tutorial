@@ -42,7 +42,7 @@ sections:
   - title: "Architecture"
     text: |
       ```
-        logos-basecamp (standalone mode in development)
+        logos-basecamp (standalone mode while developing)
         ┌─────────────────────────────────────────────┐
         │                                             │
         │   QML View (Main.qml)                      │
@@ -515,6 +515,7 @@ sections:
                         }
 
                         Button {
+                            objectName: "calc_ui_cpp.addButton"
                             text: "Add"
                             enabled: root.ready
                             onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
@@ -655,7 +656,7 @@ sections:
   - title: "Use the Logos Design System in your QML"
     step: true
     text: |
-      The QML you load above runs inside the host (`logos-basecamp`, or its standalone mode during development), which already has `logos-design-system` on the QML import path. Use its themed components rather than rolling your own visuals — your module gets the polished look automatically as the design system evolves.
+      The QML you load above runs inside the host (`logos-basecamp`, or its standalone mode under `nix run .`), which already has `logos-design-system` on the QML import path. Use its themed components rather than rolling your own visuals — your module gets the polished look automatically as the design system evolves.
 
       ```qml
       import Logos.Theme
@@ -663,6 +664,7 @@ sections:
       import Logos.Icons        // optional shared icon assets
 
       LogosButton {
+          objectName: "calc_ui_cpp.addButton"
           text: qsTr("Add")
           onClicked: root.callCalc("add", [parseInt(inputA.text) || 0,
                                            parseInt(inputB.text) || 0])
@@ -786,10 +788,14 @@ sections:
           launch: "nix run ."
           setup:
             - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
+            # `nix run .` starts Basecamp's `dev` command; fetch it here so the
+            # launch is not also a first-time Basecamp build.
+            - "nix build 'github:logos-co/logos-basecamp#dev' --no-link"
           qt_mcp: "result-mcp"
           # `nix build .` (the runner's warm-up) builds the UI plugin, not
-          # `apps.default`'s Basecamp closure, so that still compiles
-          # during launch and can blow past the default 120s inspector wait.
+          # the dependency packages `apps.default` hands Basecamp, so those
+          # still compile during launch and can blow past the default 120s
+          # inspector wait.
           launch_timeout: 900
           tests:
             - name: "App window opens with title"
@@ -812,8 +818,9 @@ sections:
               find_value: "b"
               value: "5"
             - name: "Click Add"
-              action: click
-              target: "Add"
+              action: click_object
+              find_by: "objectName"
+              find_value: "calc_ui_cpp.addButton"
             - name: "Result of 3 + 5 shows 8"
               action: wait_for
               texts: ["8"]
@@ -870,14 +877,14 @@ sections:
       ./result/bin/run-logos-standalone-ui
       ```
 
-      Run from the repo root and the launcher finds your QML source automatically, then watches it. Edit a `.qml` file, save, and the view re-renders in about 200 ms. It reports what it picked up on startup:
+      Run from the repo root and the launcher finds your QML source automatically, then watches it. Edit a `.qml` file, save, and the view re-renders. It reports what it picked up on startup:
 
       ```
       run-logos-standalone-ui: hot-reloading QML from /path/to/logos-calc-ui-cpp/src/qml
         (export DEV_QML_PATH to override, or LOGOS_QML_HOT_RELOAD=0 to disable)
       ```
 
-      `ui-dev` is the same wrapper `nix run .` uses — dependency modules bundled and loaded identically — exposed as a package so it lands in `./result/bin`. It is a development target and is never bundled into `.lgx` packages.
+      `ui-dev` is the same launcher `nix run .` uses — the module in Basecamp's standalone mode, dependency modules installed and loaded identically — exposed as a package so it lands in `./result/bin`. It is a development target and is never bundled into `.lgx` packages.
 
       **What reloads, and what doesn't.**
 
@@ -891,14 +898,14 @@ sections:
 
       > **Custom layouts:** the launcher looks for the `view` entry from `metadata.json` under `src/<viewDir>/`, then `<viewDir>/`. If your tree differs, set `DEV_QML_PATH` to the directory holding the entry file and it takes precedence.
 
-      > The launcher runs your view in Basecamp's standalone mode. A regular Basecamp install loads QML plugins from its own data directory, so there source edits are not reflected until you rebuild and reinstall the `.lgx` package.
+      > This is the dev launcher only. An installed Basecamp loads QML plugins from its own data directory, so source edits are not reflected there until you rebuild and reinstall the `.lgx` package.
 
   - title: "How the Pieces Connect"
     step: true
     text: |
       1. `nix build` → generates the `*Plugin`/`*Interface` glue around your `CalcUiCppBackend`, compiles the C++ plugin + replica factory, bundles QML view
-      2. `nix run` → launches Basecamp in standalone mode, which:
-         - Installs and loads `calc_module` (dependency)
+      2. `nix run` → launches the module in Basecamp's standalone mode, which:
+         - Loads `calc_module` (dependency)
          - Spawns a `ui-host` child process with `calc_ui_cpp_plugin.so`
          - The generated plugin calls `initLogos()` → wires `modules()` and `onContextReady()` → `setBackend(<your CalcUiCppBackend>)` → `enableRemoting(host)`
          - Backend is now accessible over a local socket
@@ -912,7 +919,7 @@ sections:
     text: |
       Add automated UI tests using the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework. Just create `.mjs` files in `tests/` and `logos-module-builder` auto-wires `nix run .#ui-tests`.
 
-      Tests connect to the QML inspector inside Basecamp (in standalone mode) and can find elements, click buttons, verify text, and take screenshots.
+      Tests connect to the QML inspector inside Basecamp (standalone mode) and can find elements, click buttons, verify text, and take screenshots. Click your own controls by `objectName` (as the Step 9 test does with `calc_ui_cpp.addButton`), not by their text: the window is Basecamp's, and its own UI can show the same text.
     steps:
       - title: "Create a test file"
         text: |
@@ -923,7 +930,8 @@ sections:
           content: |
             import { resolve } from "node:path";
 
-            // `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use: nix build github:logos-co/logos-qt-mcp -o result-mcp
+            // `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use:
+            //   nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
             const root =
               process.env.LOGOS_QT_MCP ||
               new URL("../result-mcp", import.meta.url).pathname;
@@ -950,14 +958,15 @@ sections:
         run: "git add tests/"
       - run: "nix flake update --override-input calc_module path:../logos-calc-module && nix run .#ui-tests"
         code_block: |
+          # Every tests/*.mjs, headless — also what CI runs
           nix run .#ui-tests
         post_text: |
-          `ui-tests` hands every `.mjs` file in `tests/` to Basecamp's `dev --test`: it opens your module in Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed) and a fresh user directory per file, connects to the QML inspector, and exits non-zero on the first failure. It is an app rather than a `nix flake check` because the Nix sandbox cannot fetch Basecamp.
+          `ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP=github:logos-co/logos-basecamp/<tag>` to test against a fixed Basecamp.
 
           To run tests interactively (against an already-running app):
 
           ```bash
-          nix build github:logos-co/logos-qt-mcp -o result-mcp
+          nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
           nix run .                     # app with inspector on :3768
           node tests/ui-tests.mjs       # in another terminal
           ```
