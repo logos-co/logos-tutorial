@@ -30,7 +30,7 @@ Before writing code, let's understand the architecture:
 +-------------------+                             +-------------------+
         ^                                                  ^
         └──────────────── loaded by ───────────────────────┘
-                            logos-basecamp
+           logos-basecamp (standalone mode while developing)
 ```
 
 Key points:
@@ -190,6 +190,7 @@ Item {
             }
 
             Button {
+                objectName: "calc_ui.addButton"
                 text: "Add"
                 onClicked: callTwoOp("add", inputA.text, inputB.text)
             }
@@ -356,7 +357,7 @@ The placeholder `path:/path/to/your/calc_module` is **not** meant to be edited b
 
 > **Important:** Whichever URL scheme you use, `calc_module` must be built with its shared library (`.so` on Linux, `.dylib` on macOS) present in `lib/`. If the library is missing, the nix build will fail with linker errors. See [Part 1, Step 2.4](tutorial-wrapping-c-library.md#24-build-the-shared-library) for build instructions.
 
-`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, bundles all module dependencies (direct and transitive) from their LGX packages, and automatically wires up `apps.default` so `nix run .` opens the UI in Basecamp's standalone mode with all required backend modules self-contained. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
+`mkLogosQmlModule` handles everything — it stages QML files, metadata, and icons into a plugin directory, builds all module dependencies (direct and transitive) as LGX packages, and automatically wires up `apps.default` so `nix run .` launches the UI in Basecamp's standalone mode — a window hosting only your app — with those backend modules installed for it. `flakeInputs = inputs` passes all inputs so that dependencies declared in `metadata.json` are resolved automatically.
 
 ---
 
@@ -388,7 +389,7 @@ The app opens immediately. No modules are loaded, so clicking buttons shows "Log
 
 ## Step 6: Full functionality (with modules)
 
-Basecamp's standalone mode installs and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
+`nix run .` installs and loads all module dependencies declared in `metadata.json`. To test with your local `calc_module` from Part 1, you first need to make sure it has been built and its shared library (`.so` on Linux, `.dylib` on macOS) is present.
 
 ### 6.1 Ensure `calc_module` is built
 
@@ -462,7 +463,7 @@ Whichever option you choose, clicking **Add**, **Multiply**, **Factorial**, or *
 
 ## Step 7: Using the Logos Design System
 
-`logos-basecamp` (standalone mode included) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
+`logos-basecamp` (including its standalone mode, which `nix run .` uses) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
 
 ```qml
 import Logos.Theme
@@ -495,6 +496,7 @@ Each storybook page exposes a `designed: true/false` flag if you want to see at 
 ```qml
 // Instead of Button:
 LogosButton {
+    objectName: "calc_ui.addButton"
     text: qsTr("Add")
     onClicked: callTwoOp("add", inputA.text, inputB.text)
 }
@@ -701,14 +703,14 @@ nix build .#ui-dev
 ./result/bin/run-logos-standalone-ui
 ```
 
-Run from the repo root and the launcher finds your QML source automatically, then watches it. Edit a `.qml` file, save, and the view re-renders in about 200 ms. It reports what it picked up on startup:
+Run from the repo root and the launcher finds your QML source automatically, then watches it. Edit a `.qml` file, save, and the view re-renders. It reports what it picked up on startup:
 
 ```
 run-logos-standalone-ui: hot-reloading QML from /path/to/logos-calc-ui
   (export DEV_QML_PATH to override, or LOGOS_QML_HOT_RELOAD=0 to disable)
 ```
 
-`ui-dev` is the same wrapper `nix run .` uses — dependency modules bundled and loaded identically — exposed as a package so it lands in `./result/bin`. It is a development target and is never bundled into `.lgx` packages.
+`ui-dev` is the same launcher `nix run .` uses — the module in Basecamp's standalone mode, dependency modules installed and loaded identically — exposed as a package so it lands in `./result/bin`. It is a development target and is never bundled into `.lgx` packages.
 
 **What reloads, and what doesn't.**
 
@@ -722,7 +724,7 @@ run-logos-standalone-ui: hot-reloading QML from /path/to/logos-calc-ui
 
 > **Custom layouts:** the launcher looks for the `view` entry from `metadata.json` under `src/<viewDir>/`, then `<viewDir>/`. If your tree differs, set `DEV_QML_PATH` to the directory holding the entry file and it takes precedence.
 
-> The launcher runs your view in Basecamp's standalone mode. A regular Basecamp install loads QML plugins from its own data directory, so there source edits are not reflected until you rebuild and reinstall the `.lgx` package.
+> This is the dev launcher only. An installed Basecamp loads QML plugins from its own data directory, so source edits are not reflected there until you rebuild and reinstall the `.lgx` package.
 
 ### 8.11 Testing without any runtime
 
@@ -757,7 +759,9 @@ qml6 Main.qml
 
 You can add automated UI tests that verify your QML plugin renders correctly. The test infrastructure is built into `logos-module-builder` — just add `.mjs` test files to a `tests/` directory and you get `nix run .#ui-tests` for free.
 
-Tests use the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework, which connects to the QML inspector inside Basecamp (in standalone mode) and can find elements, click buttons, verify text, and take screenshots.
+Tests use the [logos-qt-mcp](https://github.com/logos-co/logos-qt-mcp) test framework, which connects to the QML inspector inside Basecamp (standalone mode) and can find elements, click buttons, verify text, and take screenshots.
+
+Click your own controls by `objectName`, not by their text: the window is Basecamp's, and its own UI has buttons too (Settings has an **Add**). A text click takes the first match in the window.
 
 ### 9.1 Create a test file
 
@@ -766,7 +770,8 @@ Create `tests/ui-tests.mjs`:
 ```javascript
 import { resolve } from "node:path";
 
-// `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use: nix build github:logos-co/logos-qt-mcp -o result-mcp
+// `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use:
+//   nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
 const root =
   process.env.LOGOS_QT_MCP ||
   new URL("../result-mcp", import.meta.url).pathname;
@@ -787,8 +792,18 @@ test("calc_ui: add button visible", async (app) => {
   await app.expectTexts(["Add"]);
 });
 
+// Click by objectName: Basecamp's own UI can show the same text.
+async function clickObject(app, objectName) {
+  const found = await app.findByProperty("objectName", objectName);
+  if (!found.matches || found.matches.length === 0) {
+    throw new Error(`no object named ${objectName}`);
+  }
+  const res = await app.inspector.send("click", { objectId: found.matches[0].id });
+  if (res.error) throw new Error(`click ${objectName}: ${res.error}`);
+}
+
 test("calc_ui: click add shows validation", async (app) => {
-  await app.click("Add");
+  await clickObject(app, "calc_ui.addButton");
   await app.waitFor(
     async () => {
       await app.expectTexts(["Enter values for a and b"]);
@@ -810,14 +825,14 @@ git add tests/
 nix run .#ui-tests
 ```
 
-`ui-tests` hands every `.mjs` file in `tests/` to Basecamp's `dev --test`: it opens your module in Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed) and a fresh user directory per file, connects to the QML inspector, and exits non-zero on the first failure. It is an app rather than a `nix flake check` because the Nix sandbox cannot fetch Basecamp.
+`ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP=github:logos-co/logos-basecamp/<tag>` to test against a fixed Basecamp.
 
 You can have multiple test files (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`) — they are all discovered and run automatically.
 
 To run tests interactively (against an already-running app):
 
 ```bash
-nix build github:logos-co/logos-qt-mcp -o result-mcp
+nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
 nix run .          # start the app with inspector on :3768
 node tests/ui-tests.mjs  # in another terminal
 ```
