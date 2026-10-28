@@ -1,18 +1,18 @@
 #pragma once
 
 #include "rep_calc_ui_cpp_source.h"
-#include "logos_ui_plugin_context.h"
+#include "logos_module_context.h"
 
 // The whole hand-written backend. Derives:
 //   - CalcUiCppSimpleSource — generated from calc_ui_cpp.rep; override its
 //     slots (the QML replica gets each return value via Qt Remote Objects).
-//   - LogosUiPluginContext — supplies modules() (Qt-typed callers + typed event
-//     subscriptions for "dependencies") and onContextReady(). A UI plugin is a
-//     view, not a module, so that is all the context carries.
-// The *Plugin / *Interface classes (Q_PLUGIN_METADATA, initLogos wiring,
-// QtRO registration) are generated around it.
+//   - LogosModuleContext — what every C++ core module derives: modules()
+//     (Qt-typed callers + typed event subscriptions for "dependencies"),
+//     onContextReady(), the data folder and the aboutToUnload() hook.
+// The plugin around it (Q_PLUGIN_METADATA, initLogos wiring, the channel
+// to the view) is generated; it runs as the core module calc_ui_cpp_backend.
 class CalcUiCppBackend : public CalcUiCppSimpleSource,
-                         public LogosUiPluginContext
+                         public LogosModuleContext
 {
 public:
     // Slots from calc_ui_cpp.rep — each delegates to calc_module.
@@ -25,7 +25,7 @@ public:
     // Tells calc_module to emit its `versionReady` event.
     void announceVersion() override;
 
-    // Fires once when ui-host hands the plugin its LogosAPI — the
+    // Fires once when logos core hands the module its LogosAPI — the
     // typed dependency surface is live, so we arm the event
     // subscription here (before the view's first call).
     void onContextReady() override;

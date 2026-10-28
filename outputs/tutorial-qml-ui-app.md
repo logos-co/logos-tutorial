@@ -715,7 +715,7 @@ run-logos-standalone-ui: hot-reloading QML from /path/to/logos-calc-ui
 **What reloads, and what doesn't.**
 
 - **Any `.qml`/`.js` under your view directory**, including files and folders created after launching.
-- **The backend keeps running.** A module's C++ backend lives in a separate `ui-host` process, so its state and connections survive a reload.
+- **The backend keeps running.** A reload replaces only the view; an app's C++ backend runs as its own core module and is not touched, so its state and connections survive.
 - **QML-side state resets** — scroll position, text fields, current tab.
 - **A syntax error is recoverable.** It's logged with a line number and the view blanks; the next save that compiles restores it.
 - **C++, `.rep`, `metadata.json` and CMake changes still need a rebuild.** Re-run `nix build .#ui-dev` and relaunch.
@@ -825,7 +825,7 @@ git add tests/
 nix run .#ui-tests
 ```
 
-`ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP=github:logos-co/logos-basecamp/<tag>` to test against a fixed Basecamp.
+`ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP` to a tagged Basecamp flake ref (logos-basecamp on GitHub, `/<tag>` appended) to test against a fixed Basecamp.
 
 You can have multiple test files (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`) — they are all discovered and run automatically.
 

@@ -380,7 +380,7 @@ sections:
             - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
             # `nix run .` starts Basecamp's `dev` command; fetch it here so the
             # launch is not also a first-time Basecamp build.
-            - "nix build 'github:logos-co/logos-basecamp#dev' --no-link"
+            - "nix build 'github:logos-co/logos-basecamp{release}#dev' --no-link"
           qt_mcp: "result-mcp"
           # The runner pre-builds `nix build .` — that is `packages.default`
           # (the UI plugin). But `nix run .` launches `apps.default`, which
@@ -458,7 +458,7 @@ sections:
             - "nix build 'github:logos-co/logos-qt-mcp' -o result-mcp"
             # `nix run .` starts Basecamp's `dev` command; fetch it here so the
             # launch is not also a first-time Basecamp build.
-            - "nix build 'github:logos-co/logos-basecamp#dev' --no-link"
+            - "nix build 'github:logos-co/logos-basecamp{release}#dev' --no-link"
           qt_mcp: "result-mcp"
           # Overriding calc_module rebuilds its package, which the
           # `nix build` warm-up does not cover — see the note in Step 5.
@@ -812,7 +812,7 @@ sections:
           **What reloads, and what doesn't.**
 
           - **Any `.qml`/`.js` under your view directory**, including files and folders created after launching.
-          - **The backend keeps running.** A module's C++ backend lives in a separate `ui-host` process, so its state and connections survive a reload.
+          - **The backend keeps running.** A reload replaces only the view; an app's C++ backend runs as its own core module and is not touched, so its state and connections survive.
           - **QML-side state resets** — scroll position, text fields, current tab.
           - **A syntax error is recoverable.** It's logged with a line number and the view blanks; the next save that compiles restores it.
           - **C++, `.rep`, `metadata.json` and CMake changes still need a rebuild.** Re-run `nix build .#ui-dev` and relaunch.
@@ -870,7 +870,7 @@ sections:
             import { resolve } from "node:path";
 
             // `nix run .#ui-tests` sets LOGOS_QT_MCP; for interactive use:
-            //   nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
+            //   nix build github:logos-co/logos-basecamp{release}#logos-qt-mcp -o result-mcp
             const root =
               process.env.LOGOS_QT_MCP ||
               new URL("../result-mcp", import.meta.url).pathname;
@@ -919,14 +919,14 @@ sections:
         code_block: |
           nix run .#ui-tests
         post_text: |
-          `ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP=github:logos-co/logos-basecamp/<tag>` to test against a fixed Basecamp.
+          `ui-tests` runs each `.mjs` file in `tests/` against Basecamp's standalone mode with `QT_QPA_PLATFORM=offscreen` (no display needed), a fresh user directory per file, and exits non-zero if any test fails — run the same command in CI. It is an app rather than a `nix flake check`, because the Nix sandbox cannot fetch Basecamp; set `LOGOS_BASECAMP` to a tagged Basecamp flake ref (logos-basecamp on GitHub, `/<tag>` appended) to test against a fixed Basecamp.
 
           You can have multiple test files (e.g., `tests/smoke.mjs`, `tests/interactions.mjs`) — they are all discovered and run automatically.
 
           To run tests interactively (against an already-running app):
 
           ```bash
-          nix build github:logos-co/logos-basecamp#logos-qt-mcp -o result-mcp
+          nix build github:logos-co/logos-basecamp{release}#logos-qt-mcp -o result-mcp
           nix run .          # start the app with inspector on :3768
           node tests/ui-tests.mjs  # in another terminal
           ```
