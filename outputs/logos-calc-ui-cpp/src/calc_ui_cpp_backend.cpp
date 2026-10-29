@@ -34,7 +34,7 @@ int CalcUiCppBackend::fibonacci(int n)
 
 QString CalcUiCppBackend::libVersion()
 {
-    // A UI plugin is Qt-typed: modules().calc_module's wrapper returns QString
+    // The backend is Qt-typed: modules().calc_module's wrapper returns QString
     // (api-style qt), matching the .rep slot — no conversion needed.
     return modules().calc_module.libVersion();
 }
@@ -66,8 +66,8 @@ void CalcUiCppBackend::onContextReady()
 {
     // Typed module-event subscription. `versionReady` is calc_module's
     // event (Part 1's `logos_events:` block); the generated wrapper
-    // exposes it as on<Event> + a Qt-typed callback (QString, because a
-    // UI plugin is api-style qt). Push each payload into the versionEvent
+    // exposes it as on<Event> + a Qt-typed callback (QString, because the
+    // backend is api-style qt). Push each payload into the versionEvent
     // PROP — Qt Remote Objects then auto-syncs it to the QML replica.
     modules().calc_module.onVersionReady([this](const QString& version) {
         setVersionEvent(version);

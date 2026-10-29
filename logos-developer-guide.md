@@ -168,7 +168,7 @@ nix flake init -t github:logos-co/logos-module-builder
 # Or scaffold a module that wraps an external C/C++ library
 nix flake init -t github:logos-co/logos-module-builder#with-external-lib
 
-# For ui_qml modules with C++ backend (process-isolated)
+# For ui_qml modules with a C++ backend (runs as a core module)
 nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend
 
 # For ui_qml modules (QML-only, no C++)
@@ -189,12 +189,12 @@ nix flake init -t github:logos-co/logos-module-builder#rust-with-external-lib
 | ------------------------ | ----------------------------------------------------- |
 | `default`                | Minimal core module (C++ backend, no UI)              |
 | `with-external-lib`      | Core module wrapping an external C/C++ library        |
-| `ui-qml-backend`         | ui_qml with C++ backend + QML view (process-isolated) |
+| `ui-qml-backend`         | ui_qml with QML view + C++ backend run as a core module |
 | `ui-qml`                 | ui_qml QML-only (in-process, no C++)                  |
 | `rust`                   | Minimal core module written in Rust                   |
 | `rust-with-external-lib` | Rust core module linking an external C library        |
 
-The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation, in Basecamp's standalone mode: only your module is opened, in the real runtime (sandbox, ui-host, intents). No Basecamp flake input is needed — the launcher fetches Basecamp when you run it. All module dependencies declared in `metadata.json` are built by your flake and installed for it.
+The `ui-qml-backend` and `ui-qml` templates automatically enable `nix run` to launch and test your UI plugin in isolation, in Basecamp's standalone mode: only your module is opened, in the real runtime (sandbox, backend module, intents). No Basecamp flake input is needed — the launcher fetches Basecamp when you run it. All module dependencies declared in `metadata.json` are built by your flake and installed for it.
 
 This generates a ready-to-build project with all the boilerplate handled for you.
 
@@ -1045,7 +1045,7 @@ only loaded at runtime and therefore absent from the import table.
 The host also searches its executable directory and System32. It excludes the
 current working directory and `PATH` from DLL searching, so adding a directory
 to `PATH` is not a way to supply a missing module dependency. This policy applies
-to the dedicated Qt module host, not shared-process loaders, `lm`, or `ui-host`.
+to the dedicated Qt module host, not shared-process loaders, `lm`, or the deprecated `ui-host`.
 Older host builds require their existing search-path workaround; deploy the
 updated host before removing that workaround from a module. Linux and macOS
 continue to use the runtime paths embedded by the build and packaging tools.
@@ -1163,11 +1163,11 @@ These are non-UI modules that provide backend functionality. They run in isolate
 - Placed in the **modules directory** (`--modules-dir`)
 - Have `"type": "core"` in metadata
 
-#### ui_qml with C++ Backend (Process-Isolated)
+#### ui_qml with C++ Backend
 
-These have `"type": "ui_qml"` with both `"main"` (backend plugin) and `"view"` (QML entry point) in `metadata.json`. The C++ backend runs in a separate `ui-host` process; the QML view loads in the host app.
+These have `"type": "ui_qml"` with both `"main"` (backend) and `"view"` (QML entry point) in `metadata.json`, plus `"backend": "module"`. The QML view loads in the host app; the backend runs as an ordinary **core module** named `<app>_backend` (e.g. `calc_ui_cpp_backend`), in its own `logos_host` process like any other module. It is one app: one folder, one `metadata.json`, one `flake.nix`, one `.lgx` holding both halves.
 
-The remote interface is defined in a **`.rep` file** (Qt Remote Objects definition):
+The view's interface is defined in a **`.rep` file** (Qt Remote Objects definition):
 
 ```rep
 class CalcUiCpp
@@ -1178,19 +1178,16 @@ class CalcUiCpp
 }
 ```
 
-The `.rep` file is the **single source of truth** — `repc` generates:
+The `.rep` file is the **single source of truth** — `repc` generates `CalcUiCppSimpleSource`, the base class your backend inherits, and the typed replica the view uses via `logos.module()`.
 
-- `CalcUiCppSimpleSource` — base class the C++ backend inherits
-- `CalcUiCppReplica` — typed replica the QML view uses via `logos.module()`
-- A separate `_replica_factory` plugin for typed remoting
-
-The C++ plugin inherits from the generated source + `ViewPluginBase`:
+You write one class. It derives the generated source and `LogosModuleContext`, the same context every C++ core module derives:
 
 ```cpp
-class CalcUiCppPlugin : public CalcUiCppSimpleSource,
-                        public CalcUiCppInterface,
-                        public CalcUiCppViewPluginBase { ... };
+class CalcUiCppBackend : public CalcUiCppSimpleSource,
+                         public LogosModuleContext { ... };
 ```
+
+`LogosModuleContext` gives the backend `modules()` (typed callers and event subscriptions for its `dependencies`), `onContextReady()`, its data folder (`instancePersistencePath()`) and the `aboutToUnload()` teardown hook. The plugin around it is generated.
 
 QML accesses the backend via a typed replica:
 
@@ -1201,6 +1198,15 @@ Text { text: backend.status }
 // Return values via Promise:
 logos.watch(backend.add(1, 2), function(v) { ... })
 ```
+
+How it runs:
+
+- **Opening the app loads the backend; closing it unloads it** (its `aboutToUnload()` runs first).
+- **The view reaches only its backend.** Its `logos` object has no path to the core: `logos.callModule()` fails. Calls to other modules go through the backend's `modules()`. Intents (`logos.request` / `logos.respond`) still work — they go to the shell, not the core.
+- **Only the view can call the backend.** The shell restricts `<app>_backend` to the view's identity, and the backend's only callable method is `view_endpoint()`, which hands the view a private, one-time-authenticated channel. Other apps and modules are refused.
+- **Don't put anything sensitive in module events.** Today's protocol delivers events to every connected process.
+
+> **Deprecated: backends in `ui-host`.** Without `"backend": "module"`, the same `.rep` backend runs in a separate `ui-host` process, as it did before. It still works, but the build and Basecamp print a deprecation warning, and it will be removed in the next breaking release. To migrate, add `"backend": "module"` to `metadata.json` and derive `LogosModuleContext` instead of `LogosUiPluginContext` — see the [migration guide](https://github.com/logos-co/logos-module-builder/blob/master/docs/migration.md#ui-backends-as-core-modules).
 
 - Scaffold: `nix flake init -t github:logos-co/logos-module-builder#ui-qml-backend`
 - See [Tutorial Part 3](tutorial-cpp-ui-app.md) for a complete walkthrough
@@ -1939,7 +1945,7 @@ For hands-on walkthroughs of module development patterns, see the dedicated tuto
 
 - **[Wrapping a C Library](tutorial-wrapping-c-library.md)** — create `calc_module` wrapping a vendored C library. Covers external library configuration in `metadata.json`.
 - **[Building a QML UI App](tutorial-qml-ui-app.md)** — create `calc_ui`, a QML-only UI plugin that calls a core module via the `logos.callModule()` bridge.
-- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs in a separate `ui-host` process. The remote interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource`, and the QML view reaches it through a typed replica (`logos.module()` + `logos.watch()`).
+- **[Building a C++ UI Module](tutorial-cpp-ui-app.md)** — build `calc_ui_cpp`, a `ui_qml` module whose C++ backend runs as the core module `calc_ui_cpp_backend`. The view's interface is declared in a `.rep` file, the backend inherits the generated `SimpleSource` and `LogosModuleContext`, and the QML view reaches it through a typed replica (`logos.module()` + `logos.watch()`).
 - **[Composing Modules](tutorial-composing-modules.md)** — build `calc_aggregator`, a core module that depends on `calc_module` and exercises every part of `LogosModuleContext`: the injected properties, per-instance persistence, typed sync and async dependency calls, and typed event subscription.
 - **[Dependency Interfaces](tutorial-interface-dependencies.md)** — build `calc_via_interface`, which declares a *contract* rather than a concrete dependency and binds it to a provider chosen at runtime. Its `dependencies` list stays empty. See [Dependency Interfaces](#dependency-interfaces).
 - **[Caller Identity](tutorial-caller-identity.md)** — build a module whose write surface admits one named peer and refuses everything else, reading `logos::currentCaller()`. Covers the five arms, why `unknown` is fail-closed, and the two builds that read it forever.

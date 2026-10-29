@@ -11,11 +11,11 @@ Item {
     // Last payload from the backend's `computed` SIGNAL (see Connections below).
     property string lastSignal: "(none)"
 
-    // Typed replica of the backend running in ui-host (generated from calc_ui_cpp.rep).
+    // Typed replica of the backend module (generated from calc_ui_cpp.rep).
     readonly property var backend: logos.module("calc_ui_cpp")
 
-    // The ui-host backend connects asynchronously, so the replica isn't
-    // immediately usable. Track readiness reactively: isViewModuleReady()
+    // The backend is a separate module and connects asynchronously, so
+    // the replica isn't usable at once. Track readiness reactively: isViewModuleReady()
     // is a Q_INVOKABLE (not a property), so we re-check it on the
     // onViewModuleReadyChanged signal and once at startup — never via a
     // plain property binding, which would not re-evaluate.

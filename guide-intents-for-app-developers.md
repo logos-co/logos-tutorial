@@ -13,6 +13,11 @@ Chat doesn't know what a wallet is; it asks for "send funds" and the shell finds
 
 Applies to `ui_qml` apps. Core modules cannot participate in V1.
 
+Intents are a view feature: they go from the QML `logos` object to the shell, never through the core.
+So they work the same in an app whose C++ backend runs as a core module (`"backend": "module"`), whose
+view has no other route to the core. The backend itself cannot send or answer intents — call
+`logos.request` / `logos.respond` from the view.
+
 ---
 
 ## Using a capability

@@ -1,5 +1,5 @@
 {
-  description = "Calculator C++ UI plugin for Logos - QML view with process-isolated backend for calc_module";
+  description = "Calculator C++ UI plugin for Logos - QML view with a backend module for calc_module";
 
   inputs = {
     logos-module-builder.url = "github:logos-co/logos-module-builder";
