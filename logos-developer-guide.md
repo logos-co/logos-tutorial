@@ -2113,8 +2113,9 @@ protected:
 Return **`LogosShutdown::Synchronous`** (the default) to say "already quiescent —
 tear me down now". Return **`LogosShutdown::Asynchronous`** to say "wait for me",
 and call `unloadFinished()` when you are done. The host waits, but only for a
-bounded grace period: a module that asks and never finishes costs a bounded delay
-and is torn down anyway.
+bounded grace period — 10 seconds, in every host (`logos_host` for core modules,
+`ui-host` for `ui_qml` views, Basecamp for in-process UI plugins): a module that
+asks and never finishes costs that delay and is torn down anyway.
 
 > **Do not debug this on stderr.** The subprocess container closes the child's
 > stdout and stderr *before* it sends the stop signal, so anything you print during
