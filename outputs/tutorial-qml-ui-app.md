@@ -125,15 +125,22 @@ Replace the starter file with the calculator UI. This demonstrates two communica
 
 ```qml
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
-Item {
+import Logos.Theme
+import Logos.Controls
+import Logos.Layouts
+
+Rectangle {
     id: root
 
     property string result: ""
     property string errorText: ""
     property string versionFromEvent: ""
+
+    // The host sizes the view to the app's area; paint it, as a bare Item
+    // would show the host's clear colour.
+    color: Theme.palette.background
 
     // ── Event subscription ────────────────────────────────────
     // Subscribe to "versionReady" events pushed from calc_module.
@@ -150,138 +157,140 @@ Item {
         }
     }
 
-    ColumnLayout {
+    // A section's caption.
+    component Caption: LogosText {
+        Layout.fillWidth: true
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+        wrapMode: Text.Wrap
+    }
+
+    LogosScrollView {
+        id: scroll
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 16
+        anchors.margins: Theme.pageMargin(root.width)
+        contentWidth: availableWidth
 
-        // ── Title ──────────────────────────────────────────────
-        Text {
-            text: "Logos Calculator"
-            font.pixelSize: 20
-            font.weight: Font.DemiBold
-            color: "#ffffff"
-            Layout.alignment: Qt.AlignHCenter
-        }
+        ColumnLayout {
+            width: scroll.availableWidth
+            spacing: Theme.spacing.xlarge
 
-        // ── Pattern 1: Direct call (request -> response) ──────
-        Text {
-            text: "Direct calls (logos.callModule -> returns result)"
-            color: "#8b949e"
-            font.pixelSize: 12
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            TextField {
-                id: inputA
-                placeholderText: "a"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
+            // ── Title ──────────────────────────────────────────────
+            LogosPageHeader {
+                Layout.fillWidth: true
+                title: "Logos Calculator"
+                subtitle: "calc_module, called from QML"
             }
 
-            TextField {
-                id: inputB
-                placeholderText: "b"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
+            // ── Pattern 1: Direct call (request -> response) ──────
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
+
+                Caption { text: "Direct calls (logos.callModule -> returns result)" }
+
+                // The fields share the width; the buttons wrap onto a new
+                // line where they don't fit, as on a phone.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosTextField {
+                        id: inputA
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "a"
+                        validator: IntValidator {}
+                    }
+
+                    LogosTextField {
+                        id: inputB
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "b"
+                        validator: IntValidator {}
+                    }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        objectName: "calc_ui.addButton"
+                        text: "Add"
+                        onClicked: callTwoOp("add", inputA.text, inputB.text)
+                    }
+
+                    LogosButton {
+                        text: "Multiply"
+                        onClicked: callTwoOp("multiply", inputA.text, inputB.text)
+                    }
+                }
+
+                LogosTextField {
+                    id: inputN
+                    Layout.fillWidth: true
+                    placeholderText: "n"
+                    validator: IntValidator { bottom: 0 }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        text: "Factorial"
+                        onClicked: callOneOp("factorial", inputN.text)
+                    }
+
+                    LogosButton {
+                        text: "Fibonacci"
+                        onClicked: callOneOp("fibonacci", inputN.text)
+                    }
+
+                    LogosButton {
+                        text: "libcalc version"
+                        onClicked: callModule("libVersion", [])
+                    }
+                }
+
+                // Direct call result: green, or red with what went wrong.
+                LogosNotice {
+                    Layout.fillWidth: true
+                    severity: root.errorText.length > 0 ? LogosNotice.Error : LogosNotice.Success
+                    message: root.errorText.length > 0 ? root.errorText
+                             : (root.result.length > 0 ? root.result : "Enter values and press a button")
+                }
             }
 
-            Button {
-                objectName: "calc_ui.addButton"
-                text: "Add"
-                onClicked: callTwoOp("add", inputA.text, inputB.text)
-            }
+            // ── Pattern 2: Event-based (fire-and-forget -> event) ─
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
 
-            Button {
-                text: "Multiply"
-                onClicked: callTwoOp("multiply", inputA.text, inputB.text)
-            }
-        }
+                Caption { text: "Event-based (fire-and-forget call -> result via event)" }
 
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
+                LogosButton {
+                    text: "libcalc version (event)"
+                    onClicked: {
+                        if (typeof logos !== "undefined" && logos.callModule)
+                            logos.callModule("calc_module", "libVersionNotify", [])
+                    }
+                }
 
-            TextField {
-                id: inputN
-                placeholderText: "n"
-                Layout.preferredWidth: 80
-                validator: IntValidator { bottom: 0 }
-            }
-
-            Button {
-                text: "Factorial"
-                onClicked: callOneOp("factorial", inputN.text)
-            }
-
-            Button {
-                text: "Fibonacci"
-                onClicked: callOneOp("fibonacci", inputN.text)
-            }
-
-            Button {
-                text: "libcalc version"
-                onClicked: callModule("libVersion", [])
-            }
-        }
-
-        // Direct call result
-        Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
-            radius: 8
-
-            Text {
-                anchors.centerIn: parent
-                text: root.errorText.length > 0 ? root.errorText
-                        : (root.result.length > 0 ? root.result : "Enter values and press a button")
-                color: root.errorText.length > 0 ? "#f85149" : "#56d364"
-                font.pixelSize: 15
-            }
-        }
-
-        // ── Pattern 2: Event-based (fire-and-forget -> event) ─
-        Text {
-            text: "Event-based (fire-and-forget call -> result via event)"
-            color: "#8b949e"
-            font.pixelSize: 12
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            Button {
-                text: "libcalc version (event)"
-                onClicked: {
-                    if (typeof logos !== "undefined" && logos.callModule)
-                        logos.callModule("calc_module", "libVersionNotify", [])
+                // Event result
+                LogosNotice {
+                    Layout.fillWidth: true
+                    severity: LogosNotice.Info
+                    message: root.versionFromEvent.length > 0
+                             ? ("Version (via event): " + root.versionFromEvent)
+                             : "Press the event button — result arrives via event"
                 }
             }
         }
-
-        // Event result
-        Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: "#1a1a2d"
-            radius: 8
-
-            Text {
-                anchors.centerIn: parent
-                text: root.versionFromEvent.length > 0
-                      ? ("Version (via event): " + root.versionFromEvent)
-                      : "Press the event button — result arrives via event"
-                color: "#7ab8ff"
-                font.pixelSize: 15
-            }
-        }
-
-        Item { Layout.fillHeight: true }
     }
 
     // ── Direct call helpers ───────────────────────────────────
@@ -312,13 +321,15 @@ Item {
 
 The UI demonstrates two communication patterns:
 
-- **Green section (direct calls):** `logos.callModule("calc_module", "libVersion", [])` sends a request to `calc_module` and returns the result synchronously. Simple request/response.
+- **Direct calls (the first group):** `logos.callModule("calc_module", "libVersion", [])` sends a request to `calc_module` and returns the result synchronously. Simple request/response. The result shows in a green notice, or a red one with what went wrong.
 
-- **Blue section (event-based):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
+- **Event-based (the second group):** `logos.callModule("calc_module", "libVersionNotify", [])` calls the module but ignores the return value. Instead, the module emits a `"versionReady"` event, and the QML receives it through the `logos.onModuleEvent()` subscription set up in `Component.onCompleted`.
 
 On the `calc_module` side (Part 1), that event is just the `versionReady(...)` method declared in its `logos_events:` block — the module's `libVersionNotify()` calls it. Nothing about the QML changes regardless of how the backend module is written; the bridge only sees the event name and its arguments.
 
 The `logos` object is injected by the host at runtime.
+
+The view is built from the Logos design system (`Logos.Controls`, `Logos.Layouts` and `Theme` tokens), so it takes Basecamp's look and fits a phone's width as well as a desktop's: the fields share the row, and the buttons wrap onto a new line where they don't fit. [Step 7](#step-7-using-the-logos-design-system) covers what it uses and how to go further.
 
 ---
 
@@ -463,56 +474,66 @@ Whichever option you choose, clicking **Add**, **Multiply**, **Factorial**, or *
 
 ## Step 7: Using the Logos Design System
 
-`logos-basecamp` (including its standalone mode, which `nix run .` uses) has `logos-design-system` on its QML import path. Use its themed components directly — no extra setup in your module.
+The view you wrote in Step 3 is built from `logos-design-system`. `logos-basecamp`, including its standalone mode under `nix run .`, has it on the QML import path, so your module needs no setup to import it:
 
 ```qml
-import Logos.Theme
-import Logos.Controls
-import Logos.Icons        // optional: shared icon assets (LogosIcons.search, .install, .refresh, …)
+import Logos.Theme      // tokens: colours, spacing, type, the width classes
+import Logos.Controls   // buttons, fields, text, notices, tables, menus, dialogs…
+import Logos.Layouts    // the skeleton of a page: headers, list → detail, forms, sections…
+import Logos.Icons      // optional: shared icon assets (LogosIcons.search, .install, .refresh, …)
 ```
 
 ### Why use it
 
-Hardcoding colors, font sizes, or rolling your own button means your module looks subtly different from every other module in basecamp, drifts as the design evolves, and re-implements work the design system already does. Using `Logos.Controls` + `Theme` tokens means your module gets the polished look automatically as the design system is updated — no churn on your side.
+Hardcoding colours, font sizes or pixel widths, or rolling your own button, means your module looks subtly different from every other module in Basecamp, drifts as the design evolves, and breaks on a narrow window. With `Logos.Controls`, `Logos.Layouts` and `Theme` tokens your module gets the current look automatically as the design system is updated, and works from a phone to a desktop.
 
-### What's available
+### What the calculator uses
 
-Run the storybook to browse every component interactively with live property editors:
+| In `Main.qml` | What it gives you |
+|---|---|
+| `LogosPageHeader` | The page's title and subtitle. Give it `searchEnabled` and it adds a search, a 🔍 on a phone |
+| `LogosTextField`, `LogosButton` | Themed controls that grow to a fingertip's size (44 px) on a touch screen |
+| `LogosNotice` | A message coloured by `severity`: `Success` for the result, `Error` for what went wrong |
+| `LogosText`, `LogosScrollView` | Text with the theme's font and colour; a page that scrolls when it is taller than the window |
+| `Theme.palette.background`, `Theme.pageMargin(width)`, `Theme.spacing.*`, `Theme.layouts.form.maximumWidth` | The background a view paints itself, the side margin for its width, and the space between things |
+
+### From a phone to a desktop
+
+The host sizes your view to the app's area, which is a phone's width on a phone and can be just as narrow in a desktop window. The rules that keep a view working at every width:
+
+- **Go by your own width.** `Theme.windowClass(width)` gives `phone` (< 600), `tablet` (< 840) or `desktop`, and `Theme.pageMargin(width)` the side margin. Pass the view's own `width`, not the screen's.
+- **Fix no widths.** The calculator's fields share a `RowLayout` (`Layout.fillWidth`), and its buttons sit in a `Flow`, which wraps them onto a new line where they don't fit. A `width: 560` overflows a 390 px phone.
+- **Read sizes from the theme.** At touch density, or in a phone-wide view, `Theme.touch` is true and every control reaches a 44 px tap target by itself.
+- **Nothing hover-only.** Put actions on visible buttons or a ⋯ menu, and help text under its field, not only in a tooltip.
+
+A larger app takes its page from `Logos.Layouts`. These rearrange themselves by width, so the app doesn't have to:
+
+- `LogosSections`: an app of several sections. On a phone they become a list the page goes back to.
+- `LogosListDetail` and `LogosSidePanel`: a list or table with an item's details beside it, or in its place on a phone.
+- `LogosFormLayout`: labels beside the fields on a desktop, above them on a phone.
+- `LogosCardGrid`: cards in as many columns as fit.
+- `LogosTable` with `phoneCards`: a table that becomes cards on a phone.
+
+The design system's [responsive guide](https://github.com/logos-co/logos-design-system/blob/master/docs/responsive.md) has the rules and the layouts.
+
+### See it all in the storybook
+
+Run the storybook to browse every component with live examples:
 
 ```bash
-cd repos/logos-design-system
-nix run                  # or: ws run logos-design-system
+nix run github:logos-co/logos-design-system
 ```
 
-The sidebar splits components into two sections:
+Its sidebar has:
 
-- **Controls** — *designed per Figma, production-ready*. Use these directly. Examples: `LogosButton`, `LogosBadge`, `LogosCheckbox`, `LogosComboBox`, `LogosIconButton`, `LogosPaginator`, `LogosSearchBar`, `LogosTabBar` / `LogosTabButton`, `LogosTable` / `LogosTableColumn`, `LogosText`, `LogosTextField`, `LogosToolTip`.
-- **Controls (not designed)** — *placeholders with stable APIs but unstyled visuals*. Functional, you can ship with them, and you'll inherit the polished look automatically when each gets its design pass — no QML changes on your side. Examples: `LogosDialog`, `LogosDrawer`, `LogosFrame`, `LogosGroupBox`, `LogosItemDelegate`, `LogosMenu`, `LogosProgressBar`, `LogosRadioButton`, `LogosScrollBar` / `LogosScrollView`, `LogosSlider`, `LogosSpinBox`, `LogosSpinner`, `LogosStackView`, `LogosSwitch`, `LogosTextArea`, `LogosToolBar`.
+- **Tokens**: colours, icons, spacing and type.
+- **Controls**: *designed per Figma, production-ready*. Examples: `LogosButton`, `LogosBadge`, `LogosCheckbox`, `LogosComboBox`, `LogosIconButton`, `LogosPaginator`, `LogosSearchBar`, `LogosTabBar` / `LogosTabButton`, `LogosTable` / `LogosTableColumn`, `LogosText`, `LogosTextField`, `LogosToolTip`.
+- **Controls (not designed)** and **Layouts (not designed)**: *stable APIs whose look is still to be designed*. You can ship with them; they get the polished look when each gets its design pass, with no QML changes on your side. Examples: `LogosDialog`, `LogosMenu`, `LogosNotice`, `LogosListRow`, `LogosSwitch`, `LogosPageHeader`, `LogosSections`, `LogosListDetail`, `LogosFormLayout`.
+- **Reference app**: a wallet built from these pieces, with a section for each kind of page: a dashboard, a table with its rows' details, a form, and settings. Copy from it.
 
-Each storybook page exposes a `designed: true/false` flag if you want to see at a glance which it is.
+**Preview** shows the open page in a phone-sized (390 px) or tablet-sized (700 px) window, and marks in red anything that runs past the sides. **Density** switches to touch sizes.
 
-### Replace raw Qt controls with Logos equivalents
-
-```qml
-// Instead of Button:
-LogosButton {
-    objectName: "calc_ui.addButton"
-    text: qsTr("Add")
-    onClicked: callTwoOp("add", inputA.text, inputB.text)
-}
-
-// Instead of TextField:
-LogosTextField {
-    id: inputA
-    placeholderText: qsTr("a")
-}
-
-// Use theme colors instead of hardcoded hex values:
-Rectangle {
-    color: Theme.palette.backgroundSecondary
-    Text { color: Theme.palette.text }
-}
-```
+To check your own view, run it with `nix run .` and narrow the window to a phone's width. If an AI agent writes your QML, point it at the `mobile-ready-ui` skill in the design system's repo (`.claude/skills/mobile-ready-ui/SKILL.md`): the checklist for screens that work on a phone.
 
 ### Theme tokens — avoid hardcoding magic numbers
 
@@ -531,6 +552,8 @@ Rectangle {
 //   subtitleText (16), primaryText (14), secondaryText (12),
 //   weightRegular (400), weightMedium (500), weightBold (700),
 //   publicSans (font family)
+
+// Width  — Theme.windowClass(width), Theme.pageMargin(width), Theme.touch
 
 // Icons  — Logos.Icons.LogosIcons.*
 //   arrowLeft, arrowRight, refresh, install, trash, more, search, …
@@ -732,9 +755,13 @@ You can open `Main.qml` in any QML viewer (e.g., `qml` from Qt) to test the layo
 
 #### Install
 
-You'll need to have QML and any included modules (`QtQuick` and submodules `Controls`, and `Layout`).
+You'll need QML and the modules it imports: `QtQuick` with its `Layouts`, and the Logos design system, which Basecamp provides but a bare `qml` doesn't. Get the design system's QML from its repo:
 
-Eg, to simply install on linux (apt package manager):
+```bash
+git clone https://github.com/logos-co/logos-design-system
+```
+
+and Qt's, e.g. on Linux (apt package manager):
 
 ```bash
 sudo apt install qml-qt6 qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts
@@ -742,15 +769,15 @@ sudo apt install qml-qt6 qml6-module-qtquick qml6-module-qtquick-controls qml6-m
 
 #### Viewing the QML
 
-The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" -- but you can verify the layout and styling work correctly.
+The `logos` bridge won't be available, so clicking buttons will show "Logos bridge not available" -- but you can verify the layout and styling work correctly. `-I` adds the design system's QML to the import path; resize the window to see it at a phone's width.
 
 ```bash
 # If you have Qt and included modules installed
 # macOS:
-qml Main.qml
+qml -I logos-design-system/src/qml Main.qml
 
 # Linux:
-qml6 Main.qml
+qml6 -I logos-design-system/src/qml Main.qml
 ```
 
 ---

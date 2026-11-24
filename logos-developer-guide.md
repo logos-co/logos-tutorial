@@ -1222,6 +1222,25 @@ These have `"type": "ui_qml"` with `"view"` but no `"main"` — pure QML, no C++
 - Scaffold: `nix flake init -t github:logos-co/logos-module-builder#ui-qml`
 - See [Tutorial Part 2](tutorial-qml-ui-app.md) for a complete walkthrough
 
+#### Building the view: the Logos design system
+
+Both kinds build their view from [logos-design-system](https://github.com/logos-co/logos-design-system). The host has it on the QML import path:
+
+- `Logos.Theme`: colours, spacing, type and the width classes.
+- `Logos.Controls`: buttons, fields, tables, menus, dialogs.
+- `Logos.Layouts`: page headers, sections, list → detail, side panels, forms.
+
+The `ui-qml` and `ui-qml-backend` templates start from it. Its sizes grow for touch, and its layouts adapt from a phone's width to a desktop's.
+
+The host sizes the view to the app's area, so:
+
+- Lay out by the view's own width (`Theme.windowClass(width)`).
+- Fix no widths.
+- Read sizes from the theme.
+- Put nothing only behind a hover or a tooltip.
+
+The design system's storybook (`nix run github:logos-co/logos-design-system`) has every component and a **Reference app** with a page of each kind. Its **Preview** shows a page at a phone's and a tablet's width. Its `docs/responsive.md` has the rules, and its `mobile-ready-ui` skill is the checklist for an agent. [Tutorial Part 2](tutorial-qml-ui-app.md#step-7-using-the-logos-design-system) walks through it.
+
 ---
 
 ## Part 8: Inter-Module Communication

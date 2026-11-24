@@ -1,8 +1,11 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
-Item {
+import Logos.Theme
+import Logos.Controls
+import Logos.Layouts
+
+Rectangle {
     id: root
 
     property string result: ""
@@ -20,6 +23,10 @@ Item {
     // onViewModuleReadyChanged signal and once at startup — never via a
     // plain property binding, which would not re-evaluate.
     property bool ready: false
+
+    // The host sizes the view to the app's area; paint it, as a bare Item
+    // would show the host's clear colour.
+    color: Theme.palette.background
 
     Connections {
         target: logos
@@ -58,166 +65,173 @@ Item {
         )
     }
 
-    ColumnLayout {
+    // A line of what the backend reports.
+    component Readout: LogosText {
+        Layout.fillWidth: true
+        textFormat: Text.PlainText
+        wrapMode: Text.Wrap
+    }
+
+    LogosScrollView {
+        id: scroll
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 16
+        anchors.margins: Theme.pageMargin(root.width)
+        contentWidth: availableWidth
 
-        Text {
-            text: "Logos Calculator (C++ backend)"
-            font.pixelSize: 20
-            color: "#ffffff"
-            Layout.alignment: Qt.AlignHCenter
+        ColumnLayout {
+            width: scroll.availableWidth
+            spacing: Theme.spacing.xlarge
+
+            // Title, and the reactive backend-connection indicator.
+            LogosPageHeader {
+                Layout.fillWidth: true
+                title: "Logos Calculator (C++ backend)"
+                subtitle: root.ready ? "Connected" : "Connecting to backend..."
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
+
+                // The fields share the width; the buttons wrap onto a new
+                // line where they don't fit, as on a phone.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosTextField {
+                        id: inputA
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "a"
+                        validator: IntValidator {}
+                    }
+
+                    LogosTextField {
+                        id: inputB
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "b"
+                        validator: IntValidator {}
+                    }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        objectName: "calc_ui_cpp.addButton"
+                        text: "Add"
+                        enabled: root.ready
+                        onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
+                    }
+
+                    LogosButton {
+                        text: "Multiply"
+                        enabled: root.ready
+                        onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
+                    }
+                }
+
+                LogosTextField {
+                    id: inputN
+                    Layout.fillWidth: true
+                    placeholderText: "n"
+                    validator: IntValidator { bottom: 0 }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        text: "Factorial"
+                        enabled: root.ready
+                        onClicked: root.callCalc("factorial", [parseInt(inputN.text) || 0])
+                    }
+
+                    LogosButton {
+                        text: "Fibonacci"
+                        enabled: root.ready
+                        onClicked: root.callCalc("fibonacci", [parseInt(inputN.text) || 0])
+                    }
+
+                    LogosButton {
+                        text: "libcalc version"
+                        enabled: root.ready
+                        onClicked: root.callCalc("libVersion", [])
+                    }
+
+                    LogosButton {
+                        // Fires the event path: asks calc_module to emit
+                        // versionReady. No logos.watch() — the result comes
+                        // back through the versionEvent PROP, not a return value.
+                        text: "Announce version (event)"
+                        enabled: root.ready
+                        onClicked: root.backend.announceVersion()
+                    }
+                }
+
+                // The slot's return value: green, or red with what went wrong.
+                LogosNotice {
+                    Layout.fillWidth: true
+                    severity: root.errorText.length > 0 ? LogosNotice.Error : LogosNotice.Success
+                    message: root.errorText.length > 0 ? root.errorText
+                             : (root.result.length > 0 ? root.result : "Enter values and press a button")
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
+
+                // Slot-driven PROP: bumped by the backend's record() after each
+                // calculation. A plain property read — auto-syncs, no polling.
+                Readout {
+                    text: "Computations: " + ((root.ready && root.backend) ? root.backend.computeCount : 0)
+                }
+
+                // SIGNAL payload, captured by the Connections block above.
+                Readout {
+                    text: "Last op (signal): " + root.lastSignal
+                }
+
+                // READWRITE PROP: the memory register. The label *reads*
+                // backend.memory; the buttons *write* it. A write round-trips
+                // QML → replica → backend source → back to every replica, so the
+                // label updates once the new value syncs home.
+                Readout {
+                    text: "Memory: " + ((root.ready && root.backend) ? root.backend.memory : 0)
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        text: "Store (MS)"
+                        enabled: root.ready
+                        onClicked: root.backend.memory = parseInt(root.result) || 0
+                    }
+
+                    LogosButton {
+                        text: "Clear (MC)"
+                        enabled: root.ready
+                        onClicked: root.backend.memory = 0
+                    }
+                }
+
+                // Event-fed label: the versionEvent PROP auto-syncs from the
+                // backend's typed versionReady subscription. No polling — it
+                // updates the moment calc_module emits.
+                Readout {
+                    readonly property string ev: (root.ready && root.backend) ? root.backend.versionEvent : ""
+                    text: "Version event: " + (ev.length > 0 ? ev : "(none yet)")
+                }
+            }
         }
-
-        // Reactive backend-connection indicator.
-        Text {
-            text: root.ready ? "Connected" : "Connecting to backend..."
-            color: root.ready ? "#56d364" : "#f0883e"
-            font.pixelSize: 12
-            Layout.alignment: Qt.AlignHCenter
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            TextField {
-                id: inputA
-                placeholderText: "a"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
-            }
-
-            TextField {
-                id: inputB
-                placeholderText: "b"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
-            }
-
-            Button {
-                text: "Add"
-                enabled: root.ready
-                onClicked: root.callCalc("add", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
-            }
-
-            Button {
-                text: "Multiply"
-                enabled: root.ready
-                onClicked: root.callCalc("multiply", [parseInt(inputA.text) || 0, parseInt(inputB.text) || 0])
-            }
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            TextField {
-                id: inputN
-                placeholderText: "n"
-                Layout.preferredWidth: 80
-                validator: IntValidator { bottom: 0 }
-            }
-
-            Button {
-                text: "Factorial"
-                enabled: root.ready
-                onClicked: root.callCalc("factorial", [parseInt(inputN.text) || 0])
-            }
-
-            Button {
-                text: "Fibonacci"
-                enabled: root.ready
-                onClicked: root.callCalc("fibonacci", [parseInt(inputN.text) || 0])
-            }
-
-            Button {
-                text: "libcalc version"
-                enabled: root.ready
-                onClicked: root.callCalc("libVersion", [])
-            }
-
-            Button {
-                // Fires the event path: asks calc_module to emit
-                // versionReady. No logos.watch() — the result comes
-                // back through the versionEvent PROP, not a return value.
-                text: "Announce version (event)"
-                enabled: root.ready
-                onClicked: root.backend.announceVersion()
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
-            radius: 8
-
-            Text {
-                anchors.centerIn: parent
-                text: root.errorText.length > 0 ? root.errorText
-                        : (root.result.length > 0 ? root.result : "Enter values and press a button")
-                color: root.errorText.length > 0 ? "#f85149" : "#56d364"
-                font.pixelSize: 15
-            }
-        }
-
-        // Slot-driven PROP: bumped by the backend's record() after each
-        // calculation. A plain property read — auto-syncs, no polling.
-        Text {
-            text: "Computations: " + ((root.ready && root.backend) ? root.backend.computeCount : 0)
-            color: "#cdd6f4"
-            font.pixelSize: 14
-            Layout.alignment: Qt.AlignHCenter
-        }
-
-        // SIGNAL payload, captured by the Connections block above.
-        Text {
-            text: "Last op (signal): " + root.lastSignal
-            color: "#94e2d5"
-            font.pixelSize: 14
-            Layout.alignment: Qt.AlignHCenter
-        }
-
-        // READWRITE PROP: the memory register. The label *reads*
-        // backend.memory; the buttons *write* it. A write round-trips
-        // QML → replica → backend source → back to every replica, so the
-        // label updates once the new value syncs home.
-        RowLayout {
-            spacing: 12
-            Layout.alignment: Qt.AlignHCenter
-
-            Text {
-                text: "Memory: " + ((root.ready && root.backend) ? root.backend.memory : 0)
-                color: "#cdd6f4"
-                font.pixelSize: 14
-            }
-
-            Button {
-                text: "Store (MS)"
-                enabled: root.ready
-                onClicked: root.backend.memory = parseInt(root.result) || 0
-            }
-
-            Button {
-                text: "Clear (MC)"
-                enabled: root.ready
-                onClicked: root.backend.memory = 0
-            }
-        }
-
-        // Event-fed label: the versionEvent PROP auto-syncs from the
-        // backend's typed versionReady subscription. No polling — it
-        // updates the moment calc_module emits.
-        Text {
-            readonly property string ev: (root.ready && root.backend) ? root.backend.versionEvent : ""
-            text: "Version event: " + (ev.length > 0 ? ev : "(none yet)")
-            color: "#f9e2af"
-            font.pixelSize: 15
-            Layout.alignment: Qt.AlignHCenter
-        }
-
-        Item { Layout.fillHeight: true }
     }
 }
