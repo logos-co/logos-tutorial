@@ -1,13 +1,20 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
-Item {
+import Logos.Theme
+import Logos.Controls
+import Logos.Layouts
+
+Rectangle {
     id: root
 
     property string result: ""
     property string errorText: ""
     property string versionFromEvent: ""
+
+    // The host sizes the view to the app's area; paint it, as a bare Item
+    // would show the host's clear colour.
+    color: Theme.palette.background
 
     // ── Event subscription ────────────────────────────────────
     // Subscribe to "versionReady" events pushed from calc_module.
@@ -24,137 +31,140 @@ Item {
         }
     }
 
-    ColumnLayout {
+    // A section's caption.
+    component Caption: LogosText {
+        Layout.fillWidth: true
+        font.pixelSize: Theme.typography.secondaryText
+        color: Theme.palette.textSecondary
+        wrapMode: Text.Wrap
+    }
+
+    LogosScrollView {
+        id: scroll
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 16
+        anchors.margins: Theme.pageMargin(root.width)
+        contentWidth: availableWidth
 
-        // ── Title ──────────────────────────────────────────────
-        Text {
-            text: "Logos Calculator"
-            font.pixelSize: 20
-            font.weight: Font.DemiBold
-            color: "#ffffff"
-            Layout.alignment: Qt.AlignHCenter
-        }
+        ColumnLayout {
+            width: scroll.availableWidth
+            spacing: Theme.spacing.xlarge
 
-        // ── Pattern 1: Direct call (request -> response) ──────
-        Text {
-            text: "Direct calls (logos.callModule -> returns result)"
-            color: "#8b949e"
-            font.pixelSize: 12
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            TextField {
-                id: inputA
-                placeholderText: "a"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
+            // ── Title ──────────────────────────────────────────────
+            LogosPageHeader {
+                Layout.fillWidth: true
+                title: "Logos Calculator"
+                subtitle: "calc_module, called from QML"
             }
 
-            TextField {
-                id: inputB
-                placeholderText: "b"
-                Layout.preferredWidth: 80
-                validator: IntValidator {}
+            // ── Pattern 1: Direct call (request -> response) ──────
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
+
+                Caption { text: "Direct calls (logos.callModule -> returns result)" }
+
+                // The fields share the width; the buttons wrap onto a new
+                // line where they don't fit, as on a phone.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosTextField {
+                        id: inputA
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "a"
+                        validator: IntValidator {}
+                    }
+
+                    LogosTextField {
+                        id: inputB
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 0
+                        placeholderText: "b"
+                        validator: IntValidator {}
+                    }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        objectName: "calc_ui.addButton"
+                        text: "Add"
+                        onClicked: callTwoOp("add", inputA.text, inputB.text)
+                    }
+
+                    LogosButton {
+                        text: "Multiply"
+                        onClicked: callTwoOp("multiply", inputA.text, inputB.text)
+                    }
+                }
+
+                LogosTextField {
+                    id: inputN
+                    Layout.fillWidth: true
+                    placeholderText: "n"
+                    validator: IntValidator { bottom: 0 }
+                }
+
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: Theme.spacing.medium
+
+                    LogosButton {
+                        text: "Factorial"
+                        onClicked: callOneOp("factorial", inputN.text)
+                    }
+
+                    LogosButton {
+                        text: "Fibonacci"
+                        onClicked: callOneOp("fibonacci", inputN.text)
+                    }
+
+                    LogosButton {
+                        text: "libcalc version"
+                        onClicked: callModule("libVersion", [])
+                    }
+                }
+
+                // Direct call result: green, or red with what went wrong.
+                LogosNotice {
+                    Layout.fillWidth: true
+                    severity: root.errorText.length > 0 ? LogosNotice.Error : LogosNotice.Success
+                    message: root.errorText.length > 0 ? root.errorText
+                             : (root.result.length > 0 ? root.result : "Enter values and press a button")
+                }
             }
 
-            Button {
-                text: "Add"
-                onClicked: callTwoOp("add", inputA.text, inputB.text)
-            }
+            // ── Pattern 2: Event-based (fire-and-forget -> event) ─
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.maximumWidth: Theme.layouts.form.maximumWidth
+                spacing: Theme.spacing.medium
 
-            Button {
-                text: "Multiply"
-                onClicked: callTwoOp("multiply", inputA.text, inputB.text)
-            }
-        }
+                Caption { text: "Event-based (fire-and-forget call -> result via event)" }
 
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
+                LogosButton {
+                    text: "libcalc version (event)"
+                    onClicked: {
+                        if (typeof logos !== "undefined" && logos.callModule)
+                            logos.callModule("calc_module", "libVersionNotify", [])
+                    }
+                }
 
-            TextField {
-                id: inputN
-                placeholderText: "n"
-                Layout.preferredWidth: 80
-                validator: IntValidator { bottom: 0 }
-            }
-
-            Button {
-                text: "Factorial"
-                onClicked: callOneOp("factorial", inputN.text)
-            }
-
-            Button {
-                text: "Fibonacci"
-                onClicked: callOneOp("fibonacci", inputN.text)
-            }
-
-            Button {
-                text: "libcalc version"
-                onClicked: callModule("libVersion", [])
-            }
-        }
-
-        // Direct call result
-        Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: root.errorText.length > 0 ? "#3d1a1a" : "#1a2d1a"
-            radius: 8
-
-            Text {
-                anchors.centerIn: parent
-                text: root.errorText.length > 0 ? root.errorText
-                        : (root.result.length > 0 ? root.result : "Enter values and press a button")
-                color: root.errorText.length > 0 ? "#f85149" : "#56d364"
-                font.pixelSize: 15
-            }
-        }
-
-        // ── Pattern 2: Event-based (fire-and-forget -> event) ─
-        Text {
-            text: "Event-based (fire-and-forget call -> result via event)"
-            color: "#8b949e"
-            font.pixelSize: 12
-        }
-
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-
-            Button {
-                text: "libcalc version (event)"
-                onClicked: {
-                    if (typeof logos !== "undefined" && logos.callModule)
-                        logos.callModule("calc_module", "libVersionNotify", [])
+                // Event result
+                LogosNotice {
+                    Layout.fillWidth: true
+                    severity: LogosNotice.Info
+                    message: root.versionFromEvent.length > 0
+                             ? ("Version (via event): " + root.versionFromEvent)
+                             : "Press the event button — result arrives via event"
                 }
             }
         }
-
-        // Event result
-        Rectangle {
-            Layout.fillWidth: true
-            height: 56
-            color: "#1a1a2d"
-            radius: 8
-
-            Text {
-                anchors.centerIn: parent
-                text: root.versionFromEvent.length > 0
-                      ? ("Version (via event): " + root.versionFromEvent)
-                      : "Press the event button — result arrives via event"
-                color: "#7ab8ff"
-                font.pixelSize: 15
-            }
-        }
-
-        Item { Layout.fillHeight: true }
     }
 
     // ── Direct call helpers ───────────────────────────────────
