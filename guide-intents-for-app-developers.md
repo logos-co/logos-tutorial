@@ -1,9 +1,11 @@
 # Intents — a guide for app developers
 
-> **Status: shipped in Logos Basecamp.** The QML surface described here is frozen — `logos.request`,
-> `logos.respond`, `intentRequested`, the six error codes and the payload rules will not change.
-> The shell-side machinery around it (chooser, install suggestions) is
-> deliberately replaceable and will.
+> **Status: shipped in Logos Basecamp.** The QML surface described here is frozen for every 0.4
+> release — `logos.request`, `logos.respond`, `intentRequested`, the six error codes and the payload
+> rules will not change. The shell-side machinery around it (chooser, install suggestions) is
+> deliberately replaceable and will. In 0.5 intents move from the view to the app's backend, which
+> can already ask and answer through `intents_module`: see
+> [Asking and answering from the backend](#asking-and-answering-from-the-backend).
 >
 > Nothing is signed yet, so a provider's name and label are claims rather than identity. See
 > "Known limitations" in `logos-basecamp/docs/app-to-app-intents.md` before depending on this.
@@ -11,12 +13,14 @@
 Intents let one app ask another to do something, **without knowing which app will answer**.
 Chat doesn't know what a wallet is; it asks for "send funds" and the shell finds who can.
 
-Applies to `ui_qml` apps. Core modules cannot participate in V1.
+Applies to `ui_qml` apps. Core modules can't take part on this path; through `intents_module`
+they can.
 
-Intents are a view feature: they go from the QML `logos` object to the shell, never through the core.
-So they work the same in an app whose C++ backend runs as a core module (`"backend": "module"`), whose
-view has no other route to the core. The backend itself cannot send or answer intents — call
-`logos.request` / `logos.respond` from the view.
+On this path intents are a view feature: they go from the QML `logos` object to the shell, never
+through the core. So they work the same in an app whose C++ backend runs as a core module
+(`"backend": "module"`), whose view has no other route to the core. The backend itself cannot send
+or answer intents — call `logos.request` / `logos.respond` from the view. (Through `intents_module`
+it's the other way round: the backend asks and answers.)
 
 ---
 
@@ -204,8 +208,8 @@ Names are matched byte-exactly. Agree on one before you ship it — a name is a 
 
 ## Not possible yet
 
-- Core (non-UI) modules as requester or provider
-- Cancelling a request once sent
+- On this path: core (non-UI) modules as requester or provider, and cancelling a request once sent.
+  Both work through `intents_module`: see below
 - Anything with no user present — every intent assumes a screen
 - Choosing a provider yourself. If several apps offer a capability, **the shell asks the user** —
   you cannot influence or see that list
@@ -271,3 +275,136 @@ Worth knowing, because they explain the constraints above:
 
 Reference: [`logos-developer-guide.md`](logos-developer-guide.md) §8.5 for the full API surface and
 the `metadata.json` field reference.
+
+---
+
+## Asking and answering from the backend
+
+> **Beside the QML path until 0.5.** Basecamp runs `intents_module` in every build, and apps' views
+> keep the QML path above, unchanged. In 0.5 the QML calls are turned off and this becomes the only
+> path. Details can still change until then; the reference is
+> [`logos-intents-module/README.md`](https://github.com/logos-co/logos-intents-module/blob/master/README.md).
+
+Here the broker isn't the shell but a core module, `intents_module`. Requests and
+answers move from the view to the module behind it: your app's backend (`"backend": "module"`), or
+a core module, which can now take part too. Keep `uses` and `provides` in your app's
+`metadata.json`: the builder copies them into the backend's, and the backend asks and answers
+under its own name (`<app>_backend`), which Basecamp shows as your app.
+
+What stays: `uses`, `provides`, `params`, `handoff`, intent names, the error codes and the payload
+rules.
+
+### Asking
+
+**1. Declare** the intent in `uses` as before, and the contract you call it through:
+
+```json
+"uses": [ { "intent": "wallet.send", "cardinality": "single" } ],
+"interface_dependencies": [
+  { "name": "intents", "file": "contracts/intents.lidl", "input": "logos-intents-module" }
+]
+```
+
+Add `logos-intents-module` to your flake's inputs, with
+`inputs.logos-module-builder.follows = "logos-module-builder"`, and pass it in `flakeInputs`. Only
+the contract file is used: nothing of `intents_module` is built or bundled with your app.
+
+**2. Ask from the backend**, then read the result once it settles:
+
+```cpp
+auto intents = modules().bind_intents(QStringLiteral("intents_module"));
+intents.onSettled([this](const QString& handle) { /* pull its result, as below */ });
+const QString ticket = intents.request(QStringLiteral("wallet.send"), paramsJson);
+// {"ok":true,"handle":"…","receipt":"…"}, or {"ok":false,"error":"not_declared"}
+// ("failed" when you ask too often). Then, on settled(handle) for your handle,
+// and once straight away in case it has already settled:
+const QString outcome = intents.result(handle, receipt);   // both from the ticket
+// {"ok":true,"state":"pending"}
+// {"ok":true,"state":"settled","result":{"ok":true,"data":{…},"error":""}}
+```
+
+Each call also comes as `…AsyncResult(…, callback, Timeout(ms))`, which Package Manager uses: a
+backend's thread also serves its view, so don't let it wait on a call. A core module gets the same
+calls with `std::string` in place of `QString`.
+
+`request` answers at once, because a person can take longer than a call's timeout. Only you can
+read the result: `settled` carries the handle alone, and `result` needs the receipt. Results are
+kept for 10 minutes, or until `cancel(handle, receipt)`, which also withdraws the request. If
+`intents_module` restarts, open handles answer `unknown_handle`: treat them as `failed`.
+
+### Answering
+
+**1. Declare** `provides` as before. In an app, this needs a module backend
+(`"backend": "module"`). You can also say what your answer carries with `result`, in the syntax of
+`params`:
+
+```json
+"provides": [ {
+    "intent": "wallet.send",
+    "params": [ { "name": "to",      "type": "string", "required": true } ],
+    "result": [ { "name": "tx_hash", "type": "string", "required": true } ]
+} ]
+```
+
+When you answer `ok`, a missing required field or a wrong type reaches the caller as `failed`.
+Fields you don't describe pass, and refusals aren't checked. A `type` other than `string` ·
+`number` · `bool` · `object` · `array` is reported in the log when your package is read, and that
+field's type isn't checked.
+
+**2. Implement `deliver`** in the backend class. The builder generates the glue around it, which
+refuses every caller but `intents_module`:
+
+```cpp
+QString deliver(const QString& dispatch, const QString& intent,
+                const QString& paramsJson, const QString& requester);
+```
+
+Return `{"ok":true}` straight away (within 5 seconds) to take the request, or `{"ok":false}` to
+refuse it. Your app needn't be open: when the person picks it, Basecamp starts it and delivers once
+its backend is up. Show the request to the person in your own view, and answer once they decide:
+
+```cpp
+modules().bind_intents(QStringLiteral("intents_module"))
+    .respond(dispatch, approved, dataJson, approved ? QString() : QStringLiteral("cancelled"));
+```
+
+Until the backend implements `deliver`, the build warns and every delivery is refused, so you can
+move your backend first and your intents later.
+
+A core module does the same: it declares `provides` / `uses`, binds `intents`, and implements
+`deliver` from `contracts/intent_provider.lidl`, accepting the call only when
+`logos::currentCaller().isModule("intents_module")`. The builder ships its `metadata.json`, which
+is where `intents_module` reads the declarations.
+
+### What's different for the person
+
+- **A click is what pops a request up,** unless your package ships with Basecamp: only then does
+  Basecamp show a request at once. Otherwise it pops up only if your backend makes it within about
+  two seconds of a click or key press in your app, one request per click, whoever signed your
+  package. So ask from the click's handler, in your own backend: a core module asking on your
+  app's behalf has no click behind it. Any other waits in the pending list once Basecamp shows one
+  (planned with its Activity view); until then it expires unseen.
+- **After a hand-off, the person's click starts the next step.** The request that brought them to
+  you had its click in another app, so ask for anything that needs approval once they click in your
+  own view. For example, `packages.install` opens the package in Package Manager, and clicking
+  Install there asks for the install dialog.
+
+### Until 0.5
+
+Both paths run. Each reaches only its own providers: a backend's request never reaches an app that
+answers in its view, and a view's request never reaches a backend's `deliver`. Basecamp's own
+intents (`basecamp.*`) answer on both. So move an intent's requesters and providers together, as
+Package Manager did with `packages.show` and `packages.install`.
+
+| | QML path (until 0.5) | `intents_module` |
+|---|---|---|
+| Who asks and answers | the view: `logos.request`, `intentRequested`, `logos.respond` | the backend or a core module: `request`, `deliver`, `respond` |
+| The reply | a callback with the result | a handle and a receipt at once; the result after `settled` |
+| A request with no click behind it | shown | shown if your package ships with Basecamp; otherwise it waits in the pending list, once Basecamp has one |
+| The answer's shape | not checked | checked against `provides[].result` |
+| Cancelling | not possible | `cancel(handle, receipt)` |
+| Core modules | can't take part | can ask and answer |
+
+Full API and limits: [`logos-intents-module/README.md`](https://github.com/logos-co/logos-intents-module/blob/master/README.md).
+Why it's built this way, and what's left before 0.5:
+[`docs/design.md`](https://github.com/logos-co/logos-intents-module/blob/master/docs/design.md).
