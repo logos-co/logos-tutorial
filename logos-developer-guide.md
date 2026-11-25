@@ -273,8 +273,8 @@ The full set of available fields:
 | `view`                           | Yes (`ui_qml`)                         | --                 | Relative path to the QML entry file (e.g. `Main.qml`). Required for `ui_qml` modules.                                                                                                                                                                          |
 | `dependencies`                   | No                                     | `[]`               | Other Logos module names this **requires**. Each entry must match the `name` field in that dependency's `metadata.json`. Auto-loaded; a failure to load one fails this module. Its canonical LIDL contract is bundled in `assets/lidl/`.                                                                                  |
 | `optional_dependencies`          | No                                     | `[]`               | Concrete modules this one can call but does **not** require. Same entry forms and same typed `modules().<name>` wrapper as `dependencies` — but loaded only when installed, and never a load failure when absent. Its runtime package is not auto-bundled; its canonical LIDL contract is. See [Optional dependencies](#optional-dependencies). |
-| `provides`                       | No (`ui_qml` only)                     | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
-| `uses`                           | No (`ui_qml` only)                     | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
+| `provides`                       | No (`ui_qml` only; see §8.5 backends)  | `[]`               | Intents this module can service, as an **array of objects**: `[{"intent": "chat.group.open"}]`. Each entry may also carry `params` describing the payload it expects, which the shell enforces before dispatch, and (with `intents_module`) `result` describing the answer — see §8.5. Intent **names** are carried into the signed `.lgx` manifest (0.5.0+) so a catalog can answer "which installable package provides X?"; `params` stays here, in `metadata.json`, which is the copy the shell reads. See §8.5.                                     |
+| `uses`                           | No (`ui_qml` only; see §8.5 backends)  | `[]`               | Intents this module may request, as an **array of objects**: `[{"intent": "wallet.sign", "cardinality": "single"}]`. Mandatory to request one — an undeclared request fails `not_declared`. `cardinality` is optional; only `single` is accepted today (`all` is reserved). ⚠ A bare string array is silently ignored — see §8.5. |
 | `interface_dependencies`         | No                                     | `[]`               | Header *interfaces* this module binds at runtime, decoupled from any concrete module. Each entry is `{ name, file, impl_class?, input? }`; its canonical contract is bundled in `assets/lidl/`. See [Dependency interfaces](#dependency-interfaces) and the [tutorial](tutorial-interface-dependencies.md).         |
 | `dependency_overrides`           | No                                     | `{}`               | Per-dependency LIDL-contract source overrides, keyed by dependency name → `{ file, input?, impl_class? }`. Forces where a dependency's interface is read from; normally auto-resolved from the dep's `lidl` output. See [§9.2 Module Dependencies](#92-module-dependencies).                                                                |
 | `host_services`                  | No                                     | `[]`               | Privileged host capabilities granted into the module's own image. Closed set: `token_registry`, `token_delivery` — both trust-root, and both hard-allowlisted to `capability_module` alone, because a build-time allowlist a module could extend from its own metadata would not be an allowlist. An ungranted module asking for one gets `LP_ERR_UNSUPPORTED` at runtime, however loudly its metadata asked.                            |
@@ -1699,6 +1699,12 @@ V1 limit.** Core modules already call each other by name through `LogosAPI`
 non-`ui_qml` module are discarded before they are ever read, and — unlike the
 mistakes below — that drop is **silent**.
 
+> **Intents from the backend.** Basecamp also runs a core module broker,
+> `intents_module`, in every build, and there the line above moves: an app's
+> backend or a core module asks and answers. Apps' views keep the QML path
+> described here until 0.5, when it is turned off. See
+> [the guide](guide-intents-for-app-developers.md#asking-and-answering-from-the-backend).
+
 ```qml
 // "Somebody show this chat group." The requester never learns who did.
 logos.request("chat.group.open", { groupId: "abc123" }, function (res) {
@@ -1837,6 +1843,10 @@ Three rules worth knowing:
   intent may describe it differently, so there is no single spec to check at
   submit time — and testing all of them would reveal how many exist.
 
+**`result` (`intents_module`).** An entry may also describe what
+its answer carries, in the same syntax. An `ok` answer that doesn't fit reaches
+the caller as `failed`. The QML path doesn't check it.
+
 This is per-*provider*, not per-*intent*: it describes what one app wants, not
 what the name means. A published registry of intent definitions is the intended
 successor; until then, this is where you look to find out how to call something.
@@ -1854,9 +1864,13 @@ The shell raises a chooser. What you can rely on as an app author:
   "the user said no" from "there was nobody to ask". Treat `cancelled` as a
   normal outcome, not an error to report.
 
-The chosen provider is brought to the foreground **and left there.** The shell
-does not navigate back when your request completes; returning is ordinary
-navigation the user drives. Do not write your app expecting to regain focus.
+The chosen provider is brought to the foreground. **When it answers, the shell
+takes the user back to you**, whether it succeeded or the user cancelled, so
+show the result on the screen they land on. Don't depend on it, though: the
+shell stays put if the user moved on while the provider worked, if the provider
+declared the intent a `handoff`, if a dialog is open, or if the request ended
+any other way (a timeout, the provider going away). Your callback runs the same
+either way.
 
 **`unavailable` is deliberately uninformative.** "Nobody provides this" and "you
 were not allowed" are the same answer, delivered on the same timing floor, so an
